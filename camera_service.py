@@ -27,9 +27,10 @@ def start_guard(settings: Settings):
     password = os.environ.get("CAM_PASSWORD", "")
     if not user or not password:
         raise CameraSetupError("Upišite CAM_USER i CAM_PASSWORD u .env.")
-    hosts = {"A": settings.camera_a_host, "B": settings.camera_b_host}
-    if not all(hosts.values()):
+    if not settings.camera_a_host or not settings.camera_b_host:
         raise CameraSetupError("Upišite IP adrese kamera A i B u postavkama.")
+    hosts = {"A": settings.camera_a_host, "A2": settings.camera_a2_host, "B": settings.camera_b_host, "B2": settings.camera_b2_host}
+    hosts = {name: host for name, host in hosts.items() if host}
     readers = {
         name: CameraReader(CameraSettings(name, host, build_rtsp_url(host, user, password, settings.camera_channel)))
         for name, host in hosts.items()

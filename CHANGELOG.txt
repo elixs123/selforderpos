@@ -50,3 +50,7 @@ IZMJENE - samouslužna kasa
 - Fiskalni račun: fiscal.py šalje Tring XML (RacunZahtjev, VrstaZahtjeva 0) na /stampatifiskalniracun. Rezultat se upisuje u receipts (fiscal_printed, fiscal_message); ako ne uspije, ekran računa traži osoblje.
 - Postavke: settings.py (settings.json u AppData) i ekran Postavke iza ADMIN_PIN iz .env (Osoblje -> Postavke ili Ctrl+Shift+S). Testiranje terminala i printera iz postavki. Demo plaćanje uključeno dok se ne isključi.
 - receipts: novi stupci za karticu (invoice_id, approval_code, rrn, bank_id, card_number) i fiskalni status.
+
+2026-10-16
+- Kamere: po dvije kamere u zoni (A, A2, B, B2). Uzimanje iz A spaja isječke s obje kamere, odlaganje u B uzima isječke s obje kamere; poređenje uzima najbolje poklapanje. Reference se spremaju iz oba ugla. Monitor prikazuje mrežu 2x2. Postavke i .env: CAM_A2_HOST, CAM_B2_HOST (prazno = nema druge kamere).
+- Monitor: --debug sprema slike i log svakog događaja (data/debug), prozor Poredjenje, kamere jedna ispod druge; disable_osd.py gasi sat i naziv na kamerama.

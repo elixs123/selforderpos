@@ -77,6 +77,7 @@ class ZoneWatcher:
         self.work_width = work_width
         self.armed = False
         self.change_ratio = 0.0
+        self.last_mask: np.ndarray | None = None
         self.motion_ratio = 0.0
         self._baseline: np.ndarray | None = None
         self._previous: np.ndarray | None = None
@@ -112,6 +113,7 @@ class ZoneWatcher:
             return None
         change_mask = _difference(gray, self._baseline, hand)
         self.change_ratio = _ratio(change_mask)
+        self.last_mask = change_mask
         if not self.armed:
             return None
         if self._waiting_for_motion:
@@ -158,6 +160,7 @@ class BasketTracker:
         self.motion_ratio = 0.0
         self.occupancy = 0.0
         self.last_note = "-"
+        self.last_mask: np.ndarray | None = None
         self._previous: np.ndarray | None = None
         self._previous_ignore: np.ndarray | None = None
         self._background: np.ndarray | None = None
@@ -206,6 +209,7 @@ class BasketTracker:
         self._moved = False
         mask = self._clean(_difference(gray, self._stable_gray, hand, self._stable_ignore))
         change = _ratio(mask)
+        self.last_mask = mask
         old_gray, old_image = self._stable_gray, self._stable_image
         self._stable_gray, self._stable_image, self._stable_ignore = gray, image.copy(), hand
         self.occupancy = _ratio(self._clean(_difference(gray, self._background, hand)))
