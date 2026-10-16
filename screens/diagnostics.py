@@ -10,10 +10,12 @@ from PySide6.QtWidgets import (
 )
 
 from camera_service import CAMERAS_FOLDER
+from watcher import VERSION
 from zones import to_pixels
 
 TILE_WIDTH = 440
 THUMB_SIZE = 150
+TAKE_THUMB = 170
 REFRESH_MS = 150
 RED = (60, 60, 235)
 GREEN = (80, 200, 80)
@@ -165,6 +167,29 @@ class DiagnosticsWindow(QWidget):
         why_layout.addWidget(self.why)
         right.addWidget(why_card)
 
+        takes_card, takes_layout = card("ZADNJA UZIMANJA IZ ZONE A  (prije · poslije · promjena)")
+        self.takes_text = []
+        self.takes_images = []
+        for _ in range(2):
+            caption = QLabel()
+            caption.setStyleSheet("color: #8A949C;")
+            caption.setWordWrap(True)
+            row = QHBoxLayout()
+            images = []
+            for _ in range(3):
+                picture = QLabel()
+                picture.setFixedSize(TAKE_THUMB, int(TAKE_THUMB * 0.62))
+                picture.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                picture.setStyleSheet("background: #14181C; border-radius: 6px;")
+                row.addWidget(picture)
+                images.append(picture)
+            row.addStretch()
+            takes_layout.addWidget(caption)
+            takes_layout.addLayout(row)
+            self.takes_text.append(caption)
+            self.takes_images.append(images)
+        right.addWidget(takes_card)
+
         log_title = QLabel("DOGAĐAJI")
         log_title.setObjectName("title")
         right.addWidget(log_title)
@@ -206,7 +231,8 @@ class DiagnosticsWindow(QWidget):
             self.folder.setText("Slike se ne spremaju. Za spremanje u data\\debug pokreni: python app.py --monitor --debug")
         else:
             self.folder.setText(f"Slike i log: {guard.debug_folder}")
-        self.add_event("--:--:--", "info", "Dijagnostika spojena na kasu.")
+        self.add_event("--:--:--", "info", f"Dijagnostika spojena na kasu. Algoritam: {VERSION}")
+        self.setWindowTitle(f"Dijagnostika kamera · {VERSION}")
 
     def add_event(self, clock: str, kind: str, text: str) -> None:
         item = QListWidgetItem(f"{clock}  {kind:<12} {text}")
@@ -265,20 +291,41 @@ class DiagnosticsWindow(QWidget):
         self.state.setText(STATE_NAMES.get(guard.state, guard.state.upper()))
         self.state.setStyleSheet(f"background: {color}; color: white;")
         speed = "OK" if guard.step_ms < 150 else ("sporo" if guard.step_ms < 400 else "PRESPORO")
-        self.message.setText(f"{guard.message}\nObrada svih kamera: {guard.step_ms:.0f} ms ({speed})")
+        self.message.setText(
+            f"{guard.message}\nObrada kadra: {guard.step_ms:.0f} ms ({speed}) · zona A {guard.zone_a_ms:.0f} ms · "
+            f"zona B {guard.zone_b_ms:.0f} ms · ruke (zasebna nit) {guard.hands_ms:.0f} ms po krugu · "
+            f"zadnje poređenje {guard.judge_ms:.0f} ms"
+        )
         self.flow.setText(self.flow_text(guard, now))
         self.why.setText(self.why_text(guard, now))
         for number, clock, kind, text in list(guard.events):
             if number > self.seen_event:
                 self.add_event(clock, kind, text)
                 self.seen_event = number
-        before = next((t.last_before for t in guard.trackers.values() if t.last_before is not None), None)
-        if before is not None and before is not getattr(self, "shown_before", None):
-            self.shown_before = before
-            self.thumbs[3][0].setPixmap(to_pixmap(before, THUMB_SIZE, THUMB_SIZE))
+        self.show_takes(guard)
         if guard.debug is not None and guard.debug_number != self.seen_debug:
             self.seen_debug = guard.debug_number
             self.show_comparison(guard)
+
+    def show_takes(self, guard) -> None:
+        takes = sorted(
+            ((take["at"], name, take) for name, tracker in guard.trackers.items() for take in tracker.history),
+            key=lambda item: item[0], reverse=True,
+        )[:2]
+        key = tuple((name, take["number"]) for _, name, take in takes)
+        if key == getattr(self, "shown_takes", None):
+            return
+        self.shown_takes = key
+        for index in range(2):
+            if index >= len(takes):
+                self.takes_text[index].setText("")
+                for picture in self.takes_images[index]:
+                    picture.clear()
+                continue
+            _, name, take = takes[index]
+            self.takes_text[index].setText(f"{take['clock']}  kamera {name}: {take['note']}")
+            for picture, image in zip(self.takes_images[index], (take["before"], take["after"], take["mask"])):
+                picture.setPixmap(to_pixmap(image, picture.width(), picture.height()))
 
     def flow_text(self, guard, now: float) -> str:
         def step(done: bool, text: str) -> str:
@@ -333,7 +380,6 @@ class DiagnosticsWindow(QWidget):
                 text.setText(f"{caption}<br><b>{score:.2f}</b> (prag {threshold})")
                 text.setStyleSheet(f"color: {'#30A46C' if ok else '#E5484D'};")
         if debug.get("before") is not None:
-            self.shown_before = debug["before"]
             self.thumbs[3][0].setPixmap(to_pixmap(debug["before"], THUMB_SIZE, THUMB_SIZE))
         problems = guard.last_problems
         self.problems.setText(("Problem: " + ", ".join(problems)) if problems else "Poređenje prošlo.")

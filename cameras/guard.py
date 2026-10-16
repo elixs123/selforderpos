@@ -21,6 +21,8 @@ TAKEN_MAX_AGE = 60
 TAKEN_WAIT = 12
 TAKE_MERGE_SECONDS = 2.5
 LOOP_SECONDS = 0.04
+HAND_PASS_SECONDS = 0.2
+HAND_MAX_AGE = 1.5
 CROP_PADDING = 10
 
 
@@ -85,6 +87,15 @@ class CheckoutGuard:
         self.last_problems: list[str] = []
         self.armed_seconds = 0.0
         self.step_ms = 0.0
+        self.hands_ms = 0.0
+        self.judge_ms = 0.0
+        self.zone_a_ms = 0.0
+        self.zone_b_ms = 0.0
+        self._judge_elapsed = 0.0
+        self._seen: dict[str, int] = {}
+        self._frames_b: dict[str, tuple[np.ndarray, tuple[int, int]]] = {}
+        self._hand_cache: dict[str, tuple[np.ndarray, list[np.ndarray], float]] = {}
+        self._hand_lock = threading.Lock()
 
     def log(self, kind: str, text: str) -> None:
         self.event_number += 1
@@ -127,6 +138,8 @@ class CheckoutGuard:
             reader.start()
         self._running = True
         threading.Thread(target=self._loop, daemon=True).start()
+        if self.hands is not None:
+            threading.Thread(target=self._hand_loop, daemon=True).start()
 
     def stop(self) -> None:
         self._running = False
@@ -138,10 +151,33 @@ class CheckoutGuard:
             started = time.monotonic()
             try:
                 self.step()
-                self.step_ms = self.step_ms * 0.9 + (time.monotonic() - started) * 100
+                work = time.monotonic() - started - self._judge_elapsed
+                self._judge_elapsed = 0.0
+                self.step_ms = self.step_ms * 0.9 + max(0.0, work) * 100
             except Exception as error:
                 print(f"Kamere: {error}")
             time.sleep(max(0.0, LOOP_SECONDS - (time.monotonic() - started)))
+
+    def _hand_loop(self) -> None:
+        while self._running:
+            started = time.monotonic()
+            names = list(self.cameras_a) + (list(self.cameras_b) if self.zone_b_armed else [])
+            for name in names:
+                frame = self.latest(name)
+                if frame is None:
+                    continue
+                roi, offset = crop(frame, self.zones.get(name))
+                try:
+                    mask, hulls = self.hands.mask(roi)
+                except Exception as error:
+                    print(f"Ruke: {error}")
+                    continue
+                shifted = [hull + np.array(offset, dtype=np.int32) for hull in hulls]
+                with self._hand_lock:
+                    self._hand_cache[name] = (mask, shifted, time.monotonic())
+            elapsed = time.monotonic() - started
+            self.hands_ms = self.hands_ms * 0.8 + elapsed * 200
+            time.sleep(max(0.02, HAND_PASS_SECONDS - elapsed))
 
     def enable_debug(self, folder: Path) -> None:
         self.debug_folder = folder
@@ -322,16 +358,24 @@ class CheckoutGuard:
     def _hand_mask(self, name: str, roi: np.ndarray, offset: tuple[int, int]) -> np.ndarray | None:
         if self.hands is None:
             return None
-        mask, hulls = self.hands.mask(roi)
-        self.hand_shapes[name] = [hull + np.array(offset, dtype=np.int32) for hull in hulls]
-        return mask
+        with self._hand_lock:
+            cached = self._hand_cache.get(name)
+        if cached is None or time.monotonic() - cached[2] > HAND_MAX_AGE or cached[0].shape[:2] != roi.shape[:2]:
+            self.hand_shapes[name] = []
+            return None
+        self.hand_shapes[name] = cached[1]
+        return cached[0]
 
     def _watch_zone_a(self) -> None:
         now = time.monotonic()
         for name, tracker in self.trackers.items():
+            number = self.readers[name].frame_number
+            if number == self._seen.get(name):
+                continue
             frame = self.latest(name)
             if frame is None:
                 continue
+            self._seen[name] = number
             roi, offset = crop(frame, self.zones.get(name))
             event = tracker.update(roi, now, self._hand_mask(name, roi, offset))
             if event is not None:
@@ -374,16 +418,20 @@ class CheckoutGuard:
     def _watch_zone_b(self) -> None:
         now = time.monotonic()
         placements = {}
-        frames = {}
         for name, watcher in self.watchers.items():
+            number = self.readers[name].frame_number
+            if number == self._seen.get(name):
+                continue
             frame = self.latest(name)
             if frame is None:
                 continue
+            self._seen[name] = number
             roi, offset = crop(frame, self.zones.get(name))
-            frames[name] = (frame, offset)
+            self._frames_b[name] = (frame, offset)
             placement = watcher.update(roi, now, self._hand_mask(name, roi, offset))
             if placement is not None:
                 placements[name] = placement
+        frames = dict(self._frames_b)
         if placements:
             self._on_placed(placements, frames, now)
         elif self.zone_b_armed and now - self._armed_at > TIMEOUT_SECONDS:
@@ -416,7 +464,10 @@ class CheckoutGuard:
             parts = self.watchers[name].parts
             if parts > 1:
                 self.log(f"zona-{name}", f"{parts} promjene u zoni B (pomjereni drugi artikli/sjena) — uzimam najveću")
+        judge_started = time.monotonic()
         verdict, problems, score_taken, score_product = self._judge(crops, change_ratio)
+        self.judge_ms = (time.monotonic() - judge_started) * 1000
+        self._judge_elapsed += self.judge_ms / 1000
         for name, item, ratio in items:
             self.store.save(
                 "placed", self.barcode, self.product_code, self.product_name, name,
@@ -439,8 +490,12 @@ class CheckoutGuard:
 
     def step(self) -> None:
         with self._lock:
+            started = time.monotonic()
             self._watch_zone_a()
+            self.zone_a_ms = self.zone_a_ms * 0.9 + (time.monotonic() - started) * 100
             if self._pending_until is not None and time.monotonic() > self._pending_until:
                 self._pending_until = None
                 self._finish("rejected", "not_taken", "Kamera nije vidjela da je artikal uzet iz zone A. Vratite ga i pokušajte ponovo.")
+            started = time.monotonic()
             self._watch_zone_b()
+            self.zone_b_ms = self.zone_b_ms * 0.9 + (time.monotonic() - started - self._judge_elapsed) * 100

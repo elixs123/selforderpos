@@ -1,6 +1,8 @@
 IZMJENE - samouslužna kasa
 
 2026-10-16
+- Brzina: ruke se traže u zasebnoj niti (samo zone A, a zona B kad je aktivna), isti kadar kamere se ne obrađuje dvaput; dijagnostika pokazuje vrijeme po dijelovima.
+- Dijagnostika: panel "Zadnja uzimanja iz zone A" (prije, poslije, maska promjene s okvirom izreza) i oznaka verzije algoritma.
 - Zona A i B: kad ima više artikala (i puna korpa 20-50), izrez uzetog/odloženog artikla bira najdeblju promjenu i odbacuje tanke trake od pomjerenih artikala; kad je podloga vidljiva, uzima se baš mjesto koje je postalo prazno.
 - Demo plaćanje je po defaultu isključeno (kartica ide na pravi terminal).
 - Zona A: lažno "uzimanje" (pomjeren artikal, sjena) više ne briše pravo; pamte se sva uzimanja do skeniranja i bira najsličnije odloženom.

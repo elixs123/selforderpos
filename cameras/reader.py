@@ -31,6 +31,7 @@ class CameraReader(threading.Thread):
         self.settings = settings
         self.status = "spajanje"
         self.fps = 0.0
+        self.frame_number = 0
         self._frame: np.ndarray | None = None
         self._lock = threading.Lock()
         self._running = True
@@ -51,6 +52,7 @@ class CameraReader(threading.Thread):
                     break
                 with self._lock:
                     self._frame = frame
+                    self.frame_number += 1
                 self.fps = meter.tick()
             camera.release()
             if self._running:

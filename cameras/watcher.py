@@ -1,8 +1,11 @@
+import time
+from collections import deque
 from dataclasses import dataclass
 
 import cv2
 import numpy as np
 
+VERSION = "zona A v4 (najdeblja promjena, prazno mjesto)"
 PIXEL_THRESHOLD = 25
 EMPTY_SHARE = 0.6
 
@@ -212,6 +215,8 @@ class BasketTracker:
         self.last_mask: np.ndarray | None = None
         self.last_box: tuple[int, int, int, int] | None = None
         self.last_before: np.ndarray | None = None
+        self.history: deque = deque(maxlen=4)
+        self.take_number = 0
         self.parts = 0
         self._previous: np.ndarray | None = None
         self._previous_ignore: np.ndarray | None = None
@@ -291,4 +296,11 @@ class BasketTracker:
         self.last_box = (left, top, right - left, bottom - top)
         self.last_before = old_image.copy()
         cv2.rectangle(self.last_before, (left, top), (right, bottom), (255, 170, 60), 2)
+        mask_view = cv2.cvtColor(cv2.resize(mask, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_NEAREST), cv2.COLOR_GRAY2BGR)
+        cv2.rectangle(mask_view, (left, top), (right, bottom), (255, 170, 60), 2)
+        self.take_number += 1
+        self.history.appendleft({
+            "number": self.take_number, "at": time.monotonic(), "clock": time.strftime("%H:%M:%S"),
+            "before": self.last_before, "after": image.copy(), "mask": mask_view, "note": self.last_note,
+        })
         return BasketEvent("taken", old_image[top:bottom, left:right].copy(), change)
