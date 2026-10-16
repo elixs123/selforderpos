@@ -43,17 +43,40 @@ def _ratio(mask: np.ndarray) -> float:
 
 
 PART_MIN_SHARE = 0.002
+CORE_SHARE = 0.5
+MIN_THICKNESS = 3
+
+
+def thick_blobs(mask: np.ndarray) -> list[tuple[int, tuple[int, int, int, int]]]:
+    cleaned = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    thickness = cv2.distanceTransform(cleaned, cv2.DIST_L2, 3)
+    peak = float(thickness.max())
+    if peak < MIN_THICKNESS:
+        return []
+    core = (thickness >= CORE_SHARE * peak).astype(np.uint8) * 255
+    radius = int(np.ceil(CORE_SHARE * peak)) + 1
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * radius + 1, 2 * radius + 1))
+    blob = cv2.bitwise_and(cv2.dilate(core, kernel), cleaned)
+    count, _, stats, _ = cv2.connectedComponentsWithStats(blob)
+    parts = [(int(stats[index, cv2.CC_STAT_AREA]), tuple(int(value) for value in stats[index, :4]))
+             for index in range(1, count) if stats[index, cv2.CC_STAT_AREA] >= PART_MIN_SHARE * mask.size]
+    return sorted(parts, reverse=True)
+
+
+def taken_object(old_gray: np.ndarray, gray: np.ndarray, background: np.ndarray,
+                 old_ignore: np.ndarray | None) -> tuple[tuple[int, int, int, int] | None, int]:
+    objects = _difference(old_gray, background, old_ignore)
+    now_empty = (_distance(gray, background) < PIXEL_THRESHOLD).astype(np.uint8) * 255
+    parts = thick_blobs(cv2.bitwise_and(objects, now_empty))
+    return (parts[0][1], len(parts)) if parts else (None, 0)
 
 
 def main_box(mask: np.ndarray) -> tuple[tuple[int, int, int, int] | None, int]:
-    cleaned = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
-    cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
-    contours, _ = cv2.findContours(cleaned, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    parts = [contour for contour in contours if cv2.contourArea(contour) >= PART_MIN_SHARE * mask.size]
-    if not parts:
-        points = cv2.findNonZero(mask)
-        return (cv2.boundingRect(points) if points is not None else None), 0
-    return cv2.boundingRect(max(parts, key=cv2.contourArea)), len(parts)
+    parts = thick_blobs(mask)
+    if parts:
+        return parts[0][1], len(parts)
+    points = cv2.findNonZero(mask)
+    return (cv2.boundingRect(points) if points is not None else None), 0
 
 
 def changed_box(before: np.ndarray, after: np.ndarray, padding: int = 10) -> tuple[int, int, int, int] | None:
@@ -196,6 +219,7 @@ class BasketTracker:
         self._stable_gray: np.ndarray | None = None
         self._stable_image: np.ndarray | None = None
         self._stable_ignore: np.ndarray | None = None
+        self._stable_ignore_old: np.ndarray | None = None
         self._stable_since: float | None = None
         self._moved = False
 
@@ -240,6 +264,7 @@ class BasketTracker:
         change = _ratio(mask)
         self.last_mask = mask
         old_gray, old_image = self._stable_gray, self._stable_image
+        self._stable_ignore_old = self._stable_ignore
         self._stable_gray, self._stable_image, self._stable_ignore = gray, image.copy(), hand
         self.occupancy = _ratio(self._clean(_difference(gray, self._background, hand)))
         if change < self.change_min:
@@ -251,12 +276,12 @@ class BasketTracker:
         self.last_note = f"promjena {change:.2%}, prije prazno {old_was_empty:.0%}, sad prazno {new_is_empty:.0%}"
         if old_was_empty >= EMPTY_SHARE:
             return BasketEvent("added", None, change)
-        freed = mask.copy()
-        freed[_distance(gray, self._background) >= PIXEL_THRESHOLD] = 0
-        freed[_distance(old_gray, self._background) < PIXEL_THRESHOLD] = 0
-        found, self.parts = main_box(freed)
-        if found is None or self.parts == 0:
+        found, self.parts = taken_object(old_gray, gray, self._background, self._stable_ignore_old)
+        if found is not None:
+            self.last_note += f", prazno mjesto nađeno ({self.parts}), uzimam najveće"
+        else:
             found, self.parts = main_box(mask)
+            self.last_note += f", podloga nije vidljiva (puna korpa), uzimam najdeblju promjenu ({self.parts})"
         if found is None:
             return None
         x, y, w, h = found

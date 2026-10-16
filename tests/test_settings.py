@@ -4,7 +4,7 @@ from settings import Settings, load_settings, save_settings
 def test_missing_file_gives_defaults(tmp_path):
     settings = load_settings(tmp_path / "settings.json")
     assert settings.terminal_url == "http://127.0.0.1:3421"
-    assert settings.demo_payments is True
+    assert settings.demo_payments is False
 
 
 def test_round_trip(tmp_path):

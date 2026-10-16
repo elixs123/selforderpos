@@ -1,6 +1,8 @@
 IZMJENE - samouslužna kasa
 
 2026-10-16
+- Zona A i B: kad ima više artikala (i puna korpa 20-50), izrez uzetog/odloženog artikla bira najdeblju promjenu i odbacuje tanke trake od pomjerenih artikala; kad je podloga vidljiva, uzima se baš mjesto koje je postalo prazno.
+- Demo plaćanje je po defaultu isključeno (kartica ide na pravi terminal).
 - Zona A: lažno "uzimanje" (pomjeren artikal, sjena) više ne briše pravo; pamte se sva uzimanja do skeniranja i bira najsličnije odloženom.
 - Dijagnostičke slike u data/debug se spremaju samo uz --debug.
 - cameras/improve_image.py: na svim kamerama podigne substream na najveću rezoluciju do 1280x720, 15 FPS, H.264, 2048 Kbps i isključi WDR i BLC.

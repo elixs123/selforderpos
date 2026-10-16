@@ -8,3 +8,4 @@ dist/
 build/
 *.spec
 kasa.log
+_to_delete/

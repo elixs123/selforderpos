@@ -18,7 +18,7 @@ def cameras_in_env() -> bool:
 class Settings:
     register_id: str = "K1"
     fullscreen: bool = False
-    demo_payments: bool = True
+    demo_payments: bool = False
     terminal_url: str = "http://127.0.0.1:3421"
     terminal_api_key: str = ""
     terminal_print_slip: bool = True
