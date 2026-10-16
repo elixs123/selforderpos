@@ -264,7 +264,8 @@ class DiagnosticsWindow(QWidget):
         color = STATE_COLORS.get(guard.state, "#2A323A")
         self.state.setText(STATE_NAMES.get(guard.state, guard.state.upper()))
         self.state.setStyleSheet(f"background: {color}; color: white;")
-        self.message.setText(guard.message)
+        speed = "OK" if guard.step_ms < 150 else ("sporo" if guard.step_ms < 400 else "PRESPORO")
+        self.message.setText(f"{guard.message}\nObrada svih kamera: {guard.step_ms:.0f} ms ({speed})")
         self.flow.setText(self.flow_text(guard, now))
         self.why.setText(self.why_text(guard, now))
         for number, clock, kind, text in list(guard.events):

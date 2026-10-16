@@ -83,6 +83,7 @@ class CheckoutGuard:
         self.event_number = 0
         self.last_problems: list[str] = []
         self.armed_seconds = 0.0
+        self.step_ms = 0.0
 
     def log(self, kind: str, text: str) -> None:
         self.event_number += 1
@@ -136,6 +137,7 @@ class CheckoutGuard:
             started = time.monotonic()
             try:
                 self.step()
+                self.step_ms = self.step_ms * 0.9 + (time.monotonic() - started) * 100
             except Exception as error:
                 print(f"Kamere: {error}")
             time.sleep(max(0.0, LOOP_SECONDS - (time.monotonic() - started)))
