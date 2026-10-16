@@ -4,3 +4,7 @@ __pycache__/
 .pytest_cache/
 data/
 models/
+dist/
+build/
+*.spec
+kasa.log
