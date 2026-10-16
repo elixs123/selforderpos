@@ -1,4 +1,4 @@
-from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QFrame,
@@ -16,7 +16,7 @@ from cart import Cart
 from catalog import find_by_barcode
 from database import DatabaseError
 from formatting import format_amount, item_count_text
-from screens.components import StepBar, TopBar
+from screens.components import GuideSteps, StepBar, TopBar
 from styles import (
     BACKGROUND,
     BORDER,
@@ -26,6 +26,7 @@ from styles import (
     ICON_ALERT,
     ICON_ARROW,
     ICON_CHECK,
+    ICON_HAND,
     ICON_SCANNER,
     LIGHT_GREEN,
     LIGHT_RED,
@@ -48,6 +49,10 @@ class ScanScreen(QWidget):
         super().__init__()
         self.cart = cart
         self.guard = None
+        self.guide_state = ""
+        self.guide_timer = QTimer(self)
+        self.guide_timer.setInterval(200)
+        self.guide_timer.timeout.connect(self._update_guide)
         self.setObjectName("root")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"#root {{ background: {BACKGROUND}; font-family: {FONT}; color: {TEXT}; }}")
@@ -62,7 +67,40 @@ class ScanScreen(QWidget):
         layout.addWidget(self._body(), stretch=1)
         layout.addWidget(self._footer())
 
+    def _set_card(self, title: str, subtitle: str, shape: str, highlighted: bool) -> None:
+        self.card_title.setText(title)
+        self.card_subtitle.setText(subtitle)
+        self.card_icon.setPixmap(icon(shape, px(46), "#FFFFFF" if highlighted else "#2C5C14", 2 if highlighted else 1.8))
+        self.card_icon.setStyleSheet(f"background: {GREEN if highlighted else LIGHT_GREEN}; border-radius: {px(42)}px;")
+        border = f"border: {px(4)}px solid {GREEN};" if highlighted else "border: none;"
+        self.scan_card.setStyleSheet(f"#scanCard {{ background: white; border-radius: {px(40)}px; {border} }}")
+
+    def _update_guide(self) -> None:
+        guard = self.guard
+        self.guide.setVisible(guard is not None)
+        if guard is None:
+            return
+        state = guard.state
+        if state == self.guide_state:
+            return
+        self.guide_state = state
+        if state == "learning":
+            self.guide.set_step(0)
+            self._set_card("Pripremam kamere…", "Trenutak, kasa se priprema", ICON_HAND, False)
+        elif state == "empty":
+            self.guide.set_step(0)
+            self._set_card("Stavite korpu na polje", "Korpu ili artikle stavite na označeno mjesto", ICON_HAND, False)
+        elif state == "taken":
+            self.guide.set_step(1)
+            self._set_card("Sad ga skenirajte", "Artikal je uzet iz korpe. Prislonite barkod na skener.", ICON_SCANNER, True)
+        else:
+            self.guide.set_step(0)
+            self._set_card("Uzmite artikal iz korpe", "Zatim ga skenirajte i odložite na polje", ICON_HAND, False)
+
     def begin(self) -> None:
+        self.guide_state = ""
+        self.guide_timer.start()
+        self._update_guide()
         self.cart.clear()
         self.notice.hide()
         self._refresh()
@@ -94,6 +132,7 @@ class ScanScreen(QWidget):
         card = QFrame()
         card.setObjectName("scanCard")
         card.setStyleSheet(f"#scanCard {{ background: white; border-radius: {px(40)}px; }}")
+        self.scan_card = card
         column = QVBoxLayout(card)
         column.setContentsMargins(px(28), px(26), px(28), px(26))
         column.setSpacing(px(20))
@@ -105,6 +144,7 @@ class ScanScreen(QWidget):
         circle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         circle.setPixmap(icon(ICON_SCANNER, px(46)))
         circle.setStyleSheet(f"background: {LIGHT_GREEN}; border-radius: {px(42)}px;")
+        self.card_icon = circle
         top.addWidget(circle)
 
         texts = QVBoxLayout()
@@ -113,10 +153,15 @@ class ScanScreen(QWidget):
         title.setStyleSheet(f"font-size: {px(42)}px; font-weight: 800;")
         subtitle = QLabel("Prislonite barkod na skener ispod ekrana")
         subtitle.setStyleSheet(f"font-size: {px(24)}px; color: {MUTED_TEXT};")
+        self.card_title, self.card_subtitle = title, subtitle
         texts.addWidget(title)
         texts.addWidget(subtitle)
         top.addLayout(texts, stretch=1)
         column.addLayout(top)
+
+        self.guide = GuideSteps()
+        self.guide.setVisible(False)
+        column.addWidget(self.guide)
 
         self.barcode_input = QLineEdit()
         self.barcode_input.setPlaceholderText("Ili upišite barkod artikla")

@@ -2,7 +2,7 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from formatting import format_amount
-from screens.components import StepBar, TopBar
+from screens.components import GuideSteps, StepBar, TopBar
 from styles import (
     BACKGROUND,
     BORDER,
@@ -93,8 +93,10 @@ class DropScreen(QWidget):
         if guard.state == "mismatch":
             self._paint("problem", guard.message)
         elif guard.state == "waiting_take":
-            self._paint("wait", "Uzmite artikal iz zone A i izvucite ruku...")
+            self.guide.set_step(0)
+            self._paint("wait", "Uzmite artikal iz korpe i izvucite ruku...")
         else:
+            self.guide.set_step(2)
             self._paint("ok", "Čekam da odložite artikal…")
 
     def _paint(self, mode: str, message: str) -> None:
@@ -121,6 +123,9 @@ class DropScreen(QWidget):
         title = QLabel("Odložite artikal")
         title.setStyleSheet(f"font-size: {px(60)}px; font-weight: 800;")
         column.addWidget(title)
+        self.guide = GuideSteps()
+        self.guide.set_step(2)
+        column.addWidget(self.guide)
 
         card = QFrame()
         card.setObjectName("scanned")

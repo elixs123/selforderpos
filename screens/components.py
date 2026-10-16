@@ -1,6 +1,6 @@
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
 from styles import (
     BORDER,
@@ -218,3 +218,56 @@ class PinPad(QWidget):
             self.error.setText("Pogrešna šifra")
             return
         self.accepted.emit()
+
+
+GUIDE_STEPS = ("Uzmite", "Skenirajte", "Odložite")
+
+
+class GuideSteps(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+        from styles import ICON_DOWN, ICON_HAND, ICON_SCANNER
+
+        self.shapes = (ICON_HAND, ICON_SCANNER, ICON_DOWN)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(px(10))
+        self.pills: list[tuple[QWidget, QLabel, QLabel]] = []
+        for index, name in enumerate(GUIDE_STEPS):
+            if index:
+                arrow = QLabel("›")
+                arrow.setStyleSheet(f"font-size: {px(34)}px; font-weight: 800; color: {BORDER};")
+                layout.addWidget(arrow)
+            pill = QFrame()
+            pill.setObjectName(f"guide{index}")
+            pill.setFixedHeight(px(72))
+            row = QHBoxLayout(pill)
+            row.setContentsMargins(px(10), 0, px(16), 0)
+            row.setSpacing(px(10))
+            circle = QLabel()
+            circle.setFixedSize(px(48), px(48))
+            circle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            row.addWidget(circle)
+            label = QLabel(name)
+            row.addWidget(label, stretch=1)
+            layout.addWidget(pill, stretch=1)
+            self.pills.append((pill, circle, label))
+        self.set_step(0)
+
+    def set_step(self, active: int) -> None:
+        for index, (pill, circle, label) in enumerate(self.pills):
+            if index < active:
+                background, text, circle_background = LIGHT_GREEN, DARK_GREEN, GREEN
+                circle.setPixmap(icon(ICON_CHECK, px(26), "#FFFFFF", 3))
+            elif index == active:
+                background, text, circle_background = GREEN, "#FFFFFF", "#FFFFFF"
+                circle.setPixmap(icon(self.shapes[index], px(28), GREEN, 2))
+            else:
+                background, text, circle_background = "#FFFFFF", MUTED_TEXT, LIGHT_GREEN
+                circle.setPixmap(icon(self.shapes[index], px(28), MUTED_TEXT, 1.8))
+            pill.setStyleSheet(
+                f"#{pill.objectName()} {{ background: {background}; border-radius: {px(36)}px;"
+                f" border: {px(2)}px solid {GREEN if index <= active else LINE}; }}"
+            )
+            circle.setStyleSheet(f"background: {circle_background}; border-radius: {px(24)}px;")
+            label.setStyleSheet(f"font-size: {px(24)}px; font-weight: 800; color: {text}; background: transparent;")
