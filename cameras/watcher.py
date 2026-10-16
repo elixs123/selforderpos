@@ -294,6 +294,10 @@ class BasketTracker:
         return self._evaluate(gray, image, _ignore(ignore, gray.shape), scale)
 
     def _evaluate(self, gray: np.ndarray, image: np.ndarray, hand: np.ndarray | None, scale: float) -> BasketEvent | None:
+        if hand is not None and hand.any():
+            self._moved = True
+            self.last_note = "ruka je u zoni, čekam da je povučete"
+            return None
         mask = self._clean(_difference(gray, self._stable_gray, hand, self._stable_ignore))
         change = _ratio(mask)
         self.last_mask = mask

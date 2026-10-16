@@ -91,7 +91,10 @@ class CheckoutGuard:
         self.judge_ms = 0.0
         self.zone_a_ms = 0.0
         self.zone_b_ms = 0.0
-        self._judge_elapsed = 0.0
+        self._judging = False
+        self._job_id = 0
+        self._reference_lock = threading.Lock()
+        self._taken_signatures: dict[int, tuple[np.ndarray, Signature]] = {}
         self._seen: dict[str, int] = {}
         self._frames_b: dict[str, tuple[np.ndarray, tuple[int, int]]] = {}
         self._hand_cache: dict[str, tuple[np.ndarray, list[np.ndarray], float]] = {}
@@ -127,7 +130,7 @@ class CheckoutGuard:
 
     @property
     def busy(self) -> bool:
-        return self.zone_b_armed or self._pending_until is not None
+        return self.zone_b_armed or self._pending_until is not None or self._judging
 
     def latest(self, name: str) -> np.ndarray | None:
         reader = self.readers.get(name)
@@ -151,9 +154,7 @@ class CheckoutGuard:
             started = time.monotonic()
             try:
                 self.step()
-                work = time.monotonic() - started - self._judge_elapsed
-                self._judge_elapsed = 0.0
-                self.step_ms = self.step_ms * 0.9 + max(0.0, work) * 100
+                self.step_ms = self.step_ms * 0.9 + (time.monotonic() - started) * 100
             except Exception as error:
                 print(f"Kamere: {error}")
             time.sleep(max(0.0, LOOP_SECONDS - (time.monotonic() - started)))
@@ -258,6 +259,7 @@ class CheckoutGuard:
                 self._finish("rejected", "camera_b", "Kamera zone B nema sliku. Pozovite osoblje.")
                 return False
             self.scores = "-"
+            self._warm_references(product_code)
             if recent_take:
                 takes, self._takes = self._takes, []
                 self._wait_for_zone_b([take[0] for take in takes], takes[-1][2], [take[1] for take in takes])
@@ -272,6 +274,8 @@ class CheckoutGuard:
             for watcher in self.watchers.values():
                 watcher.disarm()
             self._pending_until = None
+            self._job_id += 1
+            self._judging = False
             self._set("ready", "Prekinuto.")
 
     def approve(self) -> None:
@@ -281,6 +285,8 @@ class CheckoutGuard:
             for watcher in self.watchers.values():
                 watcher.disarm()
             self._pending_until = None
+            self._job_id += 1
+            self._judging = False
             self._finish("accepted", "staff", "Osoblje je odobrilo artikal.")
 
     def _wait_for_zone_b(self, items: list[np.ndarray], taken_at: float, befores: list | None = None) -> None:
@@ -288,6 +294,8 @@ class CheckoutGuard:
         self._taken_items = list(items)
         self._taken_befores = list(befores) if befores else [None] * len(items)
         self._taken_at = taken_at
+        self._taken_signatures = {}
+        self._warm_taken(self._taken_items)
         for index, item in enumerate(items):
             self.store.save("taken", self.barcode, self.product_code, self.product_name, f"A{index + 1}", crop_image=item)
         for name, watcher in self.watchers.items():
@@ -297,30 +305,64 @@ class CheckoutGuard:
         self._set("waiting_place", f"Odložite artikal u zonu B: {self.product_name or self.barcode}")
         self._dump("scan-armed-b", {"taken-item": items})
 
-    def _judge(self, items: list[np.ndarray], change_ratio: float) -> tuple[str, list[str], float | None, float | None]:
-        queries = [signature(item) for item in items]
-        taken = [(index, signature(item, rotations=False)) for index, item in enumerate(self._taken_items)
-                 if item is not None and item.size]
-        best_taken = max(((compare(query, other), index) for query in queries for index, other in taken), default=None)
-        score_taken = best_taken[0] if best_taken else None
-        taken_index = best_taken[1] if best_taken else 0
-        references = self._reference_signatures(self.product_code)
-        scored = [(compare(query, reference), reference) for query in queries for reference in references]
-        best = max(scored, key=lambda pair: pair[0], default=None)
-        score_product = best[0] if best else None
+    def _warm_references(self, product_code: str | None) -> None:
+        threading.Thread(target=self._reference_signatures, args=(product_code,), daemon=True).start()
+
+    def _warm_taken(self, items: list[np.ndarray]) -> None:
+        def work() -> None:
+            for item in items:
+                self._taken_signature(item)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _taken_signature(self, item: np.ndarray) -> Signature:
+        with self._reference_lock:
+            cached = self._taken_signatures.get(id(item))
+            if cached is not None and cached[0] is item:
+                return cached[1]
+            result = signature(item, rotations=False)
+            self._taken_signatures[id(item)] = (item, result)
+            return result
+
+    def _judge(
+        self, items: list[np.ndarray], change_ratio: float, taken_items: list[np.ndarray],
+        taken_befores: list, product_code: str | None,
+    ) -> tuple[str, list[str], float | None, float | None]:
         threshold = match_threshold()
-        sizes = sorted(self.store.reference_sizes(self.product_code))
+        taken = [(index, self._taken_signature(item)) for index, item in enumerate(taken_items)
+                 if item is not None and item.size]
+        references = self._reference_signatures(product_code)
+
+        def score(rotations: bool):
+            queries = [signature(item, rotations=rotations) for item in items]
+            best_taken = max(((compare(query, other), index) for query in queries for index, other in taken), default=None)
+            scored = [(compare(query, reference), reference) for query in queries for reference in references]
+            return queries, best_taken, max(scored, key=lambda pair: pair[0], default=None)
+
+        queries, best_taken, best = score(False)
+        score_taken = best_taken[0] if best_taken else None
+        score_product = best[0] if best else None
+        failing = score_taken is None or score_taken < threshold or (score_product is not None and score_product < threshold)
+        rotated = False
+        if failing and any(query.vectors for query in queries):
+            queries, best_taken, best = score(True)
+            score_taken = best_taken[0] if best_taken else None
+            score_product = best[0] if best else None
+            rotated = True
+        taken_index = best_taken[1] if best_taken else 0
+        sizes = sorted(self.store.reference_sizes(product_code))
         middle = sizes[len(sizes) // 2] if sizes else 0
         size = f"{change_ratio / middle:.1f}x" if middle > 0 else "-"
         self.scores = (
             f"uzeto->odlozeno: {'-' if score_taken is None else f'{score_taken:.2f}'}   "
             f"skenirano->odlozeno: {'-' if score_product is None else f'{score_product:.2f}'} ({len(references)} ref)   "
-            f"velicina: {size}   prag {threshold} ({method_name()})   kamera A: {len(taken)}, B: {len(queries)}"
+            f"velicina: {size}   prag {threshold} ({method_name()}{', sa rotacijama' if rotated else ''})   "
+            f"kamera A: {len(taken)}, B: {len(queries)}"
         )
         self.debug_number += 1
         self.debug = {
-            "taken": self._taken_items[taken_index] if self._taken_items else None,
-            "before": self._taken_befores[taken_index] if taken_index < len(self._taken_befores) else None,
+            "taken": taken_items[taken_index] if taken_items else None,
+            "before": taken_befores[taken_index] if taken_index < len(taken_befores) else None,
             "placed": items[0] if items else None,
             "reference": best[1].image if best else None,
             "score_taken": score_taken,
@@ -343,18 +385,19 @@ class CheckoutGuard:
         return "ok", [], score_taken, score_product
 
     def _reference_signatures(self, product_code: str | None) -> list[Signature]:
-        result = []
-        for path in self.store.reference_paths(product_code, limit=20):
-            if path in self._missing_references:
-                continue
-            if path not in self._reference_cache:
-                image = self.store.load_image(path)
-                if image is None:
-                    self._missing_references.add(path)
+        with self._reference_lock:
+            result = []
+            for path in self.store.reference_paths(product_code, limit=20):
+                if path in self._missing_references:
                     continue
-                self._reference_cache[path] = signature(image, rotations=False)
-            result.append(self._reference_cache[path])
-        return result
+                if path not in self._reference_cache:
+                    image = self.store.load_image(path)
+                    if image is None:
+                        self._missing_references.add(path)
+                        continue
+                    self._reference_cache[path] = signature(image, rotations=False)
+                result.append(self._reference_cache[path])
+            return result
 
     def _hand_mask(self, name: str, roi: np.ndarray, offset: tuple[int, int]) -> np.ndarray | None:
         if self.hands is None:
@@ -390,7 +433,11 @@ class CheckoutGuard:
             if frame is None:
                 continue
             roi, offset = crop(frame, self.zones.get(name))
-            event = tracker.evaluate_now(roi, self._hand_mask(name, roi, offset))
+            hands = self._hand_mask(name, roi, offset)
+            if hands is not None and hands.any():
+                self.log(f"zona-{name}", f"provjera na zahtjev preskočena: ruka je u zoni ({reason})")
+                continue
+            event = tracker.evaluate_now(roi, hands)
             if event is not None:
                 self.log(f"zona-{name}", f"provjera na zahtjev ({reason}): {event.kind}")
                 self._on_zone_a_event(name, event, now, sync=False)
@@ -418,6 +465,7 @@ class CheckoutGuard:
         if self.zone_b_armed and now - self._taken_at <= TAKE_MERGE_SECONDS:
             self._taken_items.append(event.item)
             self._taken_befores.append(before)
+            self._warm_taken([event.item])
             return
         if self._pending_until is not None:
             self._wait_for_zone_b([event.item], now, [before])
@@ -482,29 +530,46 @@ class CheckoutGuard:
             parts = self.watchers[name].parts
             if parts > 1:
                 self.log(f"zona-{name}", f"{parts} promjene u zoni B (pomjereni drugi artikli/sjena) — uzimam najveću")
-        judge_started = time.monotonic()
-        verdict, problems, score_taken, score_product = self._judge(crops, change_ratio)
-        self.judge_ms = (time.monotonic() - judge_started) * 1000
-        self._judge_elapsed += self.judge_ms / 1000
-        for name, item, ratio in items:
-            self.store.save(
-                "placed", self.barcode, self.product_code, self.product_name, name,
-                crop_image=item, full_image=frames[name][0], change_ratio=ratio,
-                verdict=verdict, score_taken=score_taken, score_product=score_product,
-            )
-        self._dump(f"placed-{verdict}", {
-            "B-item": crops, "taken-item": self._taken_items,
-            "reference": self.debug["reference"] if self.debug else None,
-            "problems": problems, "score_taken": score_taken, "score_product": score_product,
-        })
-        if verdict == "mismatch":
-            for watcher in self.watchers.values():
-                watcher.rearm()
-            self._armed_at = now
-            self._set("mismatch", "Artikal ne odgovara: " + ", ".join(problems) + ". Uklonite ga i odložite skenirani artikal.")
-            return
-        message = "Artikal prvi put viđen, naučen." if verdict == "learned" else "Artikal odgovara."
-        self._finish("accepted", verdict, message)
+        self._job_id += 1
+        self._judging = True
+        self._set("judging", "Provjeravam artikal...")
+        snapshot = (list(self._taken_items), list(self._taken_befores), self.product_code)
+        threading.Thread(
+            target=self._judge_job, args=(self._job_id, items, crops, change_ratio, frames, now, snapshot), daemon=True,
+        ).start()
+
+    def _judge_job(self, job: int, items: list, crops: list, change_ratio: float, frames: dict, now: float, snapshot: tuple) -> None:
+        taken_items, taken_befores, product_code = snapshot
+        started = time.monotonic()
+        try:
+            verdict, problems, score_taken, score_product = self._judge(crops, change_ratio, taken_items, taken_befores, product_code)
+        except Exception as error:
+            print(f"Poređenje: {error}")
+            verdict, problems, score_taken, score_product = "mismatch", [f"greška u poređenju ({error})"], None, None
+        self.judge_ms = (time.monotonic() - started) * 1000
+        with self._lock:
+            if job != self._job_id:
+                return
+            self._judging = False
+            for name, item, ratio in items:
+                self.store.save(
+                    "placed", self.barcode, self.product_code, self.product_name, name,
+                    crop_image=item, full_image=frames[name][0], change_ratio=ratio,
+                    verdict=verdict, score_taken=score_taken, score_product=score_product,
+                )
+            self._dump(f"placed-{verdict}", {
+                "B-item": crops, "taken-item": self._taken_items,
+                "reference": self.debug["reference"] if self.debug else None,
+                "problems": problems, "score_taken": score_taken, "score_product": score_product,
+            })
+            if verdict == "mismatch":
+                for watcher in self.watchers.values():
+                    watcher.rearm()
+                self._armed_at = time.monotonic()
+                self._set("mismatch", "Artikal ne odgovara: " + ", ".join(problems) + ". Uklonite ga i odložite skenirani artikal.")
+                return
+            message = "Artikal prvi put viđen, naučen." if verdict == "learned" else "Artikal odgovara."
+            self._finish("accepted", verdict, message)
 
     def step(self) -> None:
         with self._lock:
@@ -516,4 +581,4 @@ class CheckoutGuard:
                 self._finish("rejected", "not_taken", "Kamera nije vidjela da je artikal uzet iz zone A. Vratite ga i pokušajte ponovo.")
             started = time.monotonic()
             self._watch_zone_b()
-            self.zone_b_ms = self.zone_b_ms * 0.9 + (time.monotonic() - started - self._judge_elapsed) * 100
+            self.zone_b_ms = self.zone_b_ms * 0.9 + (time.monotonic() - started) * 100

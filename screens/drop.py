@@ -92,6 +92,9 @@ class DropScreen(QWidget):
             return
         if guard.state == "mismatch":
             self._paint("problem", guard.message)
+        elif guard.state == "judging":
+            self.guide.set_step(2)
+            self._paint("ok", "Provjeravam artikal…")
         elif guard.state == "waiting_take":
             self.guide.set_step(0)
             self._paint("wait", "Uzmite artikal iz korpe i izvucite ruku...")

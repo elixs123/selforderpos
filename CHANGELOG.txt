@@ -1,6 +1,8 @@
 IZMJENE - samouslužna kasa
 
 2026-10-16
+- Zona A: dok je ruka vidljiva, kasa ne zaključuje uzimanje i čuva sliku od prije ruke kao "prije"; provjera na zahtjev se preskače ako je ruka u zoni.
+- Poređenje artikla ide u pozadini (kamere i ekran ne staju); reference i slike uzetog se pripremaju unaprijed, a rotacije slike računaju samo kad prva provjera padne.
 - Zona A: skeniranje okida provjeru svih A kamera (ne čeka mirovanje); kad jedna kamera vidi uzimanje, druga se odmah provjeri pa se za isti artikal dobiju dvije slike; izrez praznog prostora (gdje prije nije bilo ništa) se odbacuje.
 - Brzina: ruke se traže u zasebnoj niti (samo zone A, a zona B kad je aktivna), isti kadar kamere se ne obrađuje dvaput; dijagnostika pokazuje vrijeme po dijelovima.
 - Dijagnostika: panel "Zadnja uzimanja iz zone A" (prije, poslije, maska promjene s okvirom izreza) i oznaka verzije algoritma.
