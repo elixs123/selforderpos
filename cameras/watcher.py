@@ -103,6 +103,13 @@ class ZoneWatcher:
         self.armed = False
         self._stable_since = None
 
+    @property
+    def waiting_for_motion(self) -> bool:
+        return self._waiting_for_motion
+
+    def still_seconds(self, now: float) -> float:
+        return 0.0 if self._stable_since is None else now - self._stable_since
+
     def update(self, image: np.ndarray, now: float, ignore: np.ndarray | None = None) -> Placement | None:
         gray, self._scale = _gray(image, self.work_width)
         hand = _ignore(ignore, gray.shape)

@@ -55,6 +55,7 @@ class MainWindow(QMainWindow):
         self.store = ReceiptStore(database_path())
         self.cart = Cart()
         self.guard = None
+        self.diagnostics = None
         self.sale_id = ""
 
         self.screens = QStackedWidget()
@@ -98,6 +99,8 @@ class MainWindow(QMainWindow):
         shortcut.activated.connect(self.show_settings)
         quit_shortcut = QShortcut(QKeySequence("Ctrl+Shift+Q"), self)
         quit_shortcut.activated.connect(self.close)
+        diagnostics_shortcut = QShortcut(QKeySequence("Ctrl+Shift+D"), self)
+        diagnostics_shortcut.activated.connect(self.open_diagnostics)
         self.start_cameras()
 
     def start_cameras(self) -> None:
@@ -112,6 +115,14 @@ class MainWindow(QMainWindow):
             except Exception as error:
                 print(f"Kamere nisu pokrenute: {error}")
         self.scan.guard = self.guard
+
+    def open_diagnostics(self) -> None:
+        if self.diagnostics is None:
+            from screens.diagnostics import DiagnosticsWindow
+
+            self.diagnostics = DiagnosticsWindow(lambda: self.guard)
+        self.diagnostics.show()
+        self.diagnostics.raise_()
 
     def start_shopping(self) -> None:
         self.sale_id = f"{self.settings.register_id}-{datetime.now():%Y%m%d-%H%M%S}"
@@ -208,6 +219,8 @@ class MainWindow(QMainWindow):
         self.screens.setCurrentWidget(self.welcome)
 
     def closeEvent(self, event) -> None:
+        if self.diagnostics is not None:
+            self.diagnostics.close()
         if self.guard is not None:
             self.guard.stop()
         super().closeEvent(event)
@@ -238,6 +251,8 @@ def main() -> None:
     else:
         window = MainWindow()
         window.show()
+    if "--monitor" in sys.argv:
+        window.open_diagnostics()
     sys.exit(application.exec())
 
 

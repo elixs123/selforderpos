@@ -1,6 +1,7 @@
 import json
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -78,6 +79,14 @@ class CheckoutGuard:
         self._missing_references: set[str] = set()
         self._lock = threading.RLock()
         self._running = False
+        self.events: deque[tuple[int, str, str, str]] = deque(maxlen=300)
+        self.event_number = 0
+        self.last_problems: list[str] = []
+        self.armed_seconds = 0.0
+
+    def log(self, kind: str, text: str) -> None:
+        self.event_number += 1
+        self.events.append((self.event_number, datetime.now().strftime("%H:%M:%S"), kind, text))
 
     @property
     def tracker(self) -> BasketTracker:
@@ -178,6 +187,8 @@ class CheckoutGuard:
             log.write(json.dumps(info, ensure_ascii=False) + "\n")
 
     def _set(self, state: str, message: str) -> None:
+        if state != self.state or message != self.message:
+            self.log(state, message)
         self.state = state
         self.message = message
 
@@ -190,6 +201,7 @@ class CheckoutGuard:
     def scan(self, barcode: str, product_code: str | None, product_name: str | None) -> bool:
         with self._lock:
             self.barcode, self.product_code, self.product_name = barcode, product_code, product_name
+            self.log("scan", f"Skenirano {barcode} ({product_name or 'nepoznat artikal'}), šifra {product_code or '-'}")
             if self.busy:
                 self.message = "Prvo odložite prethodni artikal u zonu B."
                 return False
@@ -277,6 +289,8 @@ class CheckoutGuard:
             problems.append("nije isto što je uzeto iz zone A")
         if score_product is not None and score_product < threshold:
             problems.append("ne liči na skenirani artikal")
+        self.last_problems = problems
+        self.log("poredjenje", self.scores + ("   PROBLEM: " + ", ".join(problems) if problems else "   OK"))
         if problems:
             return "mismatch", problems, score_taken, score_product
         if score_product is None:
@@ -317,6 +331,7 @@ class CheckoutGuard:
 
     def _on_zone_a_event(self, camera: str, event, now: float) -> None:
         self.last_event_a = f"{camera} {event.kind}: {self.trackers[camera].last_note}"
+        self.log(f"zona-{camera}", self.last_event_a)
         self._dump(f"zone-{camera}-{event.kind}", {f"{camera}-item": event.item})
         occupancy = max(tracker.occupancy for tracker in self.trackers.values())
         if event.kind == "empty":

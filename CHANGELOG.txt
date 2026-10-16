@@ -1,5 +1,8 @@
 IZMJENE - samouslužna kasa
 
+2026-10-16
+- Dijagnostika kamera: prozor uz kasu (python app.py --monitor ili Ctrl+Shift+D) pokazuje kamere, tok artikla, zašto zona B nije prepoznala artikal, poređenje slika i događaje; slike i log se spremaju u data/debug.
+
 2026-10-09
 - Dizajn ekrana (7 ekrana) u Claude Design.
 
