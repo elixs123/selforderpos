@@ -45,13 +45,16 @@ def _prepare(image: np.ndarray) -> np.ndarray:
 
 def color_histogram(image: np.ndarray) -> np.ndarray:
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    histogram = cv2.calcHist([hsv], [0, 1], None, [30, 32], [0, 180, 0, 256])
-    cv2.normalize(histogram, histogram)
-    return histogram
+    histogram = cv2.calcHist([hsv], [0, 1], None, [12, 4], [0, 180, 0, 256]).ravel()
+    return histogram / max(1.0, float(histogram.sum()))
+
+
+def histogram_overlap(first: np.ndarray, second: np.ndarray) -> float:
+    return float(np.minimum(first, second).sum())
 
 
 def color_similarity(first: np.ndarray, second: np.ndarray) -> float:
-    return max(0.0, cv2.compareHist(color_histogram(first), color_histogram(second), cv2.HISTCMP_CORREL))
+    return histogram_overlap(color_histogram(first), color_histogram(second))
 
 
 def shape_similarity(first: np.ndarray, second: np.ndarray) -> float:
@@ -88,7 +91,7 @@ def signature(image: np.ndarray, rotations: bool = True) -> Signature:
 
 
 def compare(query: Signature, reference: Signature) -> float:
-    color = max(0.0, cv2.compareHist(query.histogram, reference.histogram, cv2.HISTCMP_CORREL))
+    color = histogram_overlap(query.histogram, reference.histogram)
     if query.vectors and reference.vectors:
         ai = max(float(first @ second) for first in query.vectors for second in reference.vectors)
         return round(0.7 * ai + 0.3 * color, 3)

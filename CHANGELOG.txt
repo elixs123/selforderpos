@@ -1,6 +1,12 @@
 IZMJENE - samouslužna kasa
 
 2026-10-16
+- Poređenje uzeto/odloženo: boja se sad poredi grubim histogramom (presjek), ne korelacijom finog histograma koja je padala na 0.03-0.39 zbog bijelog balansa i susjedne flaše u izrezu. Isti artikal sad dobije 0.75 umjesto 0.56-0.63, a drugi artikal ostaje oko 0.45.
+- Prag sličnosti spušten na 0.6 (zadano u embedder.py i CAM_MATCH_THRESHOLD u .env). Na Windowsu u .env treba isto postaviti CAM_MATCH_THRESHOLD=0.6 (ili obrisati red).
+- Reference starije od zadnje izmjene zona (cameras/zones.json) se ne koriste (kamere su pomjerene, stari snimci su sa strane); artikal se ponovo nauči pri prvom odobrenom odlaganju. Dijagnostika piše koliko starih referenci se preskače.
+- Zona A: veliki uzeti artikal ili korpa (do 95% zone) se prihvata kad je prazno mjesto vidljivo; izrez preko 60% zone se i dalje odbacuje kad se cijela zona razlikuje od podloge (promjena svjetla).
+- Zona A: poravnanje svjetla kamere (promjena osvjetljenja ne pravi bijeli izrez), izrez ne smije biti prevelik ni jednolično bijel, pomjeren artikal u blizini se ne računa kao uzet; algoritam v6.
+- CAM_MATCH_THRESHOLD iz .env ponovo radi kad je prag u postavkama 0.
 - Zona A: dok je ruka vidljiva, kasa ne zaključuje uzimanje i čuva sliku od prije ruke kao "prije"; provjera na zahtjev se preskače ako je ruka u zoni.
 - Poređenje artikla ide u pozadini (kamere i ekran ne staju); reference i slike uzetog se pripremaju unaprijed, a rotacije slike računaju samo kad prva provjera padne.
 - Zona A: skeniranje okida provjeru svih A kamera (ne čeka mirovanje); kad jedna kamera vidi uzimanje, druga se odmah provjeri pa se za isti artikal dobiju dvije slike; izrez praznog prostora (gdje prije nije bilo ništa) se odbacuje.

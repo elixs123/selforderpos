@@ -8,6 +8,8 @@ if str(CAMERAS_FOLDER) not in sys.path:
 
 from settings import Settings
 
+ENV_THRESHOLD = os.environ.get("CAM_MATCH_THRESHOLD", "")
+
 
 class CameraSetupError(Exception):
     pass
@@ -17,6 +19,8 @@ def start_guard(settings: Settings):
     os.environ["CAM_MODEL"] = settings.camera_model
     if settings.match_threshold > 0:
         os.environ["CAM_MATCH_THRESHOLD"] = str(settings.match_threshold)
+    elif ENV_THRESHOLD:
+        os.environ["CAM_MATCH_THRESHOLD"] = ENV_THRESHOLD
     else:
         os.environ.pop("CAM_MATCH_THRESHOLD", None)
     from config import CameraSettings, build_rtsp_url

@@ -26,7 +26,7 @@ MODELS = {
         "dinov2",
         "https://huggingface.co/onnx-community/dinov2-small/resolve/main/onnx/model.onnx",
         "dinov2-small.onnx",
-        0.65,
+        0.6,
         "88 MB",
     ),
     "mobilenet": ModelSpec(

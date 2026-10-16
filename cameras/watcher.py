@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-VERSION = "zona A v5 (obje kamere, skeniranje kao okidač, bez izreza praznog prostora)"
+VERSION = "zona A v6 (poravnanje svjetla, provjera sadržaja izreza, pomjeren artikal se ne računa)"
 PIXEL_THRESHOLD = 25
 EMPTY_SHARE = 0.6
 
@@ -47,6 +47,49 @@ def _ratio(mask: np.ndarray) -> float:
 
 PART_MIN_SHARE = 0.002
 OCCUPIED_SHARE = 0.25
+ALIGN_RANGE = 45
+MAX_ITEM_SHARE = 0.6
+FREED_ITEM_SHARE = 0.95
+WHOLE_ZONE_SHARE = 0.9
+MIN_TEXTURE = 6.0
+WHITE_LEVEL = 200
+STILL_THERE = 0.9
+NEAR_SHARE = 0.4
+
+
+def align(reference: np.ndarray, image: np.ndarray) -> np.ndarray:
+    difference = image.astype(np.int16) - reference.astype(np.int16)
+    close = np.abs(difference).max(axis=2) < ALIGN_RANGE
+    if close.mean() < 0.2:
+        return reference
+    offset = np.median(difference[close], axis=0).astype(np.int16)
+    if np.abs(offset).max() < 4:
+        return reference
+    return np.clip(reference.astype(np.int16) + offset, 0, 255).astype(np.uint8)
+
+
+def reject_reason(old_gray: np.ndarray, gray: np.ndarray, background: np.ndarray, box: tuple[int, int, int, int],
+                  max_share: float = MAX_ITEM_SHARE) -> str | None:
+    x, y, w, h = box
+    if w * h > max_share * gray.shape[0] * gray.shape[1]:
+        return "izrez je prevelik (promjena svjetla ili cijela zona)"
+    if not was_occupied(old_gray, background, box):
+        return "izrez je prazna podloga"
+    patch = old_gray[y:y + h, x:x + w]
+    if patch.size == 0:
+        return "izrez je prazan"
+    mean, spread = cv2.meanStdDev(patch)
+    if float(spread.max()) < MIN_TEXTURE and float(mean.min()) > WHITE_LEVEL:
+        return "izrez je jednolična bijela slika"
+    height, width = gray.shape[:2]
+    pad_x, pad_y = round(NEAR_SHARE * w), round(NEAR_SHARE * h)
+    left, top = max(0, x - pad_x), max(0, y - pad_y)
+    window = gray[top:min(height, y + h + pad_y), left:min(width, x + w + pad_x)]
+    if window.shape[0] > h and window.shape[1] > w and w > 3 and h > 3:
+        match = cv2.matchTemplate(window, patch, cv2.TM_CCOEFF_NORMED)
+        if float(np.nan_to_num(match).max()) >= STILL_THERE:
+            return "isti artikal je još tu, samo pomjeren"
+    return None
 CORE_SHARE = 0.5
 MIN_THICKNESS = 3
 
@@ -67,16 +110,10 @@ def thick_blobs(mask: np.ndarray) -> list[tuple[int, tuple[int, int, int, int]]]
     return sorted(parts, reverse=True)
 
 
-def taken_object(old_gray: np.ndarray, gray: np.ndarray, background: np.ndarray,
-                 old_ignore: np.ndarray | None) -> tuple[tuple[int, int, int, int] | None, int]:
-    boxes = taken_candidates(old_gray, gray, background, old_ignore)
-    return (boxes[0], len(boxes)) if boxes else (None, 0)
-
-
-def taken_candidates(old_gray: np.ndarray, gray: np.ndarray, background: np.ndarray,
+def taken_candidates(old_gray: np.ndarray, gray: np.ndarray, background_old: np.ndarray, background_new: np.ndarray,
                      old_ignore: np.ndarray | None) -> list[tuple[int, int, int, int]]:
-    objects = _difference(old_gray, background, old_ignore)
-    now_empty = (_distance(gray, background) < PIXEL_THRESHOLD).astype(np.uint8) * 255
+    objects = _difference(old_gray, background_old, old_ignore)
+    now_empty = (_distance(gray, background_new) < PIXEL_THRESHOLD).astype(np.uint8) * 255
     return [box for _, box in thick_blobs(cv2.bitwise_and(objects, now_empty))]
 
 
@@ -172,7 +209,7 @@ class ZoneWatcher:
         self._previous, self._previous_ignore = gray, hand
         if self._baseline is None or self._baseline.shape != gray.shape:
             return None
-        change_mask = _difference(gray, self._baseline, hand)
+        change_mask = _difference(gray, align(self._baseline, gray), hand)
         self.change_ratio = _ratio(change_mask)
         self.last_mask = change_mask
         if not self.armed:
@@ -298,32 +335,46 @@ class BasketTracker:
             self._moved = True
             self.last_note = "ruka je u zoni, čekam da je povučete"
             return None
-        mask = self._clean(_difference(gray, self._stable_gray, hand, self._stable_ignore))
+        old_gray, old_image = self._stable_gray, self._stable_image
+        mask = self._clean(_difference(gray, align(old_gray, gray), hand, self._stable_ignore))
         change = _ratio(mask)
         self.last_mask = mask
-        old_gray, old_image = self._stable_gray, self._stable_image
         self._stable_ignore_old = self._stable_ignore
         self._stable_gray, self._stable_image, self._stable_ignore = gray, image.copy(), hand
-        self.occupancy = _ratio(self._clean(_difference(gray, self._background, hand)))
+        background_old = align(self._background, old_gray)
+        background_new = align(self._background, gray)
+        self.occupancy = _ratio(self._clean(_difference(gray, background_new, hand)))
         if change < self.change_min:
             self.last_note = f"premala promjena {change:.2%}"
             return None
         selected = mask > 0
-        old_was_empty = float((_distance(old_gray, self._background)[selected] < PIXEL_THRESHOLD).mean())
-        new_is_empty = float((_distance(gray, self._background)[selected] < PIXEL_THRESHOLD).mean())
+        old_was_empty = float((_distance(old_gray, background_old)[selected] < PIXEL_THRESHOLD).mean())
+        new_is_empty = float((_distance(gray, background_new)[selected] < PIXEL_THRESHOLD).mean())
         self.last_note = f"promjena {change:.2%}, prije prazno {old_was_empty:.0%}, sad prazno {new_is_empty:.0%}"
         if old_was_empty >= EMPTY_SHARE:
             return BasketEvent("added", None, change)
-        candidates = taken_candidates(old_gray, gray, self._background, self._stable_ignore_old)
+        candidates = taken_candidates(old_gray, gray, background_old, background_new, self._stable_ignore_old)
         source = f"prazno mjesto nađeno ({len(candidates)})"
+        max_share = FREED_ITEM_SHARE
+        if float((_distance(old_gray, background_old) >= PIXEL_THRESHOLD).mean()) >= WHOLE_ZONE_SHARE:
+            max_share = MAX_ITEM_SHARE
         if not candidates:
             candidates = [box for _, box in thick_blobs(mask)]
             source = f"podloga nije vidljiva (puna korpa), najdeblja promjena ({len(candidates)})"
-        found = next((box for box in candidates if was_occupied(old_gray, self._background, box)), None)
+            max_share = MAX_ITEM_SHARE
+        found, reasons = None, []
+        for box in candidates:
+            reason = reject_reason(old_gray, gray, background_old, box, max_share)
+            if reason is None:
+                found = box
+                break
+            reasons.append(reason)
         self.parts = len(candidates)
         if found is None:
-            self.last_note += f", {source}, ali je izrez prazna podloga — preskačem"
+            self.last_note += f", {source}, odbačeno: {'; '.join(reasons) or 'nema kandidata'}"
             return None
+        if reasons:
+            self.last_note += f", preskočeno {len(reasons)} ({reasons[0]})"
         self.last_note += f", {source}, uzimam najveće"
         x, y, w, h = found
         padding = 6

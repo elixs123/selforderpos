@@ -220,7 +220,7 @@ def test_basket_tracker_ignores_still_basket():
     assert feed(tracker, full, 8, count=10) == []
 
 
-def test_ignored_hand_does_not_block_taking():
+def test_taking_waits_until_hand_leaves():
     from watcher import BasketTracker
 
     tracker = BasketTracker(stable_seconds=0.5)
@@ -244,6 +244,9 @@ def test_ignored_hand_does_not_block_taking():
         event = tracker.update(jitter, 5.5 + step * 0.3, ignore)
         if event is not None:
             events.append(event)
+    assert events == []
+    assert "ruka" in tracker.last_note
+    events = feed(tracker, basket([(40, 40)]), 8)
     assert [event.kind for event in events] == ["taken"]
 
 

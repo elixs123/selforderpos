@@ -14,7 +14,7 @@ from reader import CameraReader
 from samples import SampleStore
 from similarity import Signature, compare, match_threshold, method_name, signature
 from watcher import BasketTracker, ZoneWatcher, main_box
-from zones import crop, load_zones
+from zones import crop, load_zones, zones_changed_at
 
 TIMEOUT_SECONDS = 30
 TAKEN_MAX_AGE = 60
@@ -53,6 +53,7 @@ class CheckoutGuard:
         self.cameras_a = sorted(name for name in readers if zone_of(name) == "A")
         self.cameras_b = sorted(name for name in readers if zone_of(name) == "B")
         self.zones = load_zones()
+        self.references_since = zones_changed_at()
         self.trackers = {name: BasketTracker() for name in self.cameras_a}
         self.watchers = {name: ZoneWatcher() for name in self.cameras_b}
         self.store = SampleStore()
@@ -350,12 +351,14 @@ class CheckoutGuard:
             score_product = best[0] if best else None
             rotated = True
         taken_index = best_taken[1] if best_taken else 0
-        sizes = sorted(self.store.reference_sizes(product_code))
+        sizes = sorted(self.store.reference_sizes(product_code, since=self.references_since))
+        old_references = self.store.old_reference_count(product_code, self.references_since)
+        old_note = f", {old_references} starih ne računam" if old_references else ""
         middle = sizes[len(sizes) // 2] if sizes else 0
         size = f"{change_ratio / middle:.1f}x" if middle > 0 else "-"
         self.scores = (
             f"uzeto->odlozeno: {'-' if score_taken is None else f'{score_taken:.2f}'}   "
-            f"skenirano->odlozeno: {'-' if score_product is None else f'{score_product:.2f}'} ({len(references)} ref)   "
+            f"skenirano->odlozeno: {'-' if score_product is None else f'{score_product:.2f}'} ({len(references)} ref{old_note})   "
             f"velicina: {size}   prag {threshold} ({method_name()}{', sa rotacijama' if rotated else ''})   "
             f"kamera A: {len(taken)}, B: {len(queries)}"
         )
@@ -387,7 +390,7 @@ class CheckoutGuard:
     def _reference_signatures(self, product_code: str | None) -> list[Signature]:
         with self._reference_lock:
             result = []
-            for path in self.store.reference_paths(product_code, limit=20):
+            for path in self.store.reference_paths(product_code, limit=20, since=self.references_since):
                 if path in self._missing_references:
                     continue
                 if path not in self._reference_cache:

@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -15,6 +16,12 @@ def load_zones() -> dict[str, Zone]:
         return {}
     data = json.loads(ZONES_PATH.read_text(encoding="utf-8"))
     return {name: tuple(values) for name, values in data.items()}
+
+
+def zones_changed_at() -> str:
+    if not ZONES_PATH.exists():
+        return ""
+    return datetime.fromtimestamp(ZONES_PATH.stat().st_mtime).isoformat(timespec="seconds")
 
 
 def save_zone(name: str, zone: Zone) -> None:

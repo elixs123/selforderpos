@@ -55,7 +55,7 @@ LABELS = {
     "camera_b2_host": "IP druge kamere B (prazno = nema)",
     "camera_channel": "Kanal (101 ili 102)",
     "camera_model": "AI model",
-    "match_threshold": "Prag sličnosti (0 = zadano)",
+    "match_threshold": "Prag sličnosti (0 = iz .env ili zadano)",
 }
 
 CHOICES = {"camera_model": ["dinov2", "mobilenet"]}

@@ -35,9 +35,16 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 REFERENCES = """
-SELECT crop_path FROM samples
-WHERE product_code = ? AND event = 'placed' AND verdict IN ('learned', 'ok') AND crop_path IS NOT NULL
+SELECT {column} FROM samples
+WHERE product_code = ? AND event = 'placed' AND verdict IN ('learned', 'ok') AND {column} IS NOT NULL
+AND created_at >= ?
 ORDER BY id DESC LIMIT ?
+"""
+
+OLD_REFERENCES = """
+SELECT COUNT(*) FROM samples
+WHERE product_code = ? AND event = 'placed' AND verdict IN ('learned', 'ok') AND crop_path IS NOT NULL
+AND created_at < ?
 """
 
 
@@ -89,11 +96,18 @@ class SampleStore:
             )
             return cursor.lastrowid
 
-    def reference_paths(self, product_code: str | None, limit: int = 10) -> list[str]:
+    def reference_paths(self, product_code: str | None, limit: int = 10, since: str = "") -> list[str]:
         if not product_code:
             return []
+        query = REFERENCES.format(column="crop_path")
         with closing(sqlite3.connect(self.database)) as connection:
-            return [row[0] for row in connection.execute(REFERENCES, (product_code, limit)).fetchall()]
+            return [row[0] for row in connection.execute(query, (product_code, since, limit)).fetchall()]
+
+    def old_reference_count(self, product_code: str | None, since: str) -> int:
+        if not product_code or not since:
+            return 0
+        with closing(sqlite3.connect(self.database)) as connection:
+            return connection.execute(OLD_REFERENCES, (product_code, since)).fetchone()[0]
 
     def load_image(self, relative_path: str) -> np.ndarray | None:
         path = self.folder / relative_path
@@ -105,12 +119,12 @@ class SampleStore:
         images = [self.load_image(path) for path in self.reference_paths(product_code, limit)]
         return [image for image in images if image is not None]
 
-    def reference_sizes(self, product_code: str | None, limit: int = 10) -> list[float]:
+    def reference_sizes(self, product_code: str | None, limit: int = 10, since: str = "") -> list[float]:
         if not product_code:
             return []
-        query = REFERENCES.replace("SELECT crop_path", "SELECT change_ratio").replace("AND crop_path IS NOT NULL", "AND change_ratio IS NOT NULL")
+        query = REFERENCES.format(column="change_ratio")
         with closing(sqlite3.connect(self.database)) as connection:
-            return [row[0] for row in connection.execute(query, (product_code, limit)).fetchall()]
+            return [row[0] for row in connection.execute(query, (product_code, since, limit)).fetchall()]
 
     def count(self) -> int:
         with closing(sqlite3.connect(self.database)) as connection:
