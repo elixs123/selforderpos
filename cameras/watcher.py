@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-VERSION = "zona A v4 (najdeblja promjena, prazno mjesto)"
+VERSION = "zona A v5 (obje kamere, skeniranje kao okidač, bez izreza praznog prostora)"
 PIXEL_THRESHOLD = 25
 EMPTY_SHARE = 0.6
 
@@ -46,6 +46,7 @@ def _ratio(mask: np.ndarray) -> float:
 
 
 PART_MIN_SHARE = 0.002
+OCCUPIED_SHARE = 0.25
 CORE_SHARE = 0.5
 MIN_THICKNESS = 3
 
@@ -68,10 +69,21 @@ def thick_blobs(mask: np.ndarray) -> list[tuple[int, tuple[int, int, int, int]]]
 
 def taken_object(old_gray: np.ndarray, gray: np.ndarray, background: np.ndarray,
                  old_ignore: np.ndarray | None) -> tuple[tuple[int, int, int, int] | None, int]:
+    boxes = taken_candidates(old_gray, gray, background, old_ignore)
+    return (boxes[0], len(boxes)) if boxes else (None, 0)
+
+
+def taken_candidates(old_gray: np.ndarray, gray: np.ndarray, background: np.ndarray,
+                     old_ignore: np.ndarray | None) -> list[tuple[int, int, int, int]]:
     objects = _difference(old_gray, background, old_ignore)
     now_empty = (_distance(gray, background) < PIXEL_THRESHOLD).astype(np.uint8) * 255
-    parts = thick_blobs(cv2.bitwise_and(objects, now_empty))
-    return (parts[0][1], len(parts)) if parts else (None, 0)
+    return [box for _, box in thick_blobs(cv2.bitwise_and(objects, now_empty))]
+
+
+def was_occupied(old_gray: np.ndarray, background: np.ndarray, box: tuple[int, int, int, int]) -> bool:
+    x, y, w, h = box
+    region = _distance(old_gray, background)[y:y + h, x:x + w]
+    return region.size > 0 and float((region >= PIXEL_THRESHOLD).mean()) >= OCCUPIED_SHARE
 
 
 def main_box(mask: np.ndarray) -> tuple[tuple[int, int, int, int] | None, int]:
@@ -265,6 +277,23 @@ class BasketTracker:
         if not self._moved:
             return None
         self._moved = False
+        return self._evaluate(gray, image, hand, scale)
+
+    @property
+    def moved(self) -> bool:
+        return self._moved
+
+    def evaluate_now(self, image: np.ndarray, ignore: np.ndarray | None = None) -> BasketEvent | None:
+        if self._background is None or not self._moved or self._stable_gray is None:
+            return None
+        gray, scale = _gray(image, self.work_width)
+        if gray.shape != self._stable_gray.shape:
+            return None
+        self._moved = False
+        self._stable_since = None
+        return self._evaluate(gray, image, _ignore(ignore, gray.shape), scale)
+
+    def _evaluate(self, gray: np.ndarray, image: np.ndarray, hand: np.ndarray | None, scale: float) -> BasketEvent | None:
         mask = self._clean(_difference(gray, self._stable_gray, hand, self._stable_ignore))
         change = _ratio(mask)
         self.last_mask = mask
@@ -281,14 +310,17 @@ class BasketTracker:
         self.last_note = f"promjena {change:.2%}, prije prazno {old_was_empty:.0%}, sad prazno {new_is_empty:.0%}"
         if old_was_empty >= EMPTY_SHARE:
             return BasketEvent("added", None, change)
-        found, self.parts = taken_object(old_gray, gray, self._background, self._stable_ignore_old)
-        if found is not None:
-            self.last_note += f", prazno mjesto nađeno ({self.parts}), uzimam najveće"
-        else:
-            found, self.parts = main_box(mask)
-            self.last_note += f", podloga nije vidljiva (puna korpa), uzimam najdeblju promjenu ({self.parts})"
+        candidates = taken_candidates(old_gray, gray, self._background, self._stable_ignore_old)
+        source = f"prazno mjesto nađeno ({len(candidates)})"
+        if not candidates:
+            candidates = [box for _, box in thick_blobs(mask)]
+            source = f"podloga nije vidljiva (puna korpa), najdeblja promjena ({len(candidates)})"
+        found = next((box for box in candidates if was_occupied(old_gray, self._background, box)), None)
+        self.parts = len(candidates)
         if found is None:
+            self.last_note += f", {source}, ali je izrez prazna podloga — preskačem"
             return None
+        self.last_note += f", {source}, uzimam najveće"
         x, y, w, h = found
         padding = 6
         left, top = max(0, round((x - padding) * scale)), max(0, round((y - padding) * scale))

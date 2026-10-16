@@ -245,6 +245,7 @@ class CheckoutGuard:
                 self.message = "Prvo odložite prethodni artikal u zonu B."
                 return False
             now = time.monotonic()
+            self._force_takes(now)
             self._takes = [take for take in self._takes if now - take[2] <= TAKEN_MAX_AGE]
             recent_take = bool(self._takes)
             if not self.zone_a_ready:
@@ -381,7 +382,20 @@ class CheckoutGuard:
             if event is not None:
                 self._on_zone_a_event(name, event, now)
 
-    def _on_zone_a_event(self, camera: str, event, now: float) -> None:
+    def _force_takes(self, now: float, source: str | None = None, reason: str = "skeniranje") -> None:
+        for name, tracker in self.trackers.items():
+            if name == source or not tracker.moved or tracker.motion_ratio > tracker.motion_max * 3:
+                continue
+            frame = self.latest(name)
+            if frame is None:
+                continue
+            roi, offset = crop(frame, self.zones.get(name))
+            event = tracker.evaluate_now(roi, self._hand_mask(name, roi, offset))
+            if event is not None:
+                self.log(f"zona-{name}", f"provjera na zahtjev ({reason}): {event.kind}")
+                self._on_zone_a_event(name, event, now, sync=False)
+
+    def _on_zone_a_event(self, camera: str, event, now: float, sync: bool = True) -> None:
         self.last_event_a = f"{camera} {event.kind}: {self.trackers[camera].last_note}"
         self.log(f"zona-{camera}", self.last_event_a)
         before = self.trackers[camera].last_before.copy() if event.kind == "taken" and self.trackers[camera].last_before is not None else None
@@ -407,10 +421,14 @@ class CheckoutGuard:
             return
         if self._pending_until is not None:
             self._wait_for_zone_b([event.item], now, [before])
+            if sync:
+                self._force_takes(now, source=camera, reason=f"{camera} je vidjela uzimanje")
             return
         if self.zone_b_armed:
             return
         self._takes.append((event.item, before, now))
+        if sync:
+            self._force_takes(now, source=camera, reason=f"{camera} je vidjela uzimanje")
         if len(self._takes) > 1:
             self.log(f"zona-{camera}", f"{len(self._takes)} uzimanja prije skeniranja — porediću sa svima i uzeti najsličnije")
         self._set("taken", "Artikal uzet iz zone A. Skenirajte ga.")
