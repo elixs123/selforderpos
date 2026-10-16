@@ -121,7 +121,7 @@ class DiagnosticsWindow(QWidget):
         compare_card, compare_layout = card("ZADNJE POREĐENJE")
         thumbs = QHBoxLayout()
         self.thumbs = []
-        for caption in ("Uzeto iz A", "Odloženo u B", "Najsličnija referenca"):
+        for caption in ("Uzeto iz A", "Odloženo u B", "Najsličnija referenca", "Zona A prije uzimanja"):
             column = QVBoxLayout()
             image = QLabel()
             image.setFixedSize(THUMB_SIZE, THUMB_SIZE)
@@ -246,7 +246,7 @@ class DiagnosticsWindow(QWidget):
         if guard.hand_shapes.get(name):
             cv2.polylines(frame, guard.hand_shapes[name], True, YELLOW, 3)
         reader = guard.readers.get(name)
-        cv2.putText(frame, f"{name}  {reader.fps:.1f} FPS", (12, 34), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+        cv2.putText(frame, f"{name}  {width}x{height}  {reader.fps:.1f} FPS", (12, 34), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
         label.setPixmap(to_pixmap(frame, label.width(), label.height()))
 
     def refresh(self) -> None:
@@ -272,6 +272,10 @@ class DiagnosticsWindow(QWidget):
             if number > self.seen_event:
                 self.add_event(clock, kind, text)
                 self.seen_event = number
+        before = next((t.last_before for t in guard.trackers.values() if t.last_before is not None), None)
+        if before is not None and before is not getattr(self, "shown_before", None):
+            self.shown_before = before
+            self.thumbs[3][0].setPixmap(to_pixmap(before, THUMB_SIZE, THUMB_SIZE))
         if guard.debug is not None and guard.debug_number != self.seen_debug:
             self.seen_debug = guard.debug_number
             self.show_comparison(guard)
@@ -315,7 +319,7 @@ class DiagnosticsWindow(QWidget):
         debug = guard.debug
         threshold = debug["threshold"]
         values = [(debug["taken"], None), (debug["placed"], debug["score_taken"]), (debug["reference"], debug["score_product"])]
-        for (label, text, caption), (image, score) in zip(self.thumbs, values):
+        for (label, text, caption), (image, score) in zip(self.thumbs[:3], values):
             if image is None or not getattr(image, "size", 0):
                 label.clear()
                 label.setText("nema slike")

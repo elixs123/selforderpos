@@ -334,7 +334,11 @@ class CheckoutGuard:
     def _on_zone_a_event(self, camera: str, event, now: float) -> None:
         self.last_event_a = f"{camera} {event.kind}: {self.trackers[camera].last_note}"
         self.log(f"zona-{camera}", self.last_event_a)
-        self._dump(f"zone-{camera}-{event.kind}", {f"{camera}-item": event.item})
+        before = self.trackers[camera].last_before if event.kind == "taken" else None
+        self._dump(f"zone-{camera}-{event.kind}", {f"{camera}-item": event.item, f"{camera}-before": before})
+        if event.kind == "taken" and event.item is not None:
+            height, width = event.item.shape[:2]
+            self.log(f"zona-{camera}", f"izrez uzetog artikla {width}x{height} px")
         occupancy = max(tracker.occupancy for tracker in self.trackers.values())
         if event.kind == "empty":
             if self.zone_a_ready:

@@ -188,6 +188,7 @@ class BasketTracker:
         self.last_note = "-"
         self.last_mask: np.ndarray | None = None
         self.last_box: tuple[int, int, int, int] | None = None
+        self.last_before: np.ndarray | None = None
         self.parts = 0
         self._previous: np.ndarray | None = None
         self._previous_ignore: np.ndarray | None = None
@@ -263,4 +264,6 @@ class BasketTracker:
         left, top = max(0, round((x - padding) * scale)), max(0, round((y - padding) * scale))
         right, bottom = round((x + w + padding) * scale), round((y + h + padding) * scale)
         self.last_box = (left, top, right - left, bottom - top)
+        self.last_before = old_image.copy()
+        cv2.rectangle(self.last_before, (left, top), (right, bottom), (255, 170, 60), 2)
         return BasketEvent("taken", old_image[top:bottom, left:right].copy(), change)
