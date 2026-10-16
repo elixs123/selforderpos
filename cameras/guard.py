@@ -70,8 +70,9 @@ class CheckoutGuard:
         self.debug_folder: Path | None = None
         self._outcome_number = 0
         self._dump_number = 0
-        self._last_taken: tuple[list[np.ndarray], float] | None = None
+        self._takes: list[tuple[np.ndarray, np.ndarray | None, float]] = []
         self._taken_items: list[np.ndarray] = []
+        self._taken_befores: list[np.ndarray | None] = []
         self._taken_at = 0.0
         self._pending_until: float | None = None
         self._armed_at = 0.0
@@ -208,7 +209,8 @@ class CheckoutGuard:
                 self.message = "Prvo odložite prethodni artikal u zonu B."
                 return False
             now = time.monotonic()
-            recent_take = self._last_taken is not None and now - self._last_taken[1] <= TAKEN_MAX_AGE
+            self._takes = [take for take in self._takes if now - take[2] <= TAKEN_MAX_AGE]
+            recent_take = bool(self._takes)
             if not self.zone_a_ready:
                 self._finish("rejected", "not_ready", "Kamera još uči praznu zonu A. Sačekajte trenutak.")
                 return False
@@ -220,9 +222,8 @@ class CheckoutGuard:
                 return False
             self.scores = "-"
             if recent_take:
-                items, taken_at = self._last_taken
-                self._last_taken = None
-                self._wait_for_zone_b(items, taken_at)
+                takes, self._takes = self._takes, []
+                self._wait_for_zone_b([take[0] for take in takes], takes[-1][2], [take[1] for take in takes])
                 return True
             self._pending_until = now + TAKEN_WAIT
             self._set("waiting_take", "Čekam da kamera vidi koji je artikal uzet iz zone A...")
@@ -245,9 +246,10 @@ class CheckoutGuard:
             self._pending_until = None
             self._finish("accepted", "staff", "Osoblje je odobrilo artikal.")
 
-    def _wait_for_zone_b(self, items: list[np.ndarray], taken_at: float) -> None:
+    def _wait_for_zone_b(self, items: list[np.ndarray], taken_at: float, befores: list | None = None) -> None:
         self._pending_until = None
         self._taken_items = list(items)
+        self._taken_befores = list(befores) if befores else [None] * len(items)
         self._taken_at = taken_at
         for index, item in enumerate(items):
             self.store.save("taken", self.barcode, self.product_code, self.product_name, f"A{index + 1}", crop_image=item)
@@ -260,8 +262,11 @@ class CheckoutGuard:
 
     def _judge(self, items: list[np.ndarray], change_ratio: float) -> tuple[str, list[str], float | None, float | None]:
         queries = [signature(item) for item in items]
-        taken = [signature(item, rotations=False) for item in self._taken_items if item is not None and item.size]
-        score_taken = max((compare(query, other) for query in queries for other in taken), default=None)
+        taken = [(index, signature(item, rotations=False)) for index, item in enumerate(self._taken_items)
+                 if item is not None and item.size]
+        best_taken = max(((compare(query, other), index) for query in queries for index, other in taken), default=None)
+        score_taken = best_taken[0] if best_taken else None
+        taken_index = best_taken[1] if best_taken else 0
         references = self._reference_signatures(self.product_code)
         scored = [(compare(query, reference), reference) for query in queries for reference in references]
         best = max(scored, key=lambda pair: pair[0], default=None)
@@ -277,7 +282,8 @@ class CheckoutGuard:
         )
         self.debug_number += 1
         self.debug = {
-            "taken": self._taken_items[0] if self._taken_items else None,
+            "taken": self._taken_items[taken_index] if self._taken_items else None,
+            "before": self._taken_befores[taken_index] if taken_index < len(self._taken_befores) else None,
             "placed": items[0] if items else None,
             "reference": best[1].image if best else None,
             "score_taken": score_taken,
@@ -334,7 +340,7 @@ class CheckoutGuard:
     def _on_zone_a_event(self, camera: str, event, now: float) -> None:
         self.last_event_a = f"{camera} {event.kind}: {self.trackers[camera].last_note}"
         self.log(f"zona-{camera}", self.last_event_a)
-        before = self.trackers[camera].last_before if event.kind == "taken" else None
+        before = self.trackers[camera].last_before.copy() if event.kind == "taken" and self.trackers[camera].last_before is not None else None
         self._dump(f"zone-{camera}-{event.kind}", {f"{camera}-item": event.item, f"{camera}-before": before})
         if event.kind == "taken" and event.item is not None:
             height, width = event.item.shape[:2]
@@ -353,16 +359,16 @@ class CheckoutGuard:
         self.basket_status = f"uzet artikal, ostalo {occupancy:.0%}"
         if self.zone_b_armed and now - self._taken_at <= TAKE_MERGE_SECONDS:
             self._taken_items.append(event.item)
+            self._taken_befores.append(before)
             return
         if self._pending_until is not None:
-            self._wait_for_zone_b([event.item], now)
+            self._wait_for_zone_b([event.item], now, [before])
             return
         if self.zone_b_armed:
             return
-        if self._last_taken is not None and now - self._last_taken[1] <= TAKE_MERGE_SECONDS:
-            self._last_taken[0].append(event.item)
-        else:
-            self._last_taken = ([event.item], now)
+        self._takes.append((event.item, before, now))
+        if len(self._takes) > 1:
+            self.log(f"zona-{camera}", f"{len(self._takes)} uzimanja prije skeniranja — porediću sa svima i uzeti najsličnije")
         self._set("taken", "Artikal uzet iz zone A. Skenirajte ga.")
 
     def _watch_zone_b(self) -> None:

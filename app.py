@@ -112,6 +112,10 @@ class MainWindow(QMainWindow):
                 from camera_service import start_guard
 
                 self.guard = start_guard(self.settings)
+                if "--debug" in sys.argv:
+                    from locations import app_folder
+
+                    self.guard.enable_debug(app_folder() / "data" / "debug" / datetime.now().strftime("%Y%m%d-%H%M%S"))
             except Exception as error:
                 print(f"Kamere nisu pokrenute: {error}")
         self.scan.guard = self.guard

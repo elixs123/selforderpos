@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
 )
 
 from camera_service import CAMERAS_FOLDER
-from locations import app_folder
 from zones import to_pixels
 
 TILE_WIDTH = 440
@@ -204,8 +203,9 @@ class DiagnosticsWindow(QWidget):
                 self.tiles_layout.addWidget(label, row, column)
                 self.tiles[name] = label
         if guard.debug_folder is None:
-            guard.enable_debug(app_folder() / "data" / "debug" / time.strftime("%Y%m%d-%H%M%S"))
-        self.folder.setText(f"Slike i log: {guard.debug_folder}")
+            self.folder.setText("Slike se ne spremaju. Za spremanje u data\\debug pokreni: python app.py --monitor --debug")
+        else:
+            self.folder.setText(f"Slike i log: {guard.debug_folder}")
         self.add_event("--:--:--", "info", "Dijagnostika spojena na kasu.")
 
     def add_event(self, clock: str, kind: str, text: str) -> None:
@@ -332,6 +332,9 @@ class DiagnosticsWindow(QWidget):
                 ok = score >= threshold
                 text.setText(f"{caption}<br><b>{score:.2f}</b> (prag {threshold})")
                 text.setStyleSheet(f"color: {'#30A46C' if ok else '#E5484D'};")
+        if debug.get("before") is not None:
+            self.shown_before = debug["before"]
+            self.thumbs[3][0].setPixmap(to_pixmap(debug["before"], THUMB_SIZE, THUMB_SIZE))
         problems = guard.last_problems
         self.problems.setText(("Problem: " + ", ".join(problems)) if problems else "Poređenje prošlo.")
         self.problems.setStyleSheet(f"color: {'#E5484D' if problems else '#30A46C'};")
