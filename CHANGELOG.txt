@@ -1,6 +1,8 @@
 IZMJENE - samouslužna kasa
 
 2026-10-16
+- Zona A: slika uzetog artikla se izrezuje samo s mjesta koje je postalo prazno (ne više bijela podloga kad se drugi artikli pomjere); izrez se u dijagnostici crta plavo.
+- Zona B s više artikala: izrezuje se samo najveća promjena (novi artikal), a ne pravougaonik oko svih pomjerenih artikala; u dijagnostici se izrez crta plavo.
 - Kamere se same uključe ako su CAM_A_HOST i CAM_B_HOST u .env, i bez settings.json; .env se učitava prije postavki.
 - Dijagnostika kamera: prozor uz kasu (python app.py --monitor ili Ctrl+Shift+D) pokazuje kamere, tok artikla, zašto zona B nije prepoznala artikal, poređenje slika i događaje; slike i log se spremaju u data/debug.
 

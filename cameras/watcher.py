@@ -42,6 +42,20 @@ def _ratio(mask: np.ndarray) -> float:
     return cv2.countNonZero(mask) / mask.size
 
 
+PART_MIN_SHARE = 0.002
+
+
+def main_box(mask: np.ndarray) -> tuple[tuple[int, int, int, int] | None, int]:
+    cleaned = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
+    contours, _ = cv2.findContours(cleaned, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    parts = [contour for contour in contours if cv2.contourArea(contour) >= PART_MIN_SHARE * mask.size]
+    if not parts:
+        points = cv2.findNonZero(mask)
+        return (cv2.boundingRect(points) if points is not None else None), 0
+    return cv2.boundingRect(max(parts, key=cv2.contourArea)), len(parts)
+
+
 def changed_box(before: np.ndarray, after: np.ndarray, padding: int = 10) -> tuple[int, int, int, int] | None:
     if before.shape != after.shape:
         return None
@@ -79,6 +93,8 @@ class ZoneWatcher:
         self.change_ratio = 0.0
         self.last_mask: np.ndarray | None = None
         self.motion_ratio = 0.0
+        self.last_box: tuple[int, int, int, int] | None = None
+        self.parts = 0
         self._baseline: np.ndarray | None = None
         self._previous: np.ndarray | None = None
         self._previous_ignore: np.ndarray | None = None
@@ -136,8 +152,11 @@ class ZoneWatcher:
         if now - self._stable_since < self.stable_seconds:
             return None
         self.disarm()
-        x, y, w, h = cv2.boundingRect(cv2.findNonZero(change_mask))
-        box = tuple(round(value * self._scale) for value in (x, y, w, h))
+        found, self.parts = main_box(change_mask)
+        if found is None:
+            return None
+        box = tuple(round(value * self._scale) for value in found)
+        self.last_box = box
         return Placement(box, self.change_ratio)
 
 
@@ -168,6 +187,8 @@ class BasketTracker:
         self.occupancy = 0.0
         self.last_note = "-"
         self.last_mask: np.ndarray | None = None
+        self.last_box: tuple[int, int, int, int] | None = None
+        self.parts = 0
         self._previous: np.ndarray | None = None
         self._previous_ignore: np.ndarray | None = None
         self._background: np.ndarray | None = None
@@ -229,8 +250,17 @@ class BasketTracker:
         self.last_note = f"promjena {change:.2%}, prije prazno {old_was_empty:.0%}, sad prazno {new_is_empty:.0%}"
         if old_was_empty >= EMPTY_SHARE:
             return BasketEvent("added", None, change)
-        x, y, w, h = cv2.boundingRect(cv2.findNonZero(mask))
+        freed = mask.copy()
+        freed[_distance(gray, self._background) >= PIXEL_THRESHOLD] = 0
+        freed[_distance(old_gray, self._background) < PIXEL_THRESHOLD] = 0
+        found, self.parts = main_box(freed)
+        if found is None or self.parts == 0:
+            found, self.parts = main_box(mask)
+        if found is None:
+            return None
+        x, y, w, h = found
         padding = 6
         left, top = max(0, round((x - padding) * scale)), max(0, round((y - padding) * scale))
         right, bottom = round((x + w + padding) * scale), round((y + h + padding) * scale)
+        self.last_box = (left, top, right - left, bottom - top)
         return BasketEvent("taken", old_image[top:bottom, left:right].copy(), change)

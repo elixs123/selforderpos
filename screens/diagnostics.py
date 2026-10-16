@@ -115,7 +115,7 @@ class DiagnosticsWindow(QWidget):
         self.tiles: dict[str, QLabel] = {}
         left = QVBoxLayout()
         left.addLayout(self.tiles_layout)
-        legend = QLabel("Crveno = promjena koju zona B vidi · Zeleno = promjena u zoni A · Žuto = ruke")
+        legend = QLabel("Crveno = promjena u zoni B · Plavo = izrezani artikal · Zeleno = promjena u zoni A · Žuto = ruke")
         legend.setStyleSheet("color: #8A949C;")
         left.addWidget(legend)
         compare_card, compare_layout = card("ZADNJE POREĐENJE")
@@ -230,9 +230,16 @@ class DiagnosticsWindow(QWidget):
             watcher = guard.watchers[name]
             if watcher.armed:
                 tint(frame, box, watcher.last_mask, RED)
+            if watcher.last_box is not None:
+                bx, by, bw, bh = watcher.last_box
+                cv2.rectangle(frame, (box[0] + bx, box[1] + by), (box[0] + bx + bw, box[1] + by + bh), (255, 170, 60), 3)
             color = RED if watcher.armed else (140, 140, 140)
         else:
-            tint(frame, box, guard.trackers[name].last_mask, GREEN)
+            tracker = guard.trackers[name]
+            tint(frame, box, tracker.last_mask, GREEN)
+            if tracker.last_box is not None:
+                bx, by, bw, bh = tracker.last_box
+                cv2.rectangle(frame, (box[0] + bx, box[1] + by), (box[0] + bx + bw, box[1] + by + bh), (255, 170, 60), 3)
             color = GREEN
         x, y, w, h = box
         cv2.rectangle(frame, (x, y), (x + w, y + h), color, 3)

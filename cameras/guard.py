@@ -13,7 +13,7 @@ from hands import load_hand_detector
 from reader import CameraReader
 from samples import SampleStore
 from similarity import Signature, compare, match_threshold, method_name, signature
-from watcher import BasketTracker, ZoneWatcher
+from watcher import BasketTracker, ZoneWatcher, main_box
 from zones import crop, load_zones
 
 TIMEOUT_SECONDS = 30
@@ -391,15 +391,19 @@ class CheckoutGuard:
             if placement is not None:
                 items.append((name, item_from(frame, offset, placement.box), placement.change_ratio))
             elif watcher.change_ratio >= watcher.change_min and watcher.last_mask is not None:
-                points = cv2.findNonZero(watcher.last_mask)
-                if points is not None:
+                found, watcher.parts = main_box(watcher.last_mask)
+                if found is not None:
                     roi, _ = crop(frame, self.zones.get(name))
                     factor = roi.shape[1] / watcher.last_mask.shape[1]
-                    x, y, w, h = cv2.boundingRect(points)
-                    box = tuple(round(value * factor) for value in (x, y, w, h))
+                    box = tuple(round(value * factor) for value in found)
+                    watcher.last_box = box
                     items.append((name, item_from(frame, offset, box), watcher.change_ratio))
             watcher.disarm()
         crops = [item for _, item, _ in items]
+        for name, _, _ in items:
+            parts = self.watchers[name].parts
+            if parts > 1:
+                self.log(f"zona-{name}", f"{parts} promjene u zoni B (pomjereni drugi artikli/sjena) — uzimam najveću")
         verdict, problems, score_taken, score_product = self._judge(crops, change_ratio)
         for name, item, ratio in items:
             self.store.save(
