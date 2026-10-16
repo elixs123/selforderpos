@@ -1,6 +1,7 @@
 IZMJENE - samouslužna kasa
 
 2026-10-16
+- Kamere se same uključe ako su CAM_A_HOST i CAM_B_HOST u .env, i bez settings.json; .env se učitava prije postavki.
 - Dijagnostika kamera: prozor uz kasu (python app.py --monitor ili Ctrl+Shift+D) pokazuje kamere, tok artikla, zašto zona B nije prepoznala artikal, poređenje slika i događaje; slike i log se spremaju u data/debug.
 
 2026-10-09

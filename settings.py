@@ -3,6 +3,16 @@ import os
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+from locations import env_file
+
+load_dotenv(env_file())
+
+
+def cameras_in_env() -> bool:
+    return bool(os.environ.get("CAM_A_HOST") and os.environ.get("CAM_B_HOST"))
+
 
 @dataclass
 class Settings:
@@ -19,7 +29,7 @@ class Settings:
     fiscal_tax_label: str = "E"
     fiscal_card_payment: str = "Kartica"
     fiscal_qr_payment: str = "Virman"
-    cameras_enabled: bool = False
+    cameras_enabled: bool = field(default_factory=cameras_in_env)
     camera_a_host: str = field(default_factory=lambda: os.environ.get("CAM_A_HOST", ""))
     camera_a2_host: str = field(default_factory=lambda: os.environ.get("CAM_A2_HOST", ""))
     camera_b_host: str = field(default_factory=lambda: os.environ.get("CAM_B_HOST", ""))
