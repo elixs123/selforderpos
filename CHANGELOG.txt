@@ -1,0 +1,52 @@
+IZMJENE - samouslužna kasa
+
+2026-10-09
+- Dizajn ekrana (7 ekrana) u Claude Design.
+
+2026-10-12
+- Nativna aplikacija u PySide6 (Qt), ekran Dobrodošlica.
+- Kod bez komentara, imena na engleskom, poruke na bosanskom.
+- TODO.txt sa koracima.
+
+2026-10-14
+- Veza sa MSSQL bazom (database.py, .env, check_db.py, find_columns.py).
+- find_by_barcode: traži artikal po barkodu ili šifri (tHE_SetItem + tHE_SetItemExtItemSubj).
+- Prodajna cijena iz kolone anSalePrice, u KM kao float (feninzi izbačeni).
+- Korpa (cart.py): add, change_quantity, remove, total, clear, to_dict.
+- Ekran Skeniranje: unos barkoda, korpa, ukupno, poruke "Dodano" i "Artikal nije pronađen".
+- Kupac ne može mijenjati količinu (nema + i -).
+- Svijetla tema bez obzira na dark mode sistema.
+- Ekrani: Način plaćanja, Kartica, QR kod, Račun (plaćanje se zasad simulira).
+- Račun se automatski vraća na početak za 20 s.
+- Računi se spremaju u SQLite (receipts.py), broj računa 2026-000001, kolona synced za kasnije slanje.
+- Način rada za osoblje: Pozovi osoblje -> PIN (STAFF_PIN u .env) -> izmjena/brisanje artikala, poništi korpu.
+- Poništi sve na ekranu kupca sada poziva osoblje.
+- Testovi: korpa, katalog, formatiranje, računi, PIN.
+
+2026-10-15
+- Kamere: postavke u .env (CAM_USER, CAM_PASSWORD, CAM_A_HOST, CAM_B_HOST), step1_camera_view.py prikazuje sliku uživo + FPS.
+- Kamere: reader.py (svaka kamera u svojoj niti, uvijek zadnja slika, samo se ponovo spaja), step2_both_cameras.py prikazuje A i B zajedno.
+- Kamere: zone (step3_zones.py, zones.json), ZoneWatcher otkriva kad je artikal odložen i miran u zoni B, SampleStore sprema slike + SQLite (data/samples).
+- Testna aplikacija step4_monitor.py: skeniraj -> kasa zaključana -> artikal u zoni B -> otključano + slika spremljena, istek nakon 30 s.
+- Monitor: prati šta je uzeto iz korpe (zona A prije/poslije), poredi sa onim što je odloženo u zoni B i sa naučenim slikama skeniranog artikla (similarity.py: boja + oblik). Način učenja (#), korpa postavljena (*). Presude: ok, mismatch, unverified, learned.
+- Monitor: učenje je automatsko. Artikal bez referenci se nauči prvi put, a svaki odobreni artikal se dodaje u reference. Taster # izbačen.
+- Monitor: nakon NE ODGOVARA kasa ostaje zaključana i nastavlja gledati zonu B; čim se pogrešan artikal ukloni i stavi pravi, ponovo provjerava (ZoneWatcher.rearm).
+- AI prepoznavanje: embedder.py (MobileNetV2 ONNX model, cameras/models), poređenje vektorskih otisaka slike, artikal se prepoznaje i kad je okrenut (0/90/180/270). Prag CAM_MATCH_THRESHOLD (zadano 0.7). Monitor prikazuje i veličinu u odnosu na reference.
+- Monitor: kamera A sama prati korpu (BasketTracker). Prepozna kad je korpa postavljena i šta je uzeto iz nje, bez tastera *. Uzeti artikal se veže uz sljedeće skeniranje (ili do 3 s nakon njega).
+- AI model DINOv2 (onnxruntime), sam se preuzme pri prvom pokretanju (88 MB). Ako ne uspije, kasa koristi MobileNetV2. CAM_MODEL=dinov2|mobilenet. Otisci referenci se pamte u memoriji (brže).
+- Monitor: strogi redoslijed. Bez korpe u A skeniranje je odbijeno; nakon skeniranja kasa čeka do 5 s da kamera A vidi uzeti artikal, inače odbija skeniranje; zona B se provjerava tek kad je poznato šta je uzeto, i mora odgovarati tom artiklu.
+- Zona A: pri pokretanju kamera nauči praznu zonu. Prepoznaje kad je nešto stavljeno (korpa ili samo artikli), uzeto ili sve sklonjeno. Skeniranje radi i bez korpe.
+- Monitor: čekanje na zonu A produženo na 12 s, poruka 'Izvucite ruku iz zone A' dok je ruka u pokretu.
+- Ruke: hands.py (MediaPipe Hand Landmarker, model models/hand_landmarker.task, radi offline). Ruke se izbace iz poređenja u zonama A i B, pa smiju biti u zoni dok kupac uzima ili odlaže. Na ekranu su ruke uokvirene žuto.
+- Svi AI modeli rade offline iz cameras/models (preuzmu se jednom na razvojnom računaru i idu uz aplikaciju).
+- Ispravka zone A: uzimanje iz korpe (ispod se vidi dno korpe) više se ne prepoznaje pogrešno kao stavljanje. 'Stavljeno' je samo kad je mjesto prije bilo prazno.
+- Zone A i B porede sliku u boji (ne samo svjetlinu), pa vide i artikle iste svjetline kao podloga.
+- Ispravka zone A: uzimanje velikog artikla (koji zauzima veći dio zone) više se ne računa kao 'sklonjeno sve', nego kao uzet artikal.
+- Preimenovano: step3_zones.py -> zone_setup.py, step4_monitor.py -> monitor.py. Obrisani step1 i step2 (više ne trebaju, reader.py ih zamjenjuje).
+
+2026-10-15 (kasa)
+- Kamere u kasi: cameras/guard.py (CheckoutGuard) je zajednička logika za monitor i kasu; camera_service.py je pokreće iz postavki. Nakon skeniranja kasa prelazi na ekran 'Odložite artikal' (screens/drop.py) i dodaje artikal u korpu tek kad kamere potvrde. NE ODGOVARA je crveno; osoblje može odobriti artikal.
+- Plaćanje karticom: printec.py (PrintecECR API, 160 s timeout, isti invoice_id za ponavljanje, statusi odobreno/odbijeno/ponovi/provjera). Ekran kartice prikazuje stanje, 'Pokušaj ponovo', i ne pušta kupca dalje dok je ishod nepoznat.
+- Fiskalni račun: fiscal.py šalje Tring XML (RacunZahtjev, VrstaZahtjeva 0) na /stampatifiskalniracun. Rezultat se upisuje u receipts (fiscal_printed, fiscal_message); ako ne uspije, ekran računa traži osoblje.
+- Postavke: settings.py (settings.json u AppData) i ekran Postavke iza ADMIN_PIN iz .env (Osoblje -> Postavke ili Ctrl+Shift+S). Testiranje terminala i printera iz postavki. Demo plaćanje uključeno dok se ne isključi.
+- receipts: novi stupci za karticu (invoice_id, approval_code, rrn, bank_id, card_number) i fiskalni status.

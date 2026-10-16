@@ -1,0 +1,44 @@
+TODO - samouslužna kasa
+
+0. Veza sa bazom
+   Instaliraj ODBC Driver 18 za SQL Server, pip install -r requirements.txt,
+   kopiraj .env.example u .env i upiši postavke, pa pokreni: python check_db.py
+   Zatim traži tabele: python find_columns.py barcode
+
+Pokretanje testova:  python -m pytest -v
+Cilj: svi testovi zeleni.
+
+1. GOTOVO: catalog.py -> find_by_barcode(barcode) čita iz baze.
+   Provjeri s pravim barkodom i ime kolone acCode (python find_columns.py code).
+
+2. GOTOVO: cart.py -> Cart.add(product, quantity=1)
+   Ako je product.code već u self._items, povećaj mu quantity.
+   Inače napravi novi CartItem(product, quantity) i spremi ga pod ključ product.code.
+
+3. GOTOVO: cart.py -> Cart.change_quantity(code, delta)
+   Ako koda nema u self._items, ne radi ništa.
+   Dodaj delta na quantity stavke.
+   Ako je quantity nakon toga 0 ili manje, obriši stavku iz self._items.
+
+4. GOTOVO: cart.py -> Cart.total
+   Zbroj amount svih stavki u korpi.
+   Prazna korpa mora vratiti 0.
+
+Napomena: cijene su u KM kako dođu iz baze (float), na ekranu se prikazuju na 2 decimale.
+
+Poslije toga:
+5. GOTOVO: ekran skeniranja (screens/scan.py). Radi tek kad su gotovi koraci 2, 3 i 4.
+6. GOTOVO: ekrani Način plaćanja, Kartica, QR, Račun (plaćanje se zasad simulira dugmetom Prototip).
+7. Pravi terminal za kartice i QR, fiskalizacija, slanje računa iz SQLite na server.
+8. GOTOVO: računi se spremaju u SQLite (receipts.py).
+
+9. GOTOVO: način rada za osoblje (Pozovi osoblje -> PIN -> izmjena korpe). PIN je STAFF_PIN u .env.
+10. Provjera starosti (18+) za alkohol i cigarete: kasa zastane i pozove osoblje.
+    Prvo naći u Pantheonu kolonu i šifru grupe/klasifikacije za alkohol i cigarete
+    (python find_columns.py classif). Ne ići po nazivu, nepouzdano je.
+11. Kamere u kasi: nakon skeniranja ekran 'Odložite artikal', kasa zaključana dok ZoneWatcher ne javi da je artikal u zoni B.
+12. Provjera da je u zoni B baš skenirani artikal (prepoznavanje iz spremljenih slika).
+13. Fiskalni račun: poreska stopa i jedinica mjere po artiklu iz Pantheona (sada iz postavki za sve artikle). Provjeriti oznake plaćanja (Kartica, Virman) s Tringom.
+14. QR plaćanje: pravi API (sada simulacija).
+15. Kamere u kasi: rad u posebnoj niti je gotov; provjeriti brzinu na pravoj kasi (Windows).
+16. Pakovanje za Windows (PyInstaller + Inno Setup).
