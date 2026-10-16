@@ -48,3 +48,13 @@ python -m pytest -v
 | `tests/` | testovi za korpu i katalog |
 | `cameras/` | servis za kamere (kasnije) |
 | `_old_web/` | stara web verzija, više se ne koristi |
+
+
+## Kamere na drugom računaru
+
+Laptop (ili server) radi kamere i AI, kasa samo pita:
+
+1. U `.env` na oba računara isti `CAM_SERVER_TOKEN`. Na kasi još `CAM_SERVER_URL=http://10.20.99.50:8765` (ili adresa u postavkama).
+2. Na laptopu: `python vision_server.py --monitor` (prozor dijagnostike), bez prozora: `python vision_server.py`. `--debug` sprema slike.
+3. Zone se crtaju i reference uče na laptopu (tamo su `cameras/zones.json` i `data/samples`).
+4. Laptop ne smije spavati (`caffeinate -i python vision_server.py`), a port 8765 mora biti dozvoljen u firewallu.

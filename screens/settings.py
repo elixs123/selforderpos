@@ -30,7 +30,7 @@ SECTIONS = [
     ("Kasa", ["register_id", "fullscreen", "demo_payments", "receipt_return_seconds"]),
     ("Kartični terminal (PrintecECR)", ["terminal_url", "terminal_api_key", "terminal_print_slip", "terminal_slip_copies"]),
     ("Fiskalni printer (Tring)", ["fiscal_enabled", "fiscal_url", "fiscal_unit", "fiscal_tax_label", "fiscal_card_payment", "fiscal_qr_payment"]),
-    ("Kamere", ["cameras_enabled", "camera_a_host", "camera_a2_host", "camera_b_host", "camera_b2_host", "camera_channel", "camera_model", "match_threshold"]),
+    ("Kamere", ["cameras_enabled", "vision_server_url", "camera_a_host", "camera_a2_host", "camera_b_host", "camera_b2_host", "camera_channel", "camera_model", "match_threshold"]),
 ]
 
 LABELS = {
@@ -49,6 +49,7 @@ LABELS = {
     "fiscal_card_payment": "Oznaka plaćanja karticom",
     "fiscal_qr_payment": "Oznaka plaćanja QR kodom",
     "cameras_enabled": "Kamere uključene",
+    "vision_server_url": "Adresa servera kamera (prazno = kamere na ovom računaru)",
     "camera_a_host": "IP kamere A (korpa)",
     "camera_a2_host": "IP druge kamere A (prazno = nema)",
     "camera_b_host": "IP kamere B (odlaganje)",

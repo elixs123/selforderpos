@@ -15,6 +15,17 @@ class CameraSetupError(Exception):
     pass
 
 
+def start_remote_guard(settings: Settings):
+    from remote_guard import RemoteGuard
+
+    token = os.environ.get("CAM_SERVER_TOKEN", "")
+    if not token:
+        raise CameraSetupError("Upišite CAM_SERVER_TOKEN u .env.")
+    guard = RemoteGuard(settings.vision_server_url, token)
+    guard.start()
+    return guard
+
+
 def start_guard(settings: Settings):
     os.environ["CAM_MODEL"] = settings.camera_model
     if settings.match_threshold > 0:

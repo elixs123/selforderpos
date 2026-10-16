@@ -90,6 +90,9 @@ class ScanScreen(QWidget):
         elif state == "empty":
             self.guide.set_step(0)
             self._set_card("Stavite korpu na polje", "Korpu ili artikle stavite na označeno mjesto", ICON_HAND, False)
+        elif state == "offline":
+            self.guide.set_step(0)
+            self._set_card("Kamere nisu dostupne", "Pozovite osoblje", ICON_HAND, False)
         elif state == "taken":
             self.guide.set_step(1)
             self._set_card("Sad ga skenirajte", "Artikal je uzet iz korpe. Prislonite barkod na skener.", ICON_SCANNER, True)

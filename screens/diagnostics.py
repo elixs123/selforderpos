@@ -228,7 +228,7 @@ class DiagnosticsWindow(QWidget):
                 self.tiles_layout.addWidget(label, row, column)
                 self.tiles[name] = label
         if guard.debug_folder is None:
-            self.folder.setText("Slike se ne spremaju. Za spremanje u data\\debug pokreni: python app.py --monitor --debug")
+            self.folder.setText("Slike se ne spremaju. Za spremanje u data\\debug dodaj --debug pri pokretanju")
         else:
             self.folder.setText(f"Slike i log: {guard.debug_folder}")
         self.add_event("--:--:--", "info", f"Dijagnostika spojena na kasu. Algoritam: {VERSION}")

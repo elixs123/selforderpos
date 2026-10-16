@@ -26,7 +26,7 @@ if getattr(sys, "frozen", False):
 
 from PySide6.QtCore import QStandardPaths
 from PySide6.QtGui import QKeySequence, QShortcut
-from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget
+from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QStackedWidget
 
 from cart import Cart
 from fiscal import FiscalOptions, FiscalPrinter
@@ -109,10 +109,13 @@ class MainWindow(QMainWindow):
             self.guard = None
         if self.settings.cameras_enabled:
             try:
-                from camera_service import start_guard
+                from camera_service import start_guard, start_remote_guard
 
-                self.guard = start_guard(self.settings)
-                if "--debug" in sys.argv:
+                if self.settings.vision_server_url:
+                    self.guard = start_remote_guard(self.settings)
+                else:
+                    self.guard = start_guard(self.settings)
+                if "--debug" in sys.argv and not self.settings.vision_server_url:
                     from locations import app_folder
 
                     self.guard.enable_debug(app_folder() / "data" / "debug" / datetime.now().strftime("%Y%m%d-%H%M%S"))
@@ -121,6 +124,12 @@ class MainWindow(QMainWindow):
         self.scan.guard = self.guard
 
     def open_diagnostics(self) -> None:
+        if getattr(self.guard, "remote", False):
+            QMessageBox.information(
+                self, "Dijagnostika",
+                "Kamere rade na drugom računaru. Dijagnostika se otvara tamo: python vision_server.py --monitor",
+            )
+            return
         if self.diagnostics is None:
             from screens.diagnostics import DiagnosticsWindow
 
@@ -194,7 +203,7 @@ class MainWindow(QMainWindow):
 
     def show_staff(self) -> None:
         guard = self.guard
-        can_approve = guard is not None and self.drop.waiting and (guard.busy or guard.state in ("mismatch", "timeout"))
+        can_approve = guard is not None and self.drop.waiting and (guard.busy or guard.state in ("mismatch", "timeout", "offline"))
         self.screens.setCurrentWidget(self.staff)
         self.staff.begin(can_approve)
 
