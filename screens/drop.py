@@ -27,7 +27,7 @@ POLL_MS = 150
 
 def customer_problem(message: str) -> tuple[str, str]:
     if "više artikala" in message:
-        return "Više artikala u zoni B", "Uklonite višak i ostavite samo artikal koji ste skenirali."
+        return "Više artikala u zoni B", "Višak vratite u zonu A. U zoni B ostavite samo artikal koji ste skenirali."
     if message.startswith("Artikal ne odgovara"):
         return "Artikal ne odgovara", "Uklonite ga iz zone B i odložite artikal koji ste skenirali."
     return "Pažnja", message
