@@ -13,6 +13,7 @@ from hands import load_hand_detector
 from reader import CameraReader
 from samples import SampleStore
 from similarity import Signature, compare, match_threshold, method_name, signature
+from counter import counting_cameras, get_counter, unmatched
 from watcher import BasketTracker, ZoneWatcher, looks_like_item, main_box, removed_items, separate_items
 from zones import crop, load_zones, zones_changed_at
 
@@ -93,6 +94,7 @@ class CheckoutGuard:
         self.last_taken_index = 0
         self._forgot_at = -1000.0
         self._item_like_cache: dict[int, tuple] = {}
+        self._b_before: dict[str, np.ndarray] = {}
         self._a_baseline: dict[str, tuple[np.ndarray, np.ndarray]] = {}
         self._scanned_since_baseline = 0
         self._check_pending_since: float | None = None
@@ -228,6 +230,19 @@ class CheckoutGuard:
         return (not tracker.moved and tracker.motion_ratio <= tracker.motion_max
                 and not self.hand_shapes.get(name) and tracker._stable_gray is not None)
 
+    def _yolo_change(self, name: str, before: np.ndarray | None, after: np.ndarray | None):
+        if name not in counting_cameras() or before is None or after is None:
+            return None
+        counter = get_counter()
+        if counter is None:
+            return None
+        try:
+            before_boxes, after_boxes = counter.detect(before), counter.detect(after)
+        except Exception as error:
+            self.log(f"zona-{name}", f"YOLOX greška: {error}")
+            return None
+        return len(before_boxes), len(after_boxes), unmatched(before_boxes, after_boxes)
+
     def _note_accepted(self) -> None:
         self._scanned_since_baseline += 1
         self._last_accepted_code = self.product_code
@@ -256,6 +271,16 @@ class CheckoutGuard:
             if learned and total >= LEARNED_FACTOR * learned:
                 count = max(count, int(round(total / learned)))
             self.log(f"zona-{name}", f"provjera zone A: nestalo {count} artikala (površina {total:.1%}), skenirano {scanned}")
+            yolo = self._yolo_change(name, self._a_baseline[name][1], tracker._stable_image)
+            if yolo is not None:
+                before_count, after_count, gone = yolo
+                self.log(f"zona-{name}", f"YOLOX zona A: prije {before_count}, sada {after_count}, nestalo {len(gone)}")
+                if len(gone) > count:
+                    count = len(gone)
+                    scale = tracker._stable_gray.shape[1] / tracker._stable_image.shape[1]
+                    parts = [(int((x2 - x1) * (y2 - y1) * scale * scale),
+                              (int(x1 * scale), int(y1 * scale), int((x2 - x1) * scale), int((y2 - y1) * scale)))
+                             for x1, y1, x2, y2 in gone]
             if count == 1 and scanned == 1 and parts:
                 self._learn_size(self._last_accepted_code, name, parts[0][0] / (tracker._stable_gray.shape[0] * tracker._stable_gray.shape[1]))
             if count > best_count:
@@ -522,12 +547,14 @@ class CheckoutGuard:
         self._warm_taken(self._taken_items)
         for index, item in enumerate(items):
             self.store.save("taken", self.barcode, self.product_code, self.product_name, f"A{index + 1}", crop_image=item)
+        self._b_before = {}
         for name, watcher in self.watchers.items():
             frame = self.latest(name)
             if frame is None:
                 continue
             roi, _ = crop(frame, self.zones.get(name))
             watcher.arm(roi)
+            self._b_before[name] = roi.copy()
         self._armed_at = time.monotonic()
         self._set("waiting_place", f"Odložite artikal u zonu B: {self.product_name or self.barcode}")
         self._dump("scan-armed-b", {"taken-item": items})
@@ -848,6 +875,13 @@ class CheckoutGuard:
     ) -> None:
         taken_items, taken_befores, product_code = snapshot
         started = time.monotonic()
+        for name, (frame, _) in frames.items():
+            roi, _ = crop(frame, self.zones.get(name))
+            yolo = self._yolo_change(name, roi, self._b_before.get(name))
+            if yolo is not None:
+                after_count, before_count, arrived = yolo
+                self.log(f"zona-{name}", f"YOLOX zona B: prije {before_count}, sada {after_count}, novih {len(arrived)}")
+                placed_count = max(placed_count, len(arrived))
         try:
             verdict, problems, score_taken, score_product = self._judge(
                 crops, change_ratio, taken_items, taken_befores, product_code, placed_count,

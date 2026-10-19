@@ -21,6 +21,7 @@ CAM_MODEL=dinov2
 ```
 
 - Kamera A gleda zonu A (korpa ili artikli), kamera B zonu B (odlaganje).
+- `CAM_COUNTER=yolox` broji artikle modelom YOLOX-s (Apache 2.0, preuzme se sam u cameras/models) na kamerama iz `CAM_COUNT_CAMERAS` (zadano A2,B2, kamere sa strane). `CAM_COUNTER=off` ga isključuje.
 - `102` = pomoćni tok, laganiji. `CAM_MODEL` = `dinov2`, `dinov2-base`, `clip` ili `mobilenet` (veći modeli se sami preuzmu pri prvom pokretanju; uporedi ih s `python cameras/benchmark_models.py`).
 
 ## Pokretanje
