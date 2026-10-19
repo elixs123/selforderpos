@@ -130,3 +130,42 @@ def test_yolox_catches_two_touching_items_taken_from_zone_a(monkeypatch, tmp_pat
     run(guard, readers, 0.4)
     assert guard.alert
     assert guard.unscanned == 1
+
+
+class CountingCounter:
+    def __init__(self):
+        self.counts = {}
+
+    def detect(self, image):
+        return [np.array([0, 0, 1, 1])] * self.counts.get(int(image[0, 0, 0]), 0)
+
+
+def test_count_loop_flags_extra_item_after_accept(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAMPLES_DIR", str(tmp_path))
+    fake = CountingCounter()
+    monkeypatch.setattr(guard_module, "get_counter", lambda: fake)
+    readers = {"A2": ControlledReader(), "B2": ControlledReader()}
+    guard = CheckoutGuard(readers)
+    guard.zones = {}
+    guard.trackers = {"A2": BasketTracker(stable_seconds=0.05)}
+    run(guard, readers, 0.3)
+    readers["A2"].frame[0, 0, 0] = 1
+    readers["B2"].frame[0, 0, 0] = 2
+    fake.counts = {1: 3, 2: 0}
+    for _ in range(2):
+        guard.count_once()
+    assert guard.counting_a and guard.unscanned == 0
+    fake.counts = {1: 1, 2: 0}
+    for _ in range(2):
+        guard.count_once()
+    assert guard.unscanned == 2 and guard.alert
+    guard._note_accepted()
+    assert guard.unscanned == 1
+    for _ in range(2):
+        guard.count_once()
+    assert guard.alert
+    assert guard.message.startswith("Uzeli ste još jedan artikal")
+    fake.counts = {1: 2, 2: 0}
+    for _ in range(2):
+        guard.count_once()
+    assert guard.unscanned == 0 and not guard.alert

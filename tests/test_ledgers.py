@@ -1,0 +1,70 @@
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "cameras"))
+
+from counter import ZoneALedger, ZoneBLedger
+
+
+def seen(ledger, count):
+    ledger.observe(count)
+    ledger.observe(count)
+
+
+def test_zone_a_normal_sale():
+    ledger = ZoneALedger()
+    seen(ledger, 3)
+    seen(ledger, 2)
+    assert ledger.missing == 1 and not ledger.extra_after_accept
+    ledger.accepted()
+    assert ledger.missing == 0
+    seen(ledger, 2)
+    assert ledger.missing == 0 and not ledger.extra_after_accept
+
+
+def test_zone_a_two_taken_one_scanned():
+    ledger = ZoneALedger()
+    seen(ledger, 3)
+    seen(ledger, 1)
+    ledger.accepted()
+    seen(ledger, 1)
+    assert ledger.missing == 1 and ledger.extra_after_accept
+
+
+def test_zone_a_item_returned_clears():
+    ledger = ZoneALedger()
+    seen(ledger, 3)
+    seen(ledger, 1)
+    ledger.accepted()
+    seen(ledger, 1)
+    seen(ledger, 2)
+    assert ledger.missing == 0 and not ledger.extra_after_accept
+
+
+def test_zone_a_single_flicker_is_ignored():
+    ledger = ZoneALedger()
+    seen(ledger, 3)
+    ledger.observe(2)
+    ledger.observe(3)
+    assert ledger.missing == 0
+
+
+def test_zone_a_basket_added_resyncs():
+    ledger = ZoneALedger()
+    seen(ledger, 0)
+    seen(ledger, 4)
+    assert ledger.expected == 4 and ledger.missing == 0
+
+
+def test_zone_b_item_put_without_scan_and_packing():
+    ledger = ZoneBLedger()
+    seen(ledger, 0)
+    ledger.accepted(1)
+    seen(ledger, 1)
+    assert ledger.extra == 0
+    seen(ledger, 2)
+    assert ledger.extra == 1
+    seen(ledger, 1)
+    assert ledger.extra == 0
+    seen(ledger, 0)
+    assert ledger.known == 0

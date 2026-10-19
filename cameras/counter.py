@@ -99,3 +99,66 @@ def get_counter() -> ObjectCounter | None:
             print(f"Brojanje artikala (YOLOX) nije dostupno: {error}")
             _failed = True
     return _counter
+
+
+class ZoneALedger:
+    def __init__(self) -> None:
+        self.reset()
+
+    def reset(self) -> None:
+        self.expected: int | None = None
+        self.pending: int | None = None
+        self.missing = 0
+        self.extra_after_accept = False
+        self.post_accept = False
+
+    def observe(self, count: int) -> bool:
+        if count != self.pending:
+            self.pending = count
+            return False
+        before = (self.missing, self.extra_after_accept)
+        if self.expected is None or count >= self.expected:
+            self.expected = count
+            self.missing = 0
+            self.extra_after_accept = False
+        else:
+            self.missing = self.expected - count
+        if self.post_accept:
+            self.extra_after_accept = self.missing >= 1
+            self.post_accept = False
+        return before != (self.missing, self.extra_after_accept)
+
+    def accepted(self) -> None:
+        if self.expected is not None:
+            self.expected -= 1
+        self.missing = max(0, self.missing - 1)
+        self.pending = None
+        self.post_accept = True
+
+
+class ZoneBLedger:
+    def __init__(self) -> None:
+        self.reset()
+
+    def reset(self) -> None:
+        self.known: int | None = None
+        self.pending: int | None = None
+        self.extra = 0
+
+    def observe(self, count: int) -> bool:
+        if count != self.pending:
+            self.pending = count
+            return False
+        before = self.extra
+        if self.known is None or count <= self.known:
+            self.known = count
+            self.extra = 0
+        else:
+            self.extra = count - self.known
+        return before != self.extra
+
+    def accepted(self, count: int | None) -> None:
+        if count is not None:
+            self.known = count
+        self.pending = None
+        self.extra = 0

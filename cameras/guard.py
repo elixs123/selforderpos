@@ -13,7 +13,7 @@ from hands import load_hand_detector
 from reader import CameraReader
 from samples import SampleStore
 from similarity import Signature, compare, match_threshold, method_name, signature
-from counter import counting_cameras, get_counter, unmatched
+from counter import ZoneALedger, ZoneBLedger, counting_cameras, get_counter, unmatched
 from watcher import BasketTracker, ZoneWatcher, looks_like_item, main_box, removed_items, separate_items
 from zones import crop, load_zones, zones_changed_at
 
@@ -33,6 +33,7 @@ PLACED_UNSCANNED_MESSAGE = "U zonu B je odložen artikal koji nije skeniran. Ukl
 ZONE_B_QUIET_SECONDS = 3.0
 MAX_TAKES = 30
 TAKE_CLUSTER_SECONDS = 4.0
+COUNT_SECONDS = 0.7
 CHECK_WAIT_SECONDS = 5.0
 LEARNED_MIN = 3
 LEARNED_FACTOR = 1.7
@@ -95,6 +96,10 @@ class CheckoutGuard:
         self._forgot_at = -1000.0
         self._item_like_cache: dict[int, tuple] = {}
         self._b_before: dict[str, np.ndarray] = {}
+        self._b_after_counts: dict[str, int] = {}
+        self.a_ledgers = {name: ZoneALedger() for name in self.cameras_a if name in counting_cameras()}
+        self.b_ledgers = {name: ZoneBLedger() for name in self.cameras_b if name in counting_cameras()}
+        self._counting = False
         self._a_baseline: dict[str, tuple[np.ndarray, np.ndarray]] = {}
         self._scanned_since_baseline = 0
         self._check_pending_since: float | None = None
@@ -192,11 +197,24 @@ class CheckoutGuard:
         return clusters
 
     @property
+    def counting_a(self) -> bool:
+        return self._counting and bool(self.a_ledgers)
+
+    @property
+    def counting_b(self) -> bool:
+        return self._counting and bool(self.b_ledgers)
+
+    @property
     def unscanned_taken(self) -> int:
+        if self.counting_a:
+            return max(ledger.missing for ledger in self.a_ledgers.values())
         return len(self._clusters([take for take in self._takes if self._item_like(take[0])]))
 
     @property
     def alert(self) -> bool:
+        if self.counting_a:
+            return (self.unscanned_placed > 0 or self.unscanned_taken > 1
+                    or any(ledger.extra_after_accept and ledger.missing for ledger in self.a_ledgers.values()))
         return (self.unscanned_taken > 1 or self.unscanned_placed > 0
                 or any(take[3].endswith(EXTRA_MARK) for take in self._takes))
 
@@ -243,12 +261,80 @@ class CheckoutGuard:
             return None
         return len(before_boxes), len(after_boxes), unmatched(before_boxes, after_boxes)
 
+    def _count_loop(self) -> None:
+        while self._running:
+            started = time.monotonic()
+            try:
+                self.count_once()
+            except Exception as error:
+                print(f"Brojanje artikala: {error}")
+            time.sleep(max(0.05, COUNT_SECONDS - (time.monotonic() - started)))
+
+    def count_once(self) -> None:
+        counter = get_counter()
+        if counter is None:
+            self._counting = False
+            return
+        self._counting = True
+        jobs = []
+        with self._lock:
+            if self.busy:
+                return
+            now = time.monotonic()
+            for name in self.a_ledgers:
+                if self._is_live(name) and self.trackers[name].ready and self._quiet(name):
+                    frame = self.latest(name)
+                    if frame is not None:
+                        jobs.append(("A", name, crop(frame, self.zones.get(name))[0].copy()))
+            for name in self.b_ledgers:
+                idle = self.idle_b[name]
+                if (self._is_live(name) and now - self._b_active_at >= ZONE_B_QUIET_SECONDS
+                        and idle.motion_ratio <= idle.motion_max and not self.hand_shapes.get(name)):
+                    frame = self.latest(name)
+                    if frame is not None:
+                        jobs.append(("B", name, crop(frame, self.zones.get(name))[0].copy()))
+            epoch = self._job_id
+        results = [(zone, name, len(counter.detect(image))) for zone, name, image in jobs]
+        with self._lock:
+            if self.busy or epoch != self._job_id:
+                return
+            changed = False
+            for zone, name, count in results:
+                ledger = self.a_ledgers[name] if zone == "A" else self.b_ledgers[name]
+                if ledger.observe(count):
+                    changed = True
+                    if zone == "A":
+                        self.log(f"zona-{name}", f"YOLOX zona A: očekujem {ledger.expected}, vidim {count}, nedostaje {ledger.missing}")
+                    else:
+                        self.log(f"zona-{name}", f"YOLOX zona B: poznato {ledger.known}, vidim {count}, neskenirano {ledger.extra}")
+            if changed:
+                self._after_count_change()
+
+    def _after_count_change(self) -> None:
+        if self.busy:
+            return
+        if self.alert:
+            self._set("taken", self._unscanned_message())
+        elif self.state == "taken" and self.message in (UNSCANNED_MESSAGE, PLACED_UNSCANNED_MESSAGE):
+            if self.unscanned:
+                self._set("taken", "Artikal uzet iz zone A. Skenirajte ga.")
+            else:
+                self._set("ready", "Uzmite artikal i skenirajte ga.")
+
     def _note_accepted(self) -> None:
+        for ledger in self.a_ledgers.values():
+            ledger.accepted()
+        for name, ledger in self.b_ledgers.items():
+            ledger.accepted(self._b_after_counts.get(name))
         self._scanned_since_baseline += 1
         self._last_accepted_code = self.product_code
         self._check_pending_since = time.monotonic()
 
     def _check_zone_a(self, now: float) -> None:
+        if self.counting_a:
+            self._check_pending_since = None
+            self._a_baseline = {}
+            return
         if self._check_pending_since is None or self.busy:
             return
         cameras = [name for name, tracker in self.trackers.items()
@@ -328,6 +414,8 @@ class CheckoutGuard:
 
     @property
     def unscanned_placed(self) -> int:
+        if self.counting_b:
+            return max(ledger.extra for ledger in self.b_ledgers.values())
         return max(self._placed_unscanned.values(), default=0)
 
     def _unscanned_message(self) -> str:
@@ -343,6 +431,8 @@ class CheckoutGuard:
             self._check_pending_since = None
             self._scanned_since_baseline = 0
             self._a_baseline = {}
+            for ledger in list(self.a_ledgers.values()) + list(self.b_ledgers.values()):
+                ledger.reset()
             if not self.busy:
                 self._set("ready", "Uzmite artikal i skenirajte ga.")
 
@@ -378,6 +468,8 @@ class CheckoutGuard:
         threading.Thread(target=self._loop, daemon=True).start()
         if self.hands is not None:
             threading.Thread(target=self._hand_loop, daemon=True).start()
+        if self.a_ledgers or self.b_ledgers:
+            threading.Thread(target=self._count_loop, daemon=True).start()
 
     def stop(self) -> None:
         self._running = False
@@ -484,7 +576,7 @@ class CheckoutGuard:
             was_active = self._zone_a_active()
             self._force_takes(now)
             self._expire_takes(now)
-            recent_take = bool(self._takes)
+            recent_take = bool(self._takes) or (self.counting_a and self.unscanned_taken > 0)
             if not self.zone_a_ready:
                 self.log("zona-A", f"nije spremna: {self.zone_a_waiting_reason()}")
                 self._finish("rejected", "not_ready", "Kamera još uči praznu zonu A. Sačekajte trenutak.")
@@ -804,6 +896,8 @@ class CheckoutGuard:
             self._scan_takes = []
 
     def _on_idle_b_event(self, camera: str, event, now: float) -> None:
+        if self.counting_b:
+            return
         if event.kind == "empty":
             if self._placed_unscanned.pop(camera, 0):
                 self.log(f"zona-{camera}", "zona B je prazna, neskenirani artikal je uklonjen")
@@ -875,11 +969,13 @@ class CheckoutGuard:
     ) -> None:
         taken_items, taken_befores, product_code = snapshot
         started = time.monotonic()
+        self._b_after_counts = {}
         for name, (frame, _) in frames.items():
             roi, _ = crop(frame, self.zones.get(name))
             yolo = self._yolo_change(name, roi, self._b_before.get(name))
             if yolo is not None:
                 after_count, before_count, arrived = yolo
+                self._b_after_counts[name] = after_count
                 self.log(f"zona-{name}", f"YOLOX zona B: prije {before_count}, sada {after_count}, novih {len(arrived)}")
                 placed_count = max(placed_count, len(arrived))
         try:
