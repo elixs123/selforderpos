@@ -61,6 +61,8 @@ MERGE_GAP = 0.15
 TAKEN_EXTRA_RELATIVE = 0.3
 ITEM_SATURATION = 40
 ITEM_EDGES = 0.01
+SHIFT_AREA = (0.5, 2.0)
+SHIFT_DISTANCE = 2.5
 
 
 def align(reference: np.ndarray, image: np.ndarray) -> np.ndarray:
@@ -153,6 +155,47 @@ def separate_items(mask: np.ndarray) -> list[tuple[int, tuple[int, int, int, int
     kept = [(area, box) for area, box in clusters
             if area >= MULTI_MIN_SHARE * mask.size and area >= MULTI_RELATIVE * largest]
     return sorted(kept, reverse=True)
+
+
+def _objects(gray: np.ndarray, background: np.ndarray) -> np.ndarray:
+    mask = _difference(gray, align(background, gray))
+    return cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+
+
+def _still_there(before: np.ndarray, after: np.ndarray, box: tuple[int, int, int, int]) -> bool:
+    x, y, w, h = box
+    if w <= 3 or h <= 3:
+        return False
+    patch = before[y:y + h, x:x + w]
+    height, width = after.shape[:2]
+    pad_x, pad_y = round(SHIFT_DISTANCE * w), round(SHIFT_DISTANCE * h)
+    left, top = max(0, x - pad_x), max(0, y - pad_y)
+    window = after[top:min(height, y + h + pad_y), left:min(width, x + w + pad_x)]
+    if window.shape[0] <= h or window.shape[1] <= w:
+        return False
+    match = cv2.matchTemplate(window, patch, cv2.TM_CCOEFF_NORMED)
+    return float(np.nan_to_num(match).max()) >= STILL_THERE
+
+
+def removed_items(before: np.ndarray, after: np.ndarray, background: np.ndarray) -> list[tuple[int, tuple[int, int, int, int]]]:
+    if before.shape != after.shape or background.shape != after.shape:
+        return []
+    old, new = _objects(before, background), _objects(after, background)
+    freed = cv2.bitwise_and(old, cv2.bitwise_not(new))
+    occupied = cv2.bitwise_and(new, cv2.bitwise_not(old))
+    arrived = [part for part in separate_items(occupied)]
+    kept = []
+    for area, box in separate_items(freed):
+        size = max(box[2], box[3])
+        shifted = next((part for part in arrived if SHIFT_AREA[0] * area <= part[0] <= SHIFT_AREA[1] * area
+                        and _box_gap(box, part[1]) <= SHIFT_DISTANCE * size), None)
+        if shifted is not None:
+            arrived.remove(shifted)
+            continue
+        if _still_there(before, after, box):
+            continue
+        kept.append((area, box))
+    return kept
 
 
 def looks_like_item(image: np.ndarray | None) -> bool:
@@ -359,6 +402,7 @@ class BasketTracker:
         self._stable_since: float | None = None
         self._moved = False
         self._absorb = False
+        self.previous_stable: tuple[np.ndarray, np.ndarray] | None = None
 
     def absorb(self) -> None:
         self._absorb = True
@@ -441,6 +485,7 @@ class BasketTracker:
             self.last_note = "ruka je u zoni, čekam da je povučete"
             return None
         old_gray, old_image = self._stable_gray, self._stable_image
+        self.previous_stable = (old_gray, old_image)
         mask = self._clean(_difference(gray, align(old_gray, gray), hand, self._stable_ignore))
         change = _ratio(mask)
         self.last_mask = mask

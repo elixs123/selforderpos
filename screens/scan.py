@@ -88,7 +88,7 @@ class ScanScreen(QWidget):
         if guard is None:
             return
         self.pay_button.setEnabled(self.cart.item_count > 0 and self._pay_allowed())
-        if getattr(guard, "unscanned", 0) > 0 and guard.state == "taken":
+        if getattr(guard, "alert", False) and guard.state == "taken":
             self.alert.show_message(guard.message, "Artikal nije skeniran")
         elif time.monotonic() >= self._alert_until:
             self.alert.hide()
@@ -383,7 +383,7 @@ class ScanScreen(QWidget):
         self._show_notice(message, success=False)
 
     def _pay_allowed(self) -> bool:
-        return self.guard is None or getattr(self.guard, "unscanned", 0) == 0
+        return self.guard is None or (getattr(self.guard, "unscanned", 0) == 0 and not getattr(self.guard, "checking", False))
 
     def _refresh(self) -> None:
         data = self.cart.to_dict()

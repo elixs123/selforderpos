@@ -27,6 +27,8 @@ def snapshot(guard, boot: str) -> dict:
         "outcome": outcome_data(guard.outcome), "cameras": cameras_data(guard),
         "zone_a_ready": bool(getattr(guard, "zone_a_ready", True)),
         "unscanned": int(getattr(guard, "unscanned", 0)),
+        "alert": bool(getattr(guard, "alert", False)),
+        "checking": bool(getattr(guard, "checking", False)),
         "zone_a_reason": guard.zone_a_waiting_reason() if hasattr(guard, "zone_a_waiting_reason") else "-",
     }
 

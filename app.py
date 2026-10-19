@@ -166,7 +166,7 @@ class MainWindow(QMainWindow):
             self.guard.forgive_unscanned()
 
     def show_payment(self) -> None:
-        if self.guard is not None and getattr(self.guard, "unscanned", 0) > 0:
+        if self.guard is not None and (getattr(self.guard, "unscanned", 0) > 0 or getattr(self.guard, "checking", False)):
             return
         self.screens.setCurrentWidget(self.payment)
         self.payment.begin()

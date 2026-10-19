@@ -13,7 +13,7 @@ from hands import load_hand_detector
 from reader import CameraReader
 from samples import SampleStore
 from similarity import Signature, compare, match_threshold, method_name, signature
-from watcher import BasketTracker, ZoneWatcher, looks_like_item, main_box, separate_items
+from watcher import BasketTracker, ZoneWatcher, looks_like_item, main_box, removed_items, separate_items
 from zones import crop, load_zones, zones_changed_at
 
 TIMEOUT_SECONDS = 30
@@ -31,6 +31,11 @@ NOT_TAKEN_MESSAGE = "Taj artikal nije uzet iz zone A. Ako ste ga već skenirali,
 PLACED_UNSCANNED_MESSAGE = "U zonu B je odložen artikal koji nije skeniran. Uklonite ga iz zone B pa ga skenirajte."
 ZONE_B_QUIET_SECONDS = 3.0
 MAX_TAKES = 30
+TAKE_CLUSTER_SECONDS = 4.0
+CHECK_WAIT_SECONDS = 5.0
+LEARNED_MIN = 3
+LEARNED_FACTOR = 1.7
+EXTRA_MARK = "*"
 
 
 @dataclass(frozen=True)
@@ -88,6 +93,12 @@ class CheckoutGuard:
         self.last_taken_index = 0
         self._forgot_at = -1000.0
         self._item_like_cache: dict[int, tuple] = {}
+        self._a_baseline: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+        self._scanned_since_baseline = 0
+        self._check_pending_since: float | None = None
+        self._last_accepted_code: str | None = None
+        self._sizes_path = self.store.folder / "zone_a_sizes.json"
+        self._sizes = self._load_sizes()
         self._taken_items: list[np.ndarray] = []
         self._taken_befores: list[np.ndarray | None] = []
         self._taken_at = 0.0
@@ -160,13 +171,106 @@ class CheckoutGuard:
     def unscanned(self) -> int:
         return self.unscanned_taken + self.unscanned_placed
 
+    @staticmethod
+    def _clusters(takes: list) -> list[list]:
+        clusters: list[list] = []
+        for take in sorted(takes, key=lambda item: item[2]):
+            if clusters and take[2] - clusters[-1][-1][2] <= TAKE_CLUSTER_SECONDS:
+                clusters[-1].append(take)
+            else:
+                clusters.append([take])
+        return clusters
+
     @property
     def unscanned_taken(self) -> int:
-        counts: dict[str, int] = {}
-        for take in self._takes:
-            if self._item_like(take[0]):
-                counts[take[3]] = counts.get(take[3], 0) + 1
-        return max(counts.values(), default=0)
+        return len(self._clusters([take for take in self._takes if self._item_like(take[0])]))
+
+    @property
+    def alert(self) -> bool:
+        return (self.unscanned_taken > 1 or self.unscanned_placed > 0
+                or any(take[3].endswith(EXTRA_MARK) for take in self._takes))
+
+    @property
+    def checking(self) -> bool:
+        return self._check_pending_since is not None and time.monotonic() - self._check_pending_since < CHECK_WAIT_SECONDS
+
+    def _load_sizes(self) -> dict:
+        try:
+            return json.loads(self._sizes_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+
+    def _learn_size(self, product_code: str | None, camera: str, share: float) -> None:
+        if not product_code:
+            return
+        values = self._sizes.setdefault(product_code, {}).setdefault(camera, [])
+        values.append(round(share, 5))
+        del values[:-15]
+        try:
+            self._sizes_path.write_text(json.dumps(self._sizes), encoding="utf-8")
+        except OSError:
+            pass
+
+    def _learned_size(self, product_code: str | None, camera: str) -> float | None:
+        values = self._sizes.get(product_code or "", {}).get(camera, [])
+        return float(np.median(values)) if len(values) >= LEARNED_MIN else None
+
+    def _quiet(self, name: str) -> bool:
+        tracker = self.trackers[name]
+        return (not tracker.moved and tracker.motion_ratio <= tracker.motion_max
+                and not self.hand_shapes.get(name) and tracker._stable_gray is not None)
+
+    def _note_accepted(self) -> None:
+        self._scanned_since_baseline += 1
+        self._last_accepted_code = self.product_code
+        self._check_pending_since = time.monotonic()
+
+    def _check_zone_a(self, now: float) -> None:
+        if self._check_pending_since is None or self.busy:
+            return
+        cameras = [name for name, tracker in self.trackers.items()
+                   if self._is_live(name) and tracker.ready and name in self._a_baseline]
+        if not cameras:
+            self._check_pending_since = None
+            self._scanned_since_baseline = 0
+            return
+        if not cameras or not all(self._quiet(name) for name in cameras):
+            return
+        scanned, waiting = self._scanned_since_baseline, self.unscanned_taken
+        best_camera, best_count, best_parts = None, 0, []
+        for name in cameras:
+            tracker = self.trackers[name]
+            before_gray, _ = self._a_baseline[name]
+            parts = removed_items(before_gray, tracker._stable_gray, tracker._background)
+            count = len(parts)
+            learned = self._learned_size(self._last_accepted_code, name) if scanned == 1 else None
+            total = sum(area for area, _ in parts) / tracker._stable_gray.shape[0] / tracker._stable_gray.shape[1]
+            if learned and total >= LEARNED_FACTOR * learned:
+                count = max(count, int(round(total / learned)))
+            self.log(f"zona-{name}", f"provjera zone A: nestalo {count} artikala (površina {total:.1%}), skenirano {scanned}")
+            if count == 1 and scanned == 1 and parts:
+                self._learn_size(self._last_accepted_code, name, parts[0][0] / (tracker._stable_gray.shape[0] * tracker._stable_gray.shape[1]))
+            if count > best_count:
+                best_camera, best_count, best_parts = name, count, parts
+        extra = best_count - scanned - waiting
+        if extra > 0 and best_camera is not None:
+            _, before_image = self._a_baseline[best_camera]
+            gray = self.trackers[best_camera]._stable_gray
+            scale = before_image.shape[1] / gray.shape[1]
+            boxes = [box for _, box in sorted(best_parts, key=lambda part: part[0])][:extra] or [None] * extra
+            for position, box in enumerate(boxes):
+                crop_image = before_image
+                if box is not None:
+                    x, y, w, h = box
+                    crop_image = before_image[max(0, round((y - 6) * scale)):round((y + h + 6) * scale),
+                                              max(0, round((x - 6) * scale)):round((x + w + 6) * scale)].copy()
+                at = now - (position + 1) * (TAKE_CLUSTER_SECONDS + 1) - 1000
+                self._takes.append((crop_image, None, at, best_camera + EXTRA_MARK))
+            self.log(f"zona-{best_camera}", f"iz zone A je uzeto {extra} artikala više nego što je skenirano")
+            self._set("taken", UNSCANNED_MESSAGE)
+        self._check_pending_since = None
+        self._scanned_since_baseline = 0
+        self._a_baseline = {}
 
     def _expire_takes(self, now: float) -> None:
         self._takes = [take for take in self._takes if now - take[2] <= TAKEN_MAX_AGE or self._item_like(take[0])]
@@ -203,20 +307,20 @@ class CheckoutGuard:
             self.log("osoblje", f"osoblje je poništilo {self.unscanned} neskeniranih artikala")
             self._takes = []
             self._placed_unscanned = {}
+            self._check_pending_since = None
+            self._scanned_since_baseline = 0
+            self._a_baseline = {}
             if not self.busy:
                 self._set("ready", "Uzmite artikal i skenirajte ga.")
 
     def _leftover_takes(self, takes: list, index: int) -> list:
         if not takes:
             return []
-        index = min(max(index, 0), len(takes) - 1)
-        best = takes[index]
-        rest = [take for position, take in enumerate(takes) if position != index]
-        used = {best[3]}
-        for camera in sorted({take[3] for take in rest} - used):
-            same_item = [take for take in rest if take[3] == camera and abs(take[2] - best[2]) <= TAKE_MERGE_SECONDS]
-            if same_item:
-                rest.remove(min(same_item, key=lambda take: abs(take[2] - best[2])))
+        best = takes[min(max(index, 0), len(takes) - 1)]
+        rest = []
+        for cluster in self._clusters(takes):
+            if not any(take is best for take in cluster):
+                rest.extend(cluster)
         return rest
 
     def _return_unscanned(self, takes: list) -> None:
@@ -394,6 +498,7 @@ class CheckoutGuard:
             self._job_id += 1
             self._judging = False
             self._finish("accepted", "staff", "Osoblje je odobrilo artikal.")
+            self._note_accepted()
             self._return_unscanned(self._leftover_takes(self._scan_takes, self.last_taken_index))
             self._scan_takes = []
 
@@ -584,9 +689,12 @@ class CheckoutGuard:
                 self._set("ready", "Uzmite artikal i skenirajte ga.")
             return
         self.basket_status = f"uzet artikal, ostalo {occupancy:.0%}"
-        extras = [(item, None, now + 0.001 * (position + 1), camera) for position, item in enumerate(getattr(event, "extra", ()))]
-        if extras:
-            self.log(f"zona-{camera}", f"uzeto {len(extras) + 1} artikala odjednom")
+        previous = self.trackers[camera].previous_stable
+        if camera not in self._a_baseline and previous is not None and previous[0] is not None:
+            self._a_baseline[camera] = (previous[0].copy(), previous[1].copy())
+        extras = []
+        if getattr(event, "extra", ()):
+            self.log(f"zona-{camera}", f"možda uzeto {len(event.extra) + 1} artikala odjednom (samo zapis, ne računa se)")
         take = (event.item, before, now, camera)
         if self.zone_b_armed and now - self._taken_at <= TAKE_MERGE_SECONDS and not any(
                 item[3] == camera for item in self._scan_takes):
@@ -618,14 +726,8 @@ class CheckoutGuard:
             self._set("taken", "Artikal uzet iz zone A. Skenirajte ga.")
 
     def _forget_last_take(self, camera: str) -> None:
-        latest = max(take[2] for take in self._takes)
-        kept, removed = [], set()
-        for take in sorted(self._takes, key=lambda item: item[2], reverse=True):
-            if take[3] not in removed and latest - take[2] <= TAKE_MERGE_SECONDS:
-                removed.add(take[3])
-                continue
-            kept.append(take)
-        self._takes = sorted(kept, key=lambda item: item[2])
+        clusters = self._clusters(self._takes)
+        self._takes = [take for cluster in clusters[:-1] for take in cluster]
         self.log(f"zona-{camera}", f"artikal vraćen u zonu A, neskeniranih: {self.unscanned}")
         if self._takes:
             self._set("taken", UNSCANNED_MESSAGE if self.unscanned > 1 else "Artikal uzet iz zone A. Skenirajte ga.")
@@ -772,6 +874,7 @@ class CheckoutGuard:
                 return
             message = "Artikal prvi put viđen, naučen." if verdict == "learned" else "Artikal odgovara."
             self._finish("accepted", verdict, message)
+            self._note_accepted()
             self._return_unscanned(self._leftover_takes(self._scan_takes, self.last_taken_index))
             self._scan_takes = []
 
@@ -779,6 +882,7 @@ class CheckoutGuard:
         with self._lock:
             started = time.monotonic()
             self._watch_zone_a()
+            self._check_zone_a(time.monotonic())
             self.zone_a_ms = self.zone_a_ms * 0.9 + (time.monotonic() - started) * 100
             if self._pending_until is not None and time.monotonic() > self._pending_until:
                 self._pending_until = None

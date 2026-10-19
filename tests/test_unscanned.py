@@ -90,10 +90,30 @@ def test_two_takes_need_two_scans(monkeypatch, tmp_path):
     assert guard.state == "accepted"
 
 
-def test_two_items_in_one_grab_count_twice(monkeypatch, tmp_path):
+def test_extra_regions_in_one_grab_are_only_logged(monkeypatch, tmp_path):
     guard = make_guard(monkeypatch, tmp_path)
     take(guard, "A", 100.0, extra=(item(60),))
-    assert guard.unscanned == 2
+    assert guard.unscanned == 1
+    assert not guard.alert
+
+
+def test_many_events_for_one_take_count_as_one(monkeypatch, tmp_path):
+    guard = make_guard(monkeypatch, tmp_path)
+    for at, camera in ((100.0, "A"), (100.4, "A2"), (101.5, "A"), (103.0, "A2"), (104.2, "A")):
+        take(guard, camera, at)
+    assert guard.unscanned == 1
+    assert not guard.alert
+    assert guard.scan("1001", None, "Test") is True
+    accept(guard, index=2)
+    assert guard.unscanned == 0
+
+
+def test_alert_only_for_a_real_second_item(monkeypatch, tmp_path):
+    guard = make_guard(monkeypatch, tmp_path)
+    take(guard, "A", 100.0)
+    assert not guard.alert
+    take(guard, "A", 120.0)
+    assert guard.alert
 
 
 def test_take_while_waiting_for_zone_b_stays_unscanned(monkeypatch, tmp_path):

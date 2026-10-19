@@ -42,6 +42,8 @@ class RemoteGuard:
         self.message = "Spajam se na server kamera…"
         self.busy = False
         self.unscanned = 0
+        self.alert = False
+        self.checking = False
         self.outcome: Outcome | None = None
         self.online = False
         self._boot: str | None = None
@@ -139,6 +141,8 @@ class RemoteGuard:
             self.message = str(data.get("message", ""))
             self.busy = bool(data.get("busy"))
             self.unscanned = int(data.get("unscanned") or 0)
+            self.alert = bool(data.get("alert"))
+            self.checking = bool(data.get("checking"))
             raw = data.get("outcome")
             if raw:
                 total = self._offset + int(raw["number"])
@@ -159,5 +163,7 @@ class RemoteGuard:
             self.online = False
             self.busy = False
             self.unscanned = 0
+            self.alert = False
+            self.checking = False
             self.state = "offline"
             self.message = "Pogrešan CAM_SERVER_TOKEN." if error.status == 401 else "Server kamera nije dostupan. Pozovite osoblje."

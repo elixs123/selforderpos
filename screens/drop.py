@@ -25,6 +25,14 @@ from styles import (
 POLL_MS = 150
 
 
+def customer_problem(message: str) -> tuple[str, str]:
+    if "više artikala" in message:
+        return "Više artikala u zoni B", "Uklonite višak i ostavite samo artikal koji ste skenirali."
+    if message.startswith("Artikal ne odgovara"):
+        return "Artikal ne odgovara", "Uklonite ga iz zone B i odložite artikal koji ste skenirali."
+    return "Pažnja", message
+
+
 class DropScreen(QWidget):
     accepted = Signal(object)
     rejected = Signal(str)
@@ -94,7 +102,8 @@ class DropScreen(QWidget):
             return
         if guard.state == "mismatch":
             self._paint("problem", guard.message)
-            self.alert.show_message(guard.message, "Artikal ne odgovara", "error")
+            title, text = customer_problem(guard.message)
+            self.alert.show_message(text, title, "error")
             return
         self.alert.hide()
         if guard.state == "judging":
