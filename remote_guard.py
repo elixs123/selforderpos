@@ -87,9 +87,9 @@ class RemoteGuard:
     def cancel(self) -> None:
         threading.Thread(target=self._send_quietly, args=("/cancel",), daemon=True).start()
 
-    def approve(self) -> None:
+    def approve(self, learn: bool = False) -> None:
         try:
-            self._apply(self._request("POST", "/approve", {}, ACTION_TIMEOUT))
+            self._apply(self._request("POST", "/approve", {"learn": learn}, ACTION_TIMEOUT))
         except RemoteError:
             with self._lock:
                 self._number += 1

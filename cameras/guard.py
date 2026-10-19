@@ -36,6 +36,8 @@ TAKE_CLUSTER_SECONDS = 4.0
 COUNT_SECONDS = 0.7
 CHECK_WAIT_SECONDS = 5.0
 LEARNED_MIN = 3
+LEARN_TAKEN_REFERENCES = 3
+LEARN_PRODUCT_SCORE = 0.85
 LEARNED_FACTOR = 1.7
 EXTRA_MARK = "*"
 
@@ -98,6 +100,8 @@ class CheckoutGuard:
         self._b_before: dict[str, np.ndarray] = {}
         self._b_after_counts: dict[str, int] = {}
         self._waive_taken = False
+        self._taken_sample_ids: dict[int, int] = {}
+        self._placed_sample_ids: list[int] = []
         self.a_ledgers = {name: ZoneALedger() for name in self.cameras_a if name in counting_cameras()}
         self.b_ledgers = {name: ZoneBLedger() for name in self.cameras_b if name in counting_cameras()}
         self._counting = False
@@ -614,19 +618,29 @@ class CheckoutGuard:
             self._return_unscanned(self._scan_takes)
             self._scan_takes = []
 
-    def approve(self) -> None:
+    def approve(self, learn: bool = False) -> None:
         with self._lock:
             if not self.busy and self.state != "mismatch":
                 return
+            if learn and self.state == "mismatch":
+                self._learn_verified()
             for watcher in self.watchers.values():
                 watcher.disarm()
             self._pending_until = None
             self._job_id += 1
             self._judging = False
-            self._finish("accepted", "staff", "Osoblje je odobrilo artikal.")
+            self._finish("accepted", "verified" if learn else "staff",
+                         "Osoblje je potvrdilo artikal, slike su zapamćene." if learn else "Osoblje je odobrilo artikal.")
             self._note_accepted()
             self._return_unscanned(self._leftover_takes(self._scan_takes, self.last_taken_index))
             self._scan_takes = []
+
+    def _learn_verified(self) -> None:
+        ids = [] if MULTIPLE_PROBLEM in self.last_problems else list(self._placed_sample_ids)
+        if not self._waive_taken:
+            ids.append(self._taken_sample_ids.get(self.last_taken_index))
+        self.store.mark_verified(ids)
+        self.log("poredjenje", f"osoblje potvrdilo artikal {self.product_name or self.barcode}: {len([i for i in ids if i is not None])} slika zapamćeno kao tačno")
 
     def _wait_for_zone_b(self, takes: list) -> None:
         self._pending_until = None
@@ -639,8 +653,11 @@ class CheckoutGuard:
         self._waive_taken = not takes
         self._taken_signatures = {}
         self._warm_taken(self._taken_items)
+        self._taken_sample_ids = {}
+        self._placed_sample_ids = []
         for index, item in enumerate(items):
-            self.store.save("taken", self.barcode, self.product_code, self.product_name, f"A{index + 1}", crop_image=item)
+            self._taken_sample_ids[index] = self.store.save(
+                "taken", self.barcode, self.product_code, self.product_name, f"A{index + 1}", crop_image=item)
         self._b_before = {}
         for name, watcher in self.watchers.items():
             frame = self.latest(name)
@@ -680,6 +697,9 @@ class CheckoutGuard:
         taken = [(index, self._taken_signature(item)) for index, item in enumerate(taken_items)
                  if item is not None and item.size]
         references = self._reference_signatures(product_code)
+        taken_references = self._taken_reference_signatures(product_code)
+        same_view = max(((compare(other, reference), index) for index, other in taken for reference in taken_references),
+                        default=None)
 
         def score(rotations: bool):
             queries = [signature(item, rotations=rotations) for item in items]
@@ -698,6 +718,10 @@ class CheckoutGuard:
             score_product = best[0] if best else None
             rotated = True
         taken_index = best_taken[1] if best_taken else 0
+        if same_view is not None and (score_taken is None or same_view[0] > score_taken):
+            self.log("poredjenje", f"uzeto iz zone A liči na ranija uzimanja ovog artikla: {same_view[0]:.2f} "
+                                   f"({len(taken_references)} slika iz zone A), umjesto {'-' if score_taken is None else f'{score_taken:.2f}'}")
+            score_taken, taken_index = same_view
         self.last_taken_index = taken_index
         sizes = sorted(self.store.reference_sizes(product_code, since=self.references_since))
         old_references = self.store.old_reference_count(product_code, self.references_since)
@@ -725,8 +749,14 @@ class CheckoutGuard:
             problems.append(MULTIPLE_PROBLEM)
             self._waive_taken = True
         waived = self._waive_taken and placed_count <= 1 and score_product is not None and score_product >= threshold
+        learning = (not waived and placed_count <= 1 and len(taken_references) < LEARN_TAKEN_REFERENCES
+                    and score_product is not None and score_product >= max(threshold, LEARN_PRODUCT_SCORE)
+                    and (score_taken is None or score_taken < threshold))
         if waived:
             self.log("poredjenje", "uzeto iz zone A se ne poredi (više artikala uzeto zajedno), artikal liči na skenirani")
+        elif learning:
+            self.log("poredjenje", f"učenje: artikal ima {len(taken_references)} slika iz zone A (treba {LEARN_TAKEN_REFERENCES}), "
+                                   f"prihvatam jer jako liči na skenirani ({score_product:.2f})")
         elif score_taken is None:
             problems.append("nije viđeno šta je uzeto iz zone A")
         elif score_taken < threshold:
@@ -745,6 +775,32 @@ class CheckoutGuard:
         with self._reference_lock:
             result = []
             for path in self.store.reference_paths(product_code, limit=20, since=self.references_since):
+                if path in self._missing_references:
+                    continue
+                if path not in self._reference_cache:
+                    image = self.store.load_image(path)
+                    if image is None:
+                        self._missing_references.add(path)
+                        continue
+                    self._reference_cache[path] = signature(image, rotations=False)
+                result.append(self._reference_cache[path])
+            return result
+
+    def _reference_take_index(self) -> int | None:
+        takes = self._scan_takes
+        if not takes or len(takes) != len(self._taken_items):
+            return None
+        newest = max(take[2] for take in takes)
+        fresh = [index for index, take in enumerate(takes)
+                 if newest - take[2] <= TAKE_CLUSTER_SECONDS and self._item_like(take[0])]
+        if not fresh:
+            return None
+        return self.last_taken_index if self.last_taken_index in fresh else fresh[-1]
+
+    def _taken_reference_signatures(self, product_code: str | None) -> list[Signature]:
+        with self._reference_lock:
+            result = []
+            for path in self.store.taken_reference_paths(product_code, limit=20, since=self.references_since):
                 if path in self._missing_references:
                     continue
                 if path not in self._reference_cache:
@@ -996,12 +1052,14 @@ class CheckoutGuard:
             if job != self._job_id:
                 return
             self._judging = False
+            self._placed_sample_ids = []
             for name, item, ratio in items:
-                self.store.save(
+                sample_id = self.store.save(
                     "placed", self.barcode, self.product_code, self.product_name, name,
                     crop_image=item, full_image=frames[name][0], change_ratio=ratio,
                     verdict=verdict, score_taken=score_taken, score_product=score_product,
                 )
+                self._placed_sample_ids.append(sample_id)
             self._dump(f"placed-{verdict}", {
                 "B-item": crops, "taken-item": self._taken_items,
                 "reference": self.debug["reference"] if self.debug else None,
@@ -1017,6 +1075,10 @@ class CheckoutGuard:
                     self._set("mismatch", "Artikal ne odgovara: " + ", ".join(problems) + ". Uklonite ga i odložite skenirani artikal.")
                 return
             message = "Artikal prvi put viđen, naučen." if verdict == "learned" else "Artikal odgovara."
+            if not self._waive_taken:
+                index = self._reference_take_index()
+                if index is not None:
+                    self.store.mark_taken_reference(self._taken_sample_ids.get(index))
             self._finish("accepted", verdict, message)
             self._note_accepted()
             self._return_unscanned(self._leftover_takes(self._scan_takes, self.last_taken_index))

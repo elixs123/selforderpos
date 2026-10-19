@@ -122,7 +122,7 @@ def load_model(spec: ModelSpec):
 
 class Embedder:
     def __init__(self, name: str | None = None) -> None:
-        wanted = name or os.environ.get("CAM_MODEL", "dinov2")
+        wanted = name or os.environ.get("CAM_MODEL", "clip")
         try:
             self.spec = MODELS[wanted]
             self.model = load_model(self.spec)

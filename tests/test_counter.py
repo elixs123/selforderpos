@@ -183,6 +183,7 @@ def test_taken_check_is_waived_after_multiple_items_and_for_count_licensed_scan(
     monkeypatch.setattr(guard_module, "compare", lambda query, other: 0.9 if other.kind == 9 else 0.3)
     monkeypatch.setattr(guard, "_taken_signature", lambda item: SimpleNamespace(vectors=None, kind=int(item[0, 0, 0])))
     monkeypatch.setattr(guard, "_reference_signatures", lambda code: [SimpleNamespace(vectors=None, kind=9, image=None)])
+    monkeypatch.setattr(guard, "_taken_reference_signatures", lambda code: [SimpleNamespace(vectors=None, kind=7)] * 3)
     placed = np.full((20, 20, 3), 5, np.uint8)
     taken = np.full((20, 20, 3), 1, np.uint8)
     guard._waive_taken = False
@@ -196,3 +197,62 @@ def test_taken_check_is_waived_after_multiple_items_and_for_count_licensed_scan(
     guard._waive_taken = True
     verdict, problems, _, _ = guard._judge([placed], 0.1, [], [], "P", 1)
     assert verdict == "ok", problems
+
+
+def test_taken_crop_of_accepted_sale_becomes_zone_a_reference(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAMPLES_DIR", str(tmp_path))
+    readers = {"A2": ControlledReader(), "B2": ControlledReader()}
+    guard = CheckoutGuard(readers)
+    guard.product_code, guard.barcode, guard.product_name = "P", "1", "Test"
+    old = np.full((40, 30, 3), (40, 90, 200), np.uint8)
+    new = np.full((40, 30, 3), (200, 90, 40), np.uint8)
+    guard._wait_for_zone_b([(old, None, 10.0, "A2"), (new, None, 100.0, "A2")])
+    guard.last_taken_index = 0
+    guard._judge = lambda *args, **kwargs: ("ok", [], 0.9, 0.9)
+    for watcher in guard.watchers.values():
+        watcher.disarm()
+    guard._judging = True
+    guard._judge_job(guard._job_id, [], [], 0.1, {}, time.monotonic(), ([old, new], [None, None], "P"))
+    paths = guard.store.taken_reference_paths("P")
+    assert len(paths) == 1
+    assert guard.store.load_image(paths[0])[0, 0, 0] == 200
+
+
+def test_zone_a_references_help_but_are_not_required_to_decide(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAMPLES_DIR", str(tmp_path))
+    monkeypatch.setenv("CAM_MATCH_THRESHOLD", "0.6")
+    readers = {"A2": ControlledReader(), "B2": ControlledReader()}
+    guard = CheckoutGuard(readers)
+    monkeypatch.setattr(guard_module, "signature", lambda image, rotations=False: SimpleNamespace(vectors=None, kind=int(image[0, 0, 0])))
+    monkeypatch.setattr(guard_module, "compare", lambda query, other: 0.9 if other.kind == 9 else 0.3)
+    monkeypatch.setattr(guard, "_taken_signature", lambda item: SimpleNamespace(vectors=None, kind=int(item[0, 0, 0])))
+    monkeypatch.setattr(guard, "_reference_signatures", lambda code: [SimpleNamespace(vectors=None, kind=9, image=None)])
+    placed, taken = np.full((20, 20, 3), 5, np.uint8), np.full((20, 20, 3), 1, np.uint8)
+    monkeypatch.setattr(guard, "_taken_reference_signatures", lambda code: [])
+    assert guard._judge([placed], 0.1, [taken], [None], "P", 1)[0] == "mismatch"
+    monkeypatch.setattr(guard, "_taken_reference_signatures", lambda code: [SimpleNamespace(vectors=None, kind=7)] * 3)
+    assert guard._judge([placed], 0.1, [taken], [None], "P", 1)[0] == "mismatch", [event[3] for event in list(guard.events)[-3:]]
+    monkeypatch.setattr(guard, "_taken_reference_signatures", lambda code: [SimpleNamespace(vectors=None, kind=9)] * 3)
+    assert guard._judge([placed], 0.1, [taken], [None], "P", 1)[0] == "ok"
+
+
+def test_staff_verified_item_is_remembered_as_reference(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAMPLES_DIR", str(tmp_path))
+    readers = {"A2": ControlledReader(), "B2": ControlledReader()}
+    guard = CheckoutGuard(readers)
+    guard.product_code, guard.barcode, guard.product_name = "P", "1", "Test"
+    taken = np.full((40, 30, 3), (200, 90, 40), np.uint8)
+    placed = np.full((40, 30, 3), (40, 90, 200), np.uint8)
+    guard._wait_for_zone_b([(taken, None, 100.0, "A2")])
+    guard.last_taken_index = 0
+    guard._judge = lambda *args, **kwargs: ("mismatch", ["nije isto što je uzeto iz zone A"], 0.2, 0.3)
+    for watcher in guard.watchers.values():
+        watcher.disarm()
+    guard._judging = True
+    frames = {"B2": (np.zeros((60, 60, 3), np.uint8), (0, 0))}
+    guard._judge_job(guard._job_id, [("B2", placed, 0.1)], [placed], 0.1, frames, time.monotonic(), ([taken], [None], "P"))
+    assert guard.state == "mismatch"
+    guard.approve(learn=True)
+    assert guard.outcome.kind == "accepted" and guard.outcome.verdict == "verified"
+    assert guard.store.load_image(guard.store.taken_reference_paths("P")[0])[0, 0, 0] == 200
+    assert guard.store.load_image(guard.store.reference_paths("P")[0])[0, 0, 0] == 40

@@ -91,6 +91,7 @@ class MainWindow(QMainWindow):
             screen.staff_requested.connect(self.show_staff)
         self.staff.closed.connect(self.back_to_scan)
         self.staff.approve_requested.connect(self.approve_item)
+        self.staff.learn_requested.connect(self.learn_item)
         self.staff.forgive_requested.connect(self.forgive_unscanned)
         self.staff.settings_requested.connect(self.show_settings)
         self.settings_screen.saved.connect(self.apply_settings)
@@ -161,6 +162,10 @@ class MainWindow(QMainWindow):
         if self.guard is not None:
             self.guard.approve()
 
+    def learn_item(self) -> None:
+        if self.guard is not None:
+            self.guard.approve(learn=True)
+
     def forgive_unscanned(self) -> None:
         if self.guard is not None and hasattr(self.guard, "forgive_unscanned"):
             self.guard.forgive_unscanned()
@@ -212,7 +217,8 @@ class MainWindow(QMainWindow):
         guard = self.guard
         can_approve = guard is not None and self.drop.waiting and (guard.busy or guard.state in ("mismatch", "timeout", "offline"))
         self.screens.setCurrentWidget(self.staff)
-        self.staff.begin(can_approve, getattr(guard, "unscanned", 0) if guard is not None else 0)
+        can_learn = can_approve and guard.state == "mismatch"
+        self.staff.begin(can_approve, getattr(guard, "unscanned", 0) if guard is not None else 0, can_learn)
 
     def show_settings(self) -> None:
         self.screens.setCurrentWidget(self.settings_screen)

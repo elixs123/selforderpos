@@ -36,14 +36,20 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 
 REFERENCES = """
 SELECT {column} FROM samples
-WHERE product_code = ? AND event = 'placed' AND verdict IN ('learned', 'ok') AND {column} IS NOT NULL
+WHERE product_code = ? AND event = 'placed' AND verdict IN ('learned', 'ok', 'verified') AND {column} IS NOT NULL
 AND created_at >= ?
-ORDER BY id DESC LIMIT ?
+ORDER BY verdict = 'verified' DESC, id DESC LIMIT ?
+"""
+
+TAKEN_REFERENCES = """
+SELECT crop_path FROM samples
+WHERE product_code = ? AND event = 'taken' AND verdict IN ('ok', 'verified') AND crop_path IS NOT NULL AND created_at >= ?
+ORDER BY verdict = 'verified' DESC, id DESC LIMIT ?
 """
 
 OLD_REFERENCES = """
 SELECT COUNT(*) FROM samples
-WHERE product_code = ? AND event = 'placed' AND verdict IN ('learned', 'ok') AND crop_path IS NOT NULL
+WHERE product_code = ? AND event = 'placed' AND verdict IN ('learned', 'ok', 'verified') AND crop_path IS NOT NULL
 AND created_at < ?
 """
 
@@ -102,6 +108,25 @@ class SampleStore:
         query = REFERENCES.format(column="crop_path")
         with closing(sqlite3.connect(self.database)) as connection:
             return [row[0] for row in connection.execute(query, (product_code, since, limit)).fetchall()]
+
+    def taken_reference_paths(self, product_code: str | None, limit: int = 20, since: str = "") -> list[str]:
+        if not product_code:
+            return []
+        with closing(sqlite3.connect(self.database)) as connection:
+            return [row[0] for row in connection.execute(TAKEN_REFERENCES, (product_code, since, limit)).fetchall()]
+
+    def mark_taken_reference(self, sample_id: int | None) -> None:
+        if sample_id is None:
+            return
+        with closing(sqlite3.connect(self.database)) as connection, connection:
+            connection.execute("UPDATE samples SET verdict = 'ok' WHERE id = ? AND event = 'taken' AND verdict IS NULL", (sample_id,))
+
+    def mark_verified(self, sample_ids: list[int | None]) -> None:
+        ids = [sample_id for sample_id in sample_ids if sample_id is not None]
+        if not ids:
+            return
+        with closing(sqlite3.connect(self.database)) as connection, connection:
+            connection.executemany("UPDATE samples SET verdict = 'verified' WHERE id = ?", [(sample_id,) for sample_id in ids])
 
     def old_reference_count(self, product_code: str | None, since: str) -> int:
         if not product_code or not since:
