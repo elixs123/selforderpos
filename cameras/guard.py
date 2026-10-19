@@ -27,6 +27,7 @@ CROP_PADDING = 10
 MULTIPLE_PROBLEM = "odloženo je više artikala"
 MULTIPLE_MESSAGE = "Odložili ste više artikala. Uklonite višak i ostavite samo skenirani artikal."
 UNSCANNED_MESSAGE = "Uzeli ste još jedan artikal iz zone A. Skenirajte ga."
+NOT_TAKEN_MESSAGE = "Taj artikal nije uzet iz zone A. Ako ste ga već skenirali, ne skenirajte ga ponovo."
 PLACED_UNSCANNED_MESSAGE = "U zonu B je odložen artikal koji nije skeniran. Uklonite ga iz zone B pa ga skenirajte."
 ZONE_B_QUIET_SECONDS = 2.0
 MAX_TAKES = 30
@@ -167,6 +168,17 @@ class CheckoutGuard:
                 counts[take[3]] = counts.get(take[3], 0) + 1
         return max(counts.values(), default=0)
 
+    def _expire_takes(self, now: float) -> None:
+        self._takes = [take for take in self._takes if now - take[2] <= TAKEN_MAX_AGE or self._item_like(take[0])]
+
+    def _zone_a_active(self) -> bool:
+        for name, tracker in self.trackers.items():
+            if not self._is_live(name):
+                continue
+            if tracker.moved or tracker.motion_ratio > tracker.motion_max or self.hand_shapes.get(name):
+                return True
+        return False
+
     def _item_like(self, image) -> bool:
         key = id(image)
         cached = self._item_like_cache.get(key)
@@ -208,7 +220,8 @@ class CheckoutGuard:
         return rest
 
     def _return_unscanned(self, takes: list) -> None:
-        self._takes = (list(takes) + self._takes)[-MAX_TAKES:]
+        takes = [take for take in takes if self._item_like(take[0])]
+        self._takes = (takes + self._takes)[-MAX_TAKES:]
         if self.unscanned:
             self.log("zona-A", f"neskeniranih artikala: {self.unscanned}")
             self._set("taken", self._unscanned_message())
@@ -331,7 +344,9 @@ class CheckoutGuard:
                 self.message = "Prvo odložite prethodni artikal u zonu B."
                 return False
             now = time.monotonic()
+            was_active = self._zone_a_active()
             self._force_takes(now)
+            self._expire_takes(now)
             recent_take = bool(self._takes)
             if not self.zone_a_ready:
                 self.log("zona-A", f"nije spremna: {self.zone_a_waiting_reason()}")
@@ -339,6 +354,10 @@ class CheckoutGuard:
                 return False
             if not self.zone_a_occupied and not recent_take:
                 self._finish("rejected", "zone_a_empty", "Stavite korpu ili artikle u zonu A.")
+                return False
+            if not recent_take and not was_active and not self._zone_a_active():
+                self.log("zona-A", "skenirano bez uzimanja iz zone A (ništa se ne dešava u zoni A)")
+                self._finish("rejected", "not_taken", NOT_TAKEN_MESSAGE)
                 return False
             if not any(self.latest(name) is not None for name in self.cameras_b):
                 self._finish("rejected", "camera_b", "Kamera zone B nema sliku. Pozovite osoblje.")

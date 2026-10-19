@@ -1,3 +1,5 @@
+import time
+
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
@@ -40,6 +42,9 @@ from styles import (
 )
 
 
+ALERT_SECONDS = 4.0
+
+
 class ScanScreen(QWidget):
     pay_requested = Signal()
     staff_requested = Signal()
@@ -50,6 +55,7 @@ class ScanScreen(QWidget):
         self.cart = cart
         self.guard = None
         self.guide_state = ""
+        self._alert_until = 0.0
         self.guide_timer = QTimer(self)
         self.guide_timer.setInterval(200)
         self.guide_timer.timeout.connect(self._update_guide)
@@ -84,7 +90,7 @@ class ScanScreen(QWidget):
         self.pay_button.setEnabled(self.cart.item_count > 0 and self._pay_allowed())
         if getattr(guard, "unscanned", 0) > 0 and guard.state == "taken":
             self.alert.show_message(guard.message, "NESKENIRAN ARTIKAL")
-        else:
+        elif time.monotonic() >= self._alert_until:
             self.alert.hide()
         state = guard.state
         key = (state, guard.message if state == "taken" else "")
@@ -363,6 +369,8 @@ class ScanScreen(QWidget):
         seen = self.guard.outcome.number if self.guard.outcome else 0
         if not self.guard.scan(barcode, product.code, product.name):
             self._show_notice(self.guard.message, success=False)
+            self._alert_until = time.monotonic() + ALERT_SECONDS
+            self.alert.show_message(self.guard.message, "PAŽNJA")
             return
         self.place_requested.emit(product, seen)
 

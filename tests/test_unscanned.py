@@ -8,7 +8,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "cameras"))
 
-from guard import UNSCANNED_MESSAGE, CheckoutGuard
+from guard import NOT_TAKEN_MESSAGE, UNSCANNED_MESSAGE, CheckoutGuard
 from vision_api import snapshot
 from watcher import BasketEvent, BasketTracker
 
@@ -147,3 +147,50 @@ def test_blank_surface_takes_are_not_counted(monkeypatch, tmp_path):
     for at in (110.0, 120.0, 130.0):
         guard._on_zone_a_event("A", BasketEvent("taken", blank(), 0.1), at, sync=False)
     assert guard.unscanned == 1
+
+
+def test_scan_without_any_take_is_rejected_at_once(monkeypatch, tmp_path):
+    guard = make_guard(monkeypatch, tmp_path)
+    guard.trackers["A"].occupancy = 0.5
+    assert guard.scan("1001", None, "Test") is False
+    assert guard.outcome.verdict == "not_taken"
+    assert guard.message == NOT_TAKEN_MESSAGE
+    assert not guard.busy
+
+
+def test_scan_while_something_moves_in_zone_a_waits_for_the_take(monkeypatch, tmp_path):
+    guard = make_guard(monkeypatch, tmp_path)
+    guard.trackers["A"].occupancy = 0.5
+    guard.trackers["A"]._moved = True
+    guard._force_takes = lambda *args, **kwargs: None
+    assert guard.scan("1001", None, "Test") is True
+    assert guard.state == "waiting_take"
+
+
+def test_second_scan_of_a_single_take_is_rejected(monkeypatch, tmp_path):
+    guard = make_guard(monkeypatch, tmp_path)
+    guard.trackers["A"].occupancy = 0.5
+    take(guard, "A", time.monotonic())
+    assert guard.scan("1001", None, "Test") is True
+    accept(guard, index=0)
+    assert guard.scan("1001", None, "Test") is False
+    assert guard.outcome.verdict == "not_taken"
+
+
+def test_old_blank_take_cannot_license_a_scan(monkeypatch, tmp_path):
+    guard = make_guard(monkeypatch, tmp_path)
+    guard.trackers["A"].occupancy = 0.5
+    guard._on_zone_a_event("A", BasketEvent("taken", blank(), 0.1), time.monotonic() - 120, sync=False)
+    assert guard.scan("1001", None, "Test") is False
+    assert guard.outcome.verdict == "not_taken"
+
+
+def test_blank_leftovers_are_not_kept_after_accept(monkeypatch, tmp_path):
+    guard = make_guard(monkeypatch, tmp_path)
+    guard.trackers["A"].occupancy = 0.5
+    now = time.monotonic()
+    take(guard, "A", now)
+    guard._on_zone_a_event("A2", BasketEvent("taken", blank(), 0.1), now + 5, sync=False)
+    assert guard.scan("1001", None, "Test") is True
+    accept(guard, index=0)
+    assert guard._takes == []
