@@ -8,8 +8,10 @@ import numpy as np
 
 MODELS_FOLDER = Path(__file__).resolve().parent / "models"
 INPUT_SIZE = 224
-MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
-STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+IMAGENET_MEAN = (0.485, 0.456, 0.406)
+IMAGENET_STD = (0.229, 0.224, 0.225)
+CLIP_MEAN = (0.4815, 0.4578, 0.4082)
+CLIP_STD = (0.2686, 0.2613, 0.2758)
 
 
 @dataclass(frozen=True)
@@ -19,6 +21,8 @@ class ModelSpec:
     filename: str
     threshold: float
     size_text: str
+    mean: tuple[float, float, float] = IMAGENET_MEAN
+    std: tuple[float, float, float] = IMAGENET_STD
 
 
 MODELS = {
@@ -28,6 +32,22 @@ MODELS = {
         "dinov2-small.onnx",
         0.6,
         "88 MB",
+    ),
+    "dinov2-base": ModelSpec(
+        "dinov2-base",
+        "https://huggingface.co/onnx-community/dinov2-base/resolve/main/onnx/model.onnx",
+        "dinov2-base.onnx",
+        0.6,
+        "346 MB",
+    ),
+    "clip": ModelSpec(
+        "clip",
+        "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/main/onnx/vision_model.onnx",
+        "clip-vit-base-patch32.onnx",
+        0.75,
+        "350 MB",
+        CLIP_MEAN,
+        CLIP_STD,
     ),
     "mobilenet": ModelSpec(
         "mobilenet",
@@ -60,9 +80,10 @@ def square(image: np.ndarray) -> np.ndarray:
     return cv2.resize(canvas, (INPUT_SIZE, INPUT_SIZE))
 
 
-def to_blob(image: np.ndarray) -> np.ndarray:
+def to_blob(image: np.ndarray, mean: tuple = IMAGENET_MEAN, std: tuple = IMAGENET_STD) -> np.ndarray:
     rgb = cv2.cvtColor(square(image), cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
-    return ((rgb - MEAN) / STD).transpose(2, 0, 1)[np.newaxis].astype(np.float32).copy()
+    normalized = (rgb - np.array(mean, dtype=np.float32)) / np.array(std, dtype=np.float32)
+    return normalized.transpose(2, 0, 1)[np.newaxis].astype(np.float32).copy()
 
 
 class OnnxRuntimeModel:
@@ -72,7 +93,7 @@ class OnnxRuntimeModel:
         self.session = onnxruntime.InferenceSession(str(path), providers=["CPUExecutionProvider"])
         self.input_name = self.session.get_inputs()[0].name
         outputs = [output.name for output in self.session.get_outputs()]
-        self.output_name = "pooler_output" if "pooler_output" in outputs else outputs[0]
+        self.output_name = next((name for name in ("image_embeds", "pooler_output") if name in outputs), outputs[0])
 
     def run(self, blob: np.ndarray) -> np.ndarray:
         result = self.session.run([self.output_name], {self.input_name: blob})[0]
@@ -121,7 +142,7 @@ class Embedder:
         return self.spec.threshold
 
     def embed(self, image: np.ndarray) -> np.ndarray:
-        vector = self.model.run(to_blob(image)).astype(np.float32)
+        vector = self.model.run(to_blob(image, self.spec.mean, self.spec.std)).astype(np.float32)
         return vector / (np.linalg.norm(vector) + 1e-9)
 
     def embed_rotations(self, image: np.ndarray) -> list[np.ndarray]:

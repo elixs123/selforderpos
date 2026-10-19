@@ -55,6 +55,9 @@ MIN_TEXTURE = 6.0
 WHITE_LEVEL = 200
 STILL_THERE = 0.9
 NEAR_SHARE = 0.4
+MULTI_MIN_SHARE = 0.012
+MULTI_RELATIVE = 0.15
+MERGE_GAP = 0.15
 
 
 def align(reference: np.ndarray, image: np.ndarray) -> np.ndarray:
@@ -108,6 +111,45 @@ def thick_blobs(mask: np.ndarray) -> list[tuple[int, tuple[int, int, int, int]]]
     parts = [(int(stats[index, cv2.CC_STAT_AREA]), tuple(int(value) for value in stats[index, :4]))
              for index in range(1, count) if stats[index, cv2.CC_STAT_AREA] >= PART_MIN_SHARE * mask.size]
     return sorted(parts, reverse=True)
+
+
+def _box_gap(first: tuple[int, int, int, int], second: tuple[int, int, int, int]) -> float:
+    fx, fy, fw, fh = first
+    sx, sy, sw, sh = second
+    dx = max(sx - (fx + fw), fx - (sx + sw), 0)
+    dy = max(sy - (fy + fh), fy - (sy + sh), 0)
+    return float(np.hypot(dx, dy))
+
+
+def _union(first: tuple[int, int, int, int], second: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
+    left, top = min(first[0], second[0]), min(first[1], second[1])
+    right = max(first[0] + first[2], second[0] + second[2])
+    bottom = max(first[1] + first[3], second[1] + second[3])
+    return left, top, right - left, bottom - top
+
+
+def separate_items(mask: np.ndarray) -> list[tuple[int, tuple[int, int, int, int]]]:
+    clusters = [list(part) for part in thick_blobs(mask)]
+    merged = True
+    while merged:
+        merged = False
+        for first in range(len(clusters)):
+            for second in range(first + 1, len(clusters)):
+                one, other = clusters[first], clusters[second]
+                size = max(one[1][2], one[1][3], other[1][2], other[1][3])
+                if _box_gap(one[1], other[1]) <= MERGE_GAP * size:
+                    clusters[first] = [one[0] + other[0], _union(one[1], other[1])]
+                    del clusters[second]
+                    merged = True
+                    break
+            if merged:
+                break
+    if not clusters:
+        return []
+    largest = max(area for area, _ in clusters)
+    kept = [(area, box) for area, box in clusters
+            if area >= MULTI_MIN_SHARE * mask.size and area >= MULTI_RELATIVE * largest]
+    return sorted(kept, reverse=True)
 
 
 def taken_candidates(old_gray: np.ndarray, gray: np.ndarray, background_old: np.ndarray, background_new: np.ndarray,
@@ -170,6 +212,7 @@ class ZoneWatcher:
         self.motion_ratio = 0.0
         self.last_box: tuple[int, int, int, int] | None = None
         self.parts = 0
+        self.items: list[tuple[int, tuple[int, int, int, int]]] = []
         self._baseline: np.ndarray | None = None
         self._previous: np.ndarray | None = None
         self._previous_ignore: np.ndarray | None = None
@@ -201,6 +244,10 @@ class ZoneWatcher:
     def still_seconds(self, now: float) -> float:
         return 0.0 if self._stable_since is None else now - self._stable_since
 
+    def count_items_now(self) -> int:
+        self.items = [] if self.last_mask is None else separate_items(self.last_mask)
+        return len(self.items)
+
     def update(self, image: np.ndarray, now: float, ignore: np.ndarray | None = None) -> Placement | None:
         gray, self._scale = _gray(image, self.work_width)
         hand = _ignore(ignore, gray.shape)
@@ -228,6 +275,7 @@ class ZoneWatcher:
             return None
         self.disarm()
         found, self.parts = main_box(change_mask)
+        self.items = separate_items(change_mask)
         if found is None:
             return None
         box = tuple(round(value * self._scale) for value in found)

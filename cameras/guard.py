@@ -24,6 +24,8 @@ LOOP_SECONDS = 0.04
 HAND_PASS_SECONDS = 0.2
 HAND_MAX_AGE = 1.5
 CROP_PADDING = 10
+MULTIPLE_PROBLEM = "odloženo je više artikala"
+MULTIPLE_MESSAGE = "Odložili ste više artikala. Uklonite višak i ostavite samo skenirani artikal."
 
 
 @dataclass(frozen=True)
@@ -344,7 +346,7 @@ class CheckoutGuard:
 
     def _judge(
         self, items: list[np.ndarray], change_ratio: float, taken_items: list[np.ndarray],
-        taken_befores: list, product_code: str | None,
+        taken_befores: list, product_code: str | None, placed_count: int = 1,
     ) -> tuple[str, list[str], float | None, float | None]:
         threshold = match_threshold()
         taken = [(index, self._taken_signature(item)) for index, item in enumerate(taken_items)
@@ -377,7 +379,7 @@ class CheckoutGuard:
             f"uzeto->odlozeno: {'-' if score_taken is None else f'{score_taken:.2f}'}   "
             f"skenirano->odlozeno: {'-' if score_product is None else f'{score_product:.2f}'} ({len(references)} ref{old_note})   "
             f"velicina: {size}   prag {threshold} ({method_name()}{', sa rotacijama' if rotated else ''})   "
-            f"kamera A: {len(taken)}, B: {len(queries)}"
+            f"kamera A: {len(taken)}, B: {len(queries)}   artikala u zoni B: {placed_count}"
         )
         self.debug_number += 1
         self.debug = {
@@ -390,6 +392,8 @@ class CheckoutGuard:
             "threshold": threshold,
         }
         problems = []
+        if placed_count > 1:
+            problems.append(MULTIPLE_PROBLEM)
         if score_taken is None:
             problems.append("nije viđeno šta je uzeto iz zone A")
         elif score_taken < threshold:
@@ -538,6 +542,7 @@ class CheckoutGuard:
                 items.append((name, item_from(frame, offset, placement.box), placement.change_ratio))
             elif watcher.change_ratio >= watcher.change_min and watcher.last_mask is not None:
                 found, watcher.parts = main_box(watcher.last_mask)
+                watcher.count_items_now()
                 if found is not None:
                     roi, _ = crop(frame, self.zones.get(name))
                     factor = roi.shape[1] / watcher.last_mask.shape[1]
@@ -546,23 +551,33 @@ class CheckoutGuard:
                     items.append((name, item_from(frame, offset, box), watcher.change_ratio))
             watcher.disarm()
         crops = [item for _, item, _ in items]
-        for name, _, _ in items:
-            parts = self.watchers[name].parts
-            if parts > 1:
-                self.log(f"zona-{name}", f"{parts} promjene u zoni B (pomjereni drugi artikli/sjena) — uzimam najveću")
+        counts = {name: len(self.watchers[name].items) for name, _, _ in items}
+        placed_count = max(counts.values(), default=1)
+        for name, count in counts.items():
+            watcher = self.watchers[name]
+            if count > 1:
+                areas = ", ".join(str(area) for area, _ in watcher.items)
+                self.log(f"zona-{name}", f"{count} odvojena artikla u zoni B (površine {areas} px)")
+            elif watcher.parts > 1:
+                self.log(f"zona-{name}", f"{watcher.parts} promjene u zoni B (pomjereni drugi artikli/sjena) — uzimam najveću")
         self._job_id += 1
         self._judging = True
         self._set("judging", "Provjeravam artikal...")
         snapshot = (list(self._taken_items), list(self._taken_befores), self.product_code)
         threading.Thread(
-            target=self._judge_job, args=(self._job_id, items, crops, change_ratio, frames, now, snapshot), daemon=True,
+            target=self._judge_job, args=(self._job_id, items, crops, change_ratio, frames, now, snapshot, placed_count), daemon=True,
         ).start()
 
-    def _judge_job(self, job: int, items: list, crops: list, change_ratio: float, frames: dict, now: float, snapshot: tuple) -> None:
+    def _judge_job(
+        self, job: int, items: list, crops: list, change_ratio: float, frames: dict, now: float, snapshot: tuple,
+        placed_count: int = 1,
+    ) -> None:
         taken_items, taken_befores, product_code = snapshot
         started = time.monotonic()
         try:
-            verdict, problems, score_taken, score_product = self._judge(crops, change_ratio, taken_items, taken_befores, product_code)
+            verdict, problems, score_taken, score_product = self._judge(
+                crops, change_ratio, taken_items, taken_befores, product_code, placed_count,
+            )
         except Exception as error:
             print(f"Poređenje: {error}")
             verdict, problems, score_taken, score_product = "mismatch", [f"greška u poređenju ({error})"], None, None
@@ -586,7 +601,10 @@ class CheckoutGuard:
                 for watcher in self.watchers.values():
                     watcher.rearm()
                 self._armed_at = time.monotonic()
-                self._set("mismatch", "Artikal ne odgovara: " + ", ".join(problems) + ". Uklonite ga i odložite skenirani artikal.")
+                if MULTIPLE_PROBLEM in problems:
+                    self._set("mismatch", MULTIPLE_MESSAGE)
+                else:
+                    self._set("mismatch", "Artikal ne odgovara: " + ", ".join(problems) + ". Uklonite ga i odložite skenirani artikal.")
                 return
             message = "Artikal prvi put viđen, naučen." if verdict == "learned" else "Artikal odgovara."
             self._finish("accepted", verdict, message)

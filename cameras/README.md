@@ -21,7 +21,7 @@ CAM_MODEL=dinov2
 ```
 
 - Kamera A gleda zonu A (korpa ili artikli), kamera B zonu B (odlaganje).
-- `102` = pomoćni tok, laganiji. `CAM_MODEL` = `dinov2` ili `mobilenet`.
+- `102` = pomoćni tok, laganiji. `CAM_MODEL` = `dinov2`, `dinov2-base`, `clip` ili `mobilenet` (veći modeli se sami preuzmu pri prvom pokretanju; uporedi ih s `python cameras/benchmark_models.py`).
 
 ## Pokretanje
 

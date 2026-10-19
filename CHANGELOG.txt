@@ -1,5 +1,10 @@
 IZMJENE - samouslužna kasa
 
+2026-10-19
+- Zona B: kad se odloži više artikala odjednom (dva ili više odvojenih komada u zoni, na bilo kojoj B kameri), kasa ne prihvata odlaganje nego piše na ekranu 'Odložili ste više artikala. Uklonite višak i ostavite samo skenirani artikal.' Kad kupac ukloni višak, odlaganje se ponovo provjerava. Osoblje i dalje može odobriti. Komadi koji su blizu jedan drugom (do 15% veličine) računaju se kao jedan artikal (flaša s bijelom etiketom), sitni komadi (manji od 1.2% zone ili 15% najvećeg) se ne računaju. Dijagnostika piše 'artikala u zoni B' i površine komada.
+- AI modeli: uz dinov2 (mali) i mobilenet dodani dinov2-base (veći, ~346 MB) i clip (~350 MB); biraju se u Postavkama (AI model) ili CAM_MODEL u .env na računaru koji vodi kamere (laptop), a preuzimaju se sami pri prvom pokretanju. Server kamera prima i --model (python vision_server.py --monitor --model clip), inače uzima CAM_MODEL iz .env. Ako preuzimanje ne uspije, kasa nastavlja s prethodnim modelom (mobilenet). Za svaki model je prag provizoran (clip 0.75), pa nakon promjene modela provjeri prag.
+- cameras/benchmark_models.py: poredi modele na snimcima odobrenih odlaganja iz data/samples (AUC, koliko isti artikal pada, koliko različit raste, predloženi prag, brzina po slici). Pokreni: python cameras/benchmark_models.py --models dinov2,dinov2-base,clip,mobilenet
+
 2026-10-16
 - 'Testiraj kamere' u Postavkama kase piše i stanje svake kamere na serveru (uživo / nema veze) i je li zona A spremna (s razlogom ako nije).
 - Zona A je 'spremna' kad ijedna kamera koja ima sliku nauči praznu zonu (prije su morale sve, pa jedna kamera bez veze ili s pokretom u zoni blokira skeniranje porukom 'Kamera još uči praznu zonu'). Zona B se naoružava na kamerama koje imaju sliku. Razlog zašto zona nije spremna ('A2: kamera nema sliku', 'A: pokret u zoni 1.2%', 'ruka je u zoni') piše u događajima dijagnostike i u terminalu servera.

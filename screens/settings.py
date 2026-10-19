@@ -60,7 +60,7 @@ LABELS = {
     "match_threshold": "Prag sličnosti (0 = iz .env ili zadano)",
 }
 
-CHOICES = {"camera_model": ["dinov2", "mobilenet"]}
+CHOICES = {"camera_model": ["dinov2", "dinov2-base", "clip", "mobilenet"]}
 SECRET = {"terminal_api_key"}
 
 
