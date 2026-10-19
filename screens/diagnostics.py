@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 
 from camera_service import CAMERAS_FOLDER
 from watcher import VERSION
-from zones import to_pixels
+from zones import outline, to_pixels
 
 TILE_WIDTH = 440
 THUMB_SIZE = 150
@@ -267,8 +267,7 @@ class DiagnosticsWindow(QWidget):
                 bx, by, bw, bh = tracker.last_box
                 cv2.rectangle(frame, (box[0] + bx, box[1] + by), (box[0] + bx + bw, box[1] + by + bh), (255, 170, 60), 3)
             color = GREEN
-        x, y, w, h = box
-        cv2.rectangle(frame, (x, y), (x + w, y + h), color, 3)
+        cv2.polylines(frame, [outline(guard.zones.get(name), width, height)], True, color, 3, cv2.LINE_AA)
         if guard.hand_shapes.get(name):
             cv2.polylines(frame, guard.hand_shapes[name], True, YELLOW, 3)
         reader = guard.readers.get(name)

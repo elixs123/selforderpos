@@ -58,6 +58,8 @@ NEAR_SHARE = 0.4
 MULTI_MIN_SHARE = 0.012
 MULTI_RELATIVE = 0.15
 MERGE_GAP = 0.15
+STACK_OVERLAP = 0.5
+STACK_GAP = 1.5
 TAKEN_EXTRA_RELATIVE = 0.3
 ITEM_SATURATION = 40
 ITEM_EDGES = 0.01
@@ -127,6 +129,17 @@ def _box_gap(first: tuple[int, int, int, int], second: tuple[int, int, int, int]
     return float(np.hypot(dx, dy))
 
 
+def _stacked(first: tuple[int, int, int, int], second: tuple[int, int, int, int]) -> bool:
+    """Dio iznad drugog u istom stupcu (artikal i njegova sjena na podlozi) je jedan artikal."""
+    fx, fy, fw, fh = first
+    sx, sy, sw, sh = second
+    overlap = min(fx + fw, sx + sw) - max(fx, sx)
+    if overlap < STACK_OVERLAP * min(fw, sw):
+        return False
+    gap = max(sy - (fy + fh), fy - (sy + sh), 0)
+    return gap <= STACK_GAP * max(fh, sh)
+
+
 def _union(first: tuple[int, int, int, int], second: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
     left, top = min(first[0], second[0]), min(first[1], second[1])
     right = max(first[0] + first[2], second[0] + second[2])
@@ -143,7 +156,7 @@ def separate_items(mask: np.ndarray) -> list[tuple[int, tuple[int, int, int, int
             for second in range(first + 1, len(clusters)):
                 one, other = clusters[first], clusters[second]
                 size = max(one[1][2], one[1][3], other[1][2], other[1][3])
-                if _box_gap(one[1], other[1]) <= MERGE_GAP * size:
+                if _box_gap(one[1], other[1]) <= MERGE_GAP * size or _stacked(one[1], other[1]):
                     clusters[first] = [one[0] + other[0], _union(one[1], other[1])]
                     del clusters[second]
                     merged = True

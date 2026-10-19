@@ -63,6 +63,16 @@ def to_pixels(zone: Zone | None, width: int, height: int) -> tuple[int, int, int
     return round(left * width), round(top * height), round(zone_width * width), round(zone_height * height)
 
 
+def outline(zone: Zone | None, width: int, height: int) -> np.ndarray:
+    polygon = getattr(zone, "polygon", ())
+    if polygon:
+        points = [(round(px * width), round(py * height)) for px, py in polygon]
+    else:
+        x, y, w, h = to_pixels(zone, width, height)
+        points = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)]
+    return np.array(points, np.int32).reshape(-1, 1, 2)
+
+
 @lru_cache(maxsize=32)
 def _inside_mask(polygon: tuple, width: int, height: int, x: int, y: int, w: int, h: int) -> np.ndarray:
     points = np.array([[round(px * width) - x, round(py * height) - y] for px, py in polygon], np.int32)

@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import CameraConfigError, load_cameras
 from guard import CheckoutGuard, zone_of
 from reader import CameraReader
-from zones import to_pixels
+from zones import outline
 
 TILE_WIDTH = 720
 GRID_TILE_WIDTH = 480
@@ -127,9 +127,8 @@ class Monitor:
             status = reader.status if reader else "nije podesena"
             cv2.putText(tile, ascii_text(f"{name}: {status}"), (12, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.8, RED, 2)
             return tile
-        x, y, w, h = to_pixels(guard.zones.get(name), frame_width, frame_height)
         color = RED if zone_of(name) == "B" and guard.zone_b_armed else GREEN
-        cv2.rectangle(frame, (x, y), (x + w, y + h), color, 3)
+        cv2.polylines(frame, [outline(guard.zones.get(name), frame_width, frame_height)], True, color, 3, cv2.LINE_AA)
         if guard.hand_shapes.get(name):
             cv2.polylines(frame, guard.hand_shapes[name], True, YELLOW, 3)
         tile = cv2.resize(frame, (width, width * 9 // 16))

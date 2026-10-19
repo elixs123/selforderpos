@@ -141,3 +141,11 @@ def test_one_camera_seeing_two_is_enough(monkeypatch, tmp_path):
     wait_for_judgement(guard, readers, guard.debug_number)
     assert guard.state == "mismatch"
     assert guard.message == MULTIPLE_MESSAGE
+
+
+def test_item_and_its_shadow_below_it_are_one():
+    assert placed_items(with_items((130, 20, 60, 70), (110, 150, 100, 50))) == 1
+
+
+def test_two_items_side_by_side_with_different_heights_stay_two():
+    assert placed_items(with_items((20, 100, 70, 90), (220, 20, 70, 70))) == 2
