@@ -1,5 +1,7 @@
 import os
+import socket
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 CAMERAS_FOLDER = Path(__file__).resolve().parent / "cameras"
@@ -13,6 +15,30 @@ ENV_THRESHOLD = os.environ.get("CAM_MATCH_THRESHOLD", "")
 
 class CameraSetupError(Exception):
     pass
+
+
+ENV_CAMERA_KEYS = {
+    "camera_a_host": "CAM_A_HOST", "camera_a2_host": "CAM_A2_HOST", "camera_b_host": "CAM_B_HOST",
+    "camera_b2_host": "CAM_B2_HOST", "camera_channel": "CAM_CHANNEL",
+}
+
+
+def env_defines_cameras() -> bool:
+    return bool(os.environ.get("CAM_A_HOST") and os.environ.get("CAM_B_HOST"))
+
+
+def hosts_from_env(settings: Settings) -> Settings:
+    if not env_defines_cameras():
+        return settings
+    return replace(settings, **{name: os.environ[key] for name, key in ENV_CAMERA_KEYS.items() if key in os.environ})
+
+
+def port_reason(host: str, port: int = 554) -> str:
+    try:
+        with socket.create_connection((host, port), timeout=2):
+            return f"port {port} se otvara, provjerite CAM_USER i CAM_PASSWORD"
+    except OSError as error:
+        return f"port {port} se ne otvara ({error}); provjerite mrežu i dozvolu za lokalnu mrežu u macOS postavkama"
 
 
 def start_remote_guard(settings: Settings):

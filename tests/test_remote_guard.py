@@ -151,3 +151,15 @@ def test_outcome_numbers_keep_growing_after_server_restart(monkeypatch):
     finally:
         client.stop()
         server.shutdown()
+
+
+def test_ping_reports_server_state(monkeypatch):
+    server = start_server(FakeGuard())
+    try:
+        address = f"127.0.0.1:{server.server_address[1]}"
+        assert "radi, stanje: ready" in RemoteGuard(address, "tajna").ping()
+        assert "TOKEN" in RemoteGuard(address, "pogresna").ping()
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert "nije dostupan" in RemoteGuard(address, "tajna").ping()

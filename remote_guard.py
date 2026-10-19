@@ -69,6 +69,15 @@ class RemoteGuard:
         self._apply(data)
         return bool(data.get("ok"))
 
+    def ping(self) -> str:
+        try:
+            data = self._request("GET", "/state", None, POLL_TIMEOUT * 2)
+        except RemoteError as error:
+            if error.status == 401:
+                return "server odgovara, ali CAM_SERVER_TOKEN nije isti kao na serveru."
+            return f"server nije dostupan ({error})."
+        return f"server radi, stanje: {data.get('state')} ({data.get('message')})."
+
     def cancel(self) -> None:
         threading.Thread(target=self._send_quietly, args=("/cancel",), daemon=True).start()
 

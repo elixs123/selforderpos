@@ -9,7 +9,7 @@ from pathlib import Path
 from PySide6.QtCore import QCoreApplication, QStandardPaths
 from PySide6.QtWidgets import QApplication
 
-from camera_service import CameraSetupError, start_guard
+from camera_service import CameraSetupError, env_defines_cameras, hosts_from_env, port_reason, start_guard
 from locations import app_folder
 from settings import load_settings
 from vision_api import DEFAULT_PORT, make_server
@@ -17,6 +17,16 @@ from vision_api import DEFAULT_PORT, make_server
 
 def settings_path() -> Path:
     return Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)) / "settings.json"
+
+
+def report_cameras(guard) -> None:
+    time.sleep(6)
+    for name, reader in guard.readers.items():
+        host = reader.settings.host
+        if reader.status == "uživo":
+            print(f"Kamera {name} ({host}): uživo")
+        else:
+            print(f"Kamera {name} ({host}): {reader.status}, {port_reason(host)}")
 
 
 def main() -> None:
@@ -34,13 +44,18 @@ def main() -> None:
     application.setOrganizationName("Penny")
     application.setApplicationName("selforderpos")
 
-    settings = load_settings(settings_path())
+    settings = hosts_from_env(load_settings(settings_path()))
+    print(f"Adrese kamera su iz {'.env' if env_defines_cameras() else 'postavki (settings.json)'}:")
+    for name, host in (("A", settings.camera_a_host), ("A2", settings.camera_a2_host), ("B", settings.camera_b_host), ("B2", settings.camera_b2_host)):
+        if host:
+            print(f"  {name}: {host}")
     try:
         guard = start_guard(settings)
     except CameraSetupError as error:
         sys.exit(str(error))
     if arguments.debug:
         guard.enable_debug(app_folder() / "data" / "debug" / datetime.now().strftime("%Y%m%d-%H%M%S"))
+    threading.Thread(target=report_cameras, args=(guard,), daemon=True).start()
     server = make_server(guard, token, arguments.host, arguments.port)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     print(f"Server kamera radi na portu {arguments.port}. U kasi upišite adresu http://<IP ovog računara>:{arguments.port}")

@@ -1,3 +1,4 @@
+import os
 import threading
 from dataclasses import fields, replace
 
@@ -139,6 +140,9 @@ class SettingsScreen(QWidget):
         printer_test = self._button("Testiraj printer", primary=False)
         printer_test.clicked.connect(self._test_printer)
         tests.addWidget(printer_test)
+        cameras_test = self._button("Testiraj kamere", primary=False)
+        cameras_test.clicked.connect(self._test_cameras)
+        tests.addWidget(cameras_test)
         column.addLayout(tests)
 
         actions = QHBoxLayout()
@@ -262,6 +266,21 @@ class SettingsScreen(QWidget):
     def _test_printer(self) -> None:
         settings = self.current()
         self._run_test(lambda: "Printer: " + FiscalPrinter(settings.fiscal_url).reachable().message)
+
+    def _test_cameras(self) -> None:
+        url = self.current().vision_server_url
+        token = os.environ.get("CAM_SERVER_TOKEN", "")
+
+        def job() -> str:
+            if not url:
+                return "Kamere: nema adrese servera, kamere rade na ovom računaru."
+            if not token:
+                return "Kamere: upišite CAM_SERVER_TOKEN u .env."
+            from remote_guard import RemoteGuard
+
+            return "Kamere: " + RemoteGuard(url, token).ping()
+
+        self._run_test(job)
 
     def _show_test_result(self, text: str) -> None:
         self.status.setText(text)
