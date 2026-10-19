@@ -97,6 +97,7 @@ class CheckoutGuard:
         self._item_like_cache: dict[int, tuple] = {}
         self._b_before: dict[str, np.ndarray] = {}
         self._b_after_counts: dict[str, int] = {}
+        self._waive_taken = False
         self.a_ledgers = {name: ZoneALedger() for name in self.cameras_a if name in counting_cameras()}
         self.b_ledgers = {name: ZoneBLedger() for name in self.cameras_b if name in counting_cameras()}
         self._counting = False
@@ -634,7 +635,8 @@ class CheckoutGuard:
         items = [take[0] for take in takes]
         self._taken_items = list(items)
         self._taken_befores = [take[1] for take in takes]
-        self._taken_at = takes[-1][2]
+        self._taken_at = takes[-1][2] if takes else time.monotonic()
+        self._waive_taken = not takes
         self._taken_signatures = {}
         self._warm_taken(self._taken_items)
         for index, item in enumerate(items):
@@ -721,7 +723,11 @@ class CheckoutGuard:
         problems = []
         if placed_count > 1:
             problems.append(MULTIPLE_PROBLEM)
-        if score_taken is None:
+            self._waive_taken = True
+        waived = self._waive_taken and placed_count <= 1 and score_product is not None and score_product >= threshold
+        if waived:
+            self.log("poredjenje", "uzeto iz zone A se ne poredi (više artikala uzeto zajedno), artikal liči na skenirani")
+        elif score_taken is None:
             problems.append("nije viđeno šta je uzeto iz zone A")
         elif score_taken < threshold:
             problems.append("nije isto što je uzeto iz zone A")

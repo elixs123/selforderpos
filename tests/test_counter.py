@@ -165,7 +165,36 @@ def test_count_loop_flags_extra_item_after_accept(monkeypatch, tmp_path):
         guard.count_once()
     assert guard.alert
     assert guard.message.startswith("Uzeli ste još jedan artikal")
+    guard._takes = []
+    guard.trackers["A2"].occupancy = 0.5
+    assert guard.scan("1002", None, "Drugi") is True
+    assert guard.state == "waiting_place" and guard._waive_taken
+    guard.cancel()
     fake.counts = {1: 2, 2: 0}
     for _ in range(2):
         guard.count_once()
     assert guard.unscanned == 0 and not guard.alert
+
+
+def test_taken_check_is_waived_after_multiple_items_and_for_count_licensed_scan(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAMPLES_DIR", str(tmp_path))
+    monkeypatch.setenv("CAM_MATCH_THRESHOLD", "0.6")
+    readers = {"A2": ControlledReader(), "B2": ControlledReader()}
+    guard = CheckoutGuard(readers)
+    monkeypatch.setattr(guard_module, "signature", lambda image, rotations=False: SimpleNamespace(vectors=None, kind=int(image[0, 0, 0])))
+    monkeypatch.setattr(guard_module, "compare", lambda query, other: 0.9 if other.kind == 9 else 0.3)
+    monkeypatch.setattr(guard, "_taken_signature", lambda item: SimpleNamespace(vectors=None, kind=int(item[0, 0, 0])))
+    monkeypatch.setattr(guard, "_reference_signatures", lambda code: [SimpleNamespace(vectors=None, kind=9, image=None)])
+    placed = np.full((20, 20, 3), 5, np.uint8)
+    taken = np.full((20, 20, 3), 1, np.uint8)
+    guard._waive_taken = False
+    verdict, problems, _, _ = guard._judge([placed], 0.1, [taken], [None], "P", 2)
+    assert verdict == "mismatch"
+    verdict, problems, _, _ = guard._judge([placed], 0.1, [taken], [None], "P", 1)
+    assert verdict == "ok", problems
+    guard._waive_taken = False
+    verdict, problems, _, _ = guard._judge([placed], 0.1, [taken], [None], "P", 1)
+    assert verdict == "mismatch"
+    guard._waive_taken = True
+    verdict, problems, _, _ = guard._judge([placed], 0.1, [], [], "P", 1)
+    assert verdict == "ok", problems
