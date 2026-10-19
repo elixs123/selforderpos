@@ -13,7 +13,7 @@ from hands import load_hand_detector
 from reader import CameraReader
 from samples import SampleStore
 from similarity import Signature, compare, match_threshold, method_name, signature
-from watcher import BasketTracker, ZoneWatcher, main_box
+from watcher import BasketTracker, ZoneWatcher, main_box, separate_items
 from zones import crop, load_zones, zones_changed_at
 
 TIMEOUT_SECONDS = 30
@@ -27,6 +27,8 @@ CROP_PADDING = 10
 MULTIPLE_PROBLEM = "odloženo je više artikala"
 MULTIPLE_MESSAGE = "Odložili ste više artikala. Uklonite višak i ostavite samo skenirani artikal."
 UNSCANNED_MESSAGE = "Uzeli ste još jedan artikal iz zone A. Skenirajte ga."
+PLACED_UNSCANNED_MESSAGE = "U zonu B je odložen artikal koji nije skeniran. Uklonite ga iz zone B pa ga skenirajte."
+ZONE_B_QUIET_SECONDS = 2.0
 MAX_TAKES = 30
 
 
@@ -60,6 +62,9 @@ class CheckoutGuard:
         self.references_since = zones_changed_at()
         self.trackers = {name: BasketTracker() for name in self.cameras_a}
         self.watchers = {name: ZoneWatcher() for name in self.cameras_b}
+        self.idle_b = {name: BasketTracker() for name in self.cameras_b}
+        self._placed_unscanned: dict[str, int] = {}
+        self._b_active_at = -1000.0
         self.store = SampleStore()
         self.hands = load_hand_detector()
         self.hand_shapes: dict[str, list[np.ndarray]] = {name: [] for name in readers}
@@ -151,17 +156,29 @@ class CheckoutGuard:
 
     @property
     def unscanned(self) -> int:
+        return self.unscanned_taken + self.unscanned_placed
+
+    @property
+    def unscanned_taken(self) -> int:
         counts: dict[str, int] = {}
         for take in self._takes:
             counts[take[3]] = counts.get(take[3], 0) + 1
         return max(counts.values(), default=0)
 
+    @property
+    def unscanned_placed(self) -> int:
+        return max(self._placed_unscanned.values(), default=0)
+
+    def _unscanned_message(self) -> str:
+        return PLACED_UNSCANNED_MESSAGE if self.unscanned_placed else UNSCANNED_MESSAGE
+
     def forgive_unscanned(self) -> None:
         with self._lock:
-            if not self._takes:
+            if not self.unscanned:
                 return
-            self.log("osoblje", f"osoblje je poništilo {self.unscanned} neskeniranih uzimanja")
+            self.log("osoblje", f"osoblje je poništilo {self.unscanned} neskeniranih artikala")
             self._takes = []
+            self._placed_unscanned = {}
             if not self.busy:
                 self._set("ready", "Uzmite artikal i skenirajte ga.")
 
@@ -180,9 +197,9 @@ class CheckoutGuard:
 
     def _return_unscanned(self, takes: list) -> None:
         self._takes = (list(takes) + self._takes)[-MAX_TAKES:]
-        if self._takes:
+        if self.unscanned:
             self.log("zona-A", f"neskeniranih artikala: {self.unscanned}")
-            self._set("taken", UNSCANNED_MESSAGE)
+            self._set("taken", self._unscanned_message())
 
     @property
     def busy(self) -> bool:
@@ -595,9 +612,15 @@ class CheckoutGuard:
             self._seen[name] = number
             roi, offset = crop(frame, self.zones.get(name))
             self._frames_b[name] = (frame, offset)
-            placement = watcher.update(roi, now, self._hand_mask(name, roi, offset))
+            hands = self._hand_mask(name, roi, offset)
+            placement = watcher.update(roi, now, hands)
             if placement is not None:
                 placements[name] = placement
+            if self.zone_b_armed or self._judging or placement is not None:
+                self._b_active_at = now
+            idle_event = self.idle_b[name].update(roi, now, hands)
+            if idle_event is not None:
+                self._on_idle_b_event(name, idle_event, now)
         frames = dict(self._frames_b)
         if placements:
             self._on_placed(placements, frames, now)
@@ -609,6 +632,35 @@ class CheckoutGuard:
             self._finish("timeout", "timeout", "Artikal nije odložen. Pozovite osoblje.")
             self._return_unscanned(self._scan_takes)
             self._scan_takes = []
+
+    def _on_idle_b_event(self, camera: str, event, now: float) -> None:
+        if event.kind == "empty":
+            if self._placed_unscanned.pop(camera, 0):
+                self.log(f"zona-{camera}", "zona B je prazna, neskenirani artikal je uklonjen")
+                self._after_unscanned_change()
+            return
+        if self.zone_b_armed or self._judging or now - self._b_active_at < ZONE_B_QUIET_SECONDS:
+            return
+        if event.kind == "taken":
+            if self._placed_unscanned.get(camera):
+                self._placed_unscanned[camera] -= 1
+                self.log(f"zona-{camera}", "neskenirani artikal uklonjen iz zone B")
+                self._after_unscanned_change()
+            return
+        mask = self.idle_b[camera].last_mask
+        if event.kind != "added" or mask is None or not separate_items(mask):
+            return
+        self._placed_unscanned[camera] = self._placed_unscanned.get(camera, 0) + 1
+        self.log(f"zona-{camera}", f"artikal odložen u zonu B bez skeniranja ({self.idle_b[camera].last_note})")
+        self._set("taken", PLACED_UNSCANNED_MESSAGE)
+
+    def _after_unscanned_change(self) -> None:
+        if self.busy:
+            return
+        if self.unscanned:
+            self._set("taken", self._unscanned_message())
+        else:
+            self._set("ready", "Uzmite artikal i skenirajte ga.")
 
     def _on_placed(self, placements: dict, frames: dict, now: float) -> None:
         items, change_ratio = [], max(placement.change_ratio for placement in placements.values())

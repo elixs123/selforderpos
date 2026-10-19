@@ -97,7 +97,7 @@ class ScanScreen(QWidget):
             self._set_card("Kamere nisu dostupne", "Pozovite osoblje", ICON_HAND, False)
         elif state == "taken":
             self.guide.set_step(1)
-            subtitle = guard.message if getattr(guard, "unscanned", 0) > 1 else "Artikal je uzet iz korpe. Prislonite barkod na skener."
+            subtitle = guard.message if getattr(guard, "unscanned", 0) > 0 else "Artikal je uzet iz korpe. Prislonite barkod na skener."
             self._set_card("Sad ga skenirajte", subtitle, ICON_SCANNER, True)
         else:
             self.guide.set_step(0)
