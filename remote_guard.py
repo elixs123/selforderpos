@@ -41,6 +41,7 @@ class RemoteGuard:
         self.state = "learning"
         self.message = "Spajam se na server kamera…"
         self.busy = False
+        self.unscanned = 0
         self.outcome: Outcome | None = None
         self.online = False
         self._boot: str | None = None
@@ -93,6 +94,12 @@ class RemoteGuard:
                 self._offset += 1
                 self.outcome = Outcome(self._number, "accepted", "staff", self._barcode, self._product_code, "Osoblje je odobrilo artikal.")
 
+    def forgive_unscanned(self) -> None:
+        try:
+            self._apply(self._request("POST", "/forgive", {}, ACTION_TIMEOUT))
+        except RemoteError as error:
+            self._fail(error)
+
     def _send_quietly(self, path: str) -> None:
         try:
             self._apply(self._request("POST", path, {}, ACTION_TIMEOUT))
@@ -131,6 +138,7 @@ class RemoteGuard:
             self.state = str(data.get("state", "ready"))
             self.message = str(data.get("message", ""))
             self.busy = bool(data.get("busy"))
+            self.unscanned = int(data.get("unscanned") or 0)
             raw = data.get("outcome")
             if raw:
                 total = self._offset + int(raw["number"])
@@ -150,5 +158,6 @@ class RemoteGuard:
                 return
             self.online = False
             self.busy = False
+            self.unscanned = 0
             self.state = "offline"
             self.message = "Pogrešan CAM_SERVER_TOKEN." if error.status == 401 else "Server kamera nije dostupan. Pozovite osoblje."

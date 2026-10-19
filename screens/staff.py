@@ -40,6 +40,7 @@ PIN_LENGTH = 8
 class StaffScreen(QWidget):
     closed = Signal()
     approve_requested = Signal()
+    forgive_requested = Signal()
     settings_requested = Signal()
 
     def __init__(self, cart: Cart) -> None:
@@ -61,8 +62,10 @@ class StaffScreen(QWidget):
         self.pages.addWidget(self.panel_page)
         layout.addWidget(self.pages, stretch=1)
 
-    def begin(self, can_approve: bool = False) -> None:
+    def begin(self, can_approve: bool = False, unscanned: int = 0) -> None:
         self.approve_button.setVisible(can_approve)
+        self.forgive_button.setVisible(unscanned > 0)
+        self.forgive_button.setText(f"Poništi neskenirana uzimanja ({unscanned})")
         self.entered = ""
         self.pin_error.setText("")
         self._update_pin_display()
@@ -200,6 +203,13 @@ class StaffScreen(QWidget):
         self.approve_button.setStyleSheet(self._outline_style(GREEN, GREEN))
         self.approve_button.clicked.connect(self._on_approve)
         extra.addWidget(self.approve_button, stretch=1)
+        self.forgive_button = QPushButton("Poništi neskenirana uzimanja")
+        self.forgive_button.setFixedHeight(px(96))
+        self.forgive_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.forgive_button.setStyleSheet(self._outline_style(BORDER, TEXT))
+        self.forgive_button.clicked.connect(self._on_forgive)
+        self.forgive_button.setVisible(False)
+        extra.addWidget(self.forgive_button, stretch=1)
         settings = QPushButton("Postavke")
         settings.setFixedHeight(px(96))
         settings.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -302,6 +312,11 @@ class StaffScreen(QWidget):
     def _on_approve(self) -> None:
         self.approve_button.setVisible(False)
         self.approve_requested.emit()
+        self.closed.emit()
+
+    def _on_forgive(self) -> None:
+        self.forgive_button.setVisible(False)
+        self.forgive_requested.emit()
         self.closed.emit()
 
     def _on_clear(self) -> None:

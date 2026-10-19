@@ -108,7 +108,7 @@ def test_two_items_in_zone_b_are_blocked_with_message_and_second_try_passes(monk
         watcher.stable_seconds = 0.15
     run_steps(guard, readers, 8)
     taken = with_items((120, 90, 70, 80))[80:180, 110:200].copy()
-    guard._takes = [(taken, None, 10**9)]
+    guard._takes = [(taken, None, 10**9, "A")]
     assert guard.scan("1001", None, "Test") is True
     for name in ("B", "B2"):
         readers[name].frame = with_items((40, 90, 70, 80), (210, 90, 70, 80))
@@ -134,7 +134,7 @@ def test_one_camera_seeing_two_is_enough(monkeypatch, tmp_path):
     for watcher in guard.watchers.values():
         watcher.stable_seconds = 0.15
     run_steps(guard, readers, 8)
-    guard._takes = [(with_items((120, 90, 70, 80))[80:180, 110:200].copy(), None, 10**9)]
+    guard._takes = [(with_items((120, 90, 70, 80))[80:180, 110:200].copy(), None, 10**9, "A")]
     assert guard.scan("1001", None, "Test") is True
     readers["B"].frame = with_items((120, 90, 70, 80))
     readers["B2"].frame = with_items((40, 90, 70, 80), (210, 90, 70, 80))

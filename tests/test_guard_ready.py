@@ -71,7 +71,7 @@ def test_scan_works_with_only_one_zone_b_camera(monkeypatch, tmp_path):
     readers = {"A": FakeReader(), "B": FakeReader(), "B2": FakeReader(live=False)}
     guard = make_guard(monkeypatch, tmp_path, readers)
     run_steps(guard, readers)
-    guard._takes = [(np.full((40, 40, 3), 120, dtype=np.uint8), None, 10**9)]
+    guard._takes = [(np.full((40, 40, 3), 120, dtype=np.uint8), None, 10**9, "A")]
     assert guard.scan("1001", None, None) is True
     assert guard.state == "waiting_place"
     assert guard.watchers["B"].armed and not guard.watchers["B2"].armed

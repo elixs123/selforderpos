@@ -289,3 +289,32 @@ def test_taking_large_single_item():
     events = feed(tracker, empty_zone(), 6)
     assert [event.kind for event in events] == ["taken"]
     assert events[0].item.shape[0] >= 190
+
+
+def test_two_items_taken_in_one_grab_are_both_reported():
+    from watcher import BasketTracker
+
+    tracker = BasketTracker(stable_seconds=0.5)
+    feed(tracker, empty_zone(), 0)
+    full = basket([(30, 30), (230, 30), (130, 160)])
+    move_hand(tracker, empty_zone(), 2)
+    feed(tracker, full, 3)
+    move_hand(tracker, full, 5)
+    events = feed(tracker, basket([(130, 160)]), 6)
+    assert [event.kind for event in events] == ["taken"]
+    assert len(events[0].extra) == 1
+    assert events[0].extra[0].mean() > 100
+
+
+def test_one_item_taken_has_no_extra():
+    from watcher import BasketTracker
+
+    tracker = BasketTracker(stable_seconds=0.5)
+    feed(tracker, empty_zone(), 0)
+    full = basket([(30, 30), (230, 30), (130, 160)])
+    move_hand(tracker, empty_zone(), 2)
+    feed(tracker, full, 3)
+    move_hand(tracker, full, 5)
+    events = feed(tracker, basket([(30, 30), (130, 160)]), 6)
+    assert [event.kind for event in events] == ["taken"]
+    assert events[0].extra == ()

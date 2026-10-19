@@ -80,10 +80,12 @@ class ScanScreen(QWidget):
         self.guide.setVisible(guard is not None)
         if guard is None:
             return
+        self.pay_button.setEnabled(self.cart.item_count > 0 and self._pay_allowed())
         state = guard.state
-        if state == self.guide_state:
+        key = (state, guard.message if state == "taken" else "")
+        if key == self.guide_state:
             return
-        self.guide_state = state
+        self.guide_state = key
         if state == "learning":
             self.guide.set_step(0)
             self._set_card("Pripremam kamere…", "Trenutak, kasa se priprema", ICON_HAND, False)
@@ -95,7 +97,8 @@ class ScanScreen(QWidget):
             self._set_card("Kamere nisu dostupne", "Pozovite osoblje", ICON_HAND, False)
         elif state == "taken":
             self.guide.set_step(1)
-            self._set_card("Sad ga skenirajte", "Artikal je uzet iz korpe. Prislonite barkod na skener.", ICON_SCANNER, True)
+            subtitle = guard.message if getattr(guard, "unscanned", 0) > 1 else "Artikal je uzet iz korpe. Prislonite barkod na skener."
+            self._set_card("Sad ga skenirajte", subtitle, ICON_SCANNER, True)
         else:
             self.guide.set_step(0)
             self._set_card("Uzmite artikal iz korpe", "Zatim ga skenirajte i odložite na polje", ICON_HAND, False)
@@ -366,6 +369,9 @@ class ScanScreen(QWidget):
     def show_rejected(self, message: str) -> None:
         self._show_notice(message, success=False)
 
+    def _pay_allowed(self) -> bool:
+        return self.guard is None or getattr(self.guard, "unscanned", 0) == 0
+
     def _refresh(self) -> None:
         data = self.cart.to_dict()
         while self.rows_layout.count() > 1:
@@ -383,5 +389,5 @@ class ScanScreen(QWidget):
         self.count_label.setText(item_count_text(data["item_count"]))
         self.total_label.setText(f"{format_amount(data['total'])} KM")
         has_items = data["item_count"] > 0
-        self.pay_button.setEnabled(has_items)
+        self.pay_button.setEnabled(has_items and self._pay_allowed())
         self.clear_button.setEnabled(has_items)

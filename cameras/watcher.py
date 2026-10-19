@@ -58,6 +58,7 @@ NEAR_SHARE = 0.4
 MULTI_MIN_SHARE = 0.012
 MULTI_RELATIVE = 0.15
 MERGE_GAP = 0.15
+TAKEN_EXTRA_RELATIVE = 0.3
 
 
 def align(reference: np.ndarray, image: np.ndarray) -> np.ndarray:
@@ -150,6 +151,25 @@ def separate_items(mask: np.ndarray) -> list[tuple[int, tuple[int, int, int, int
     kept = [(area, box) for area, box in clusters
             if area >= MULTI_MIN_SHARE * mask.size and area >= MULTI_RELATIVE * largest]
     return sorted(kept, reverse=True)
+
+
+def separate_boxes(main: tuple[int, int, int, int], others: list[tuple[int, int, int, int]]) -> list[tuple[int, int, int, int]]:
+    kept: list[tuple[int, int, int, int]] = []
+    main_area = main[2] * main[3]
+    for box in others:
+        if box[2] * box[3] < TAKEN_EXTRA_RELATIVE * main_area:
+            continue
+        if any(_box_gap(box, other) <= MERGE_GAP * max(box[2], box[3], other[2], other[3]) for other in [main] + kept):
+            continue
+        kept.append(box)
+    return kept
+
+
+def _scaled_crop(image: np.ndarray, box: tuple[int, int, int, int], scale: float, padding: int) -> np.ndarray:
+    x, y, w, h = box
+    left, top = max(0, round((x - padding) * scale)), max(0, round((y - padding) * scale))
+    right, bottom = round((x + w + padding) * scale), round((y + h + padding) * scale)
+    return image[top:bottom, left:right].copy()
 
 
 def taken_candidates(old_gray: np.ndarray, gray: np.ndarray, background_old: np.ndarray, background_new: np.ndarray,
@@ -288,6 +308,7 @@ class BasketEvent:
     kind: str
     item: np.ndarray | None
     change_ratio: float
+    extra: tuple = ()
 
 
 class BasketTracker:
@@ -422,13 +443,18 @@ class BasketTracker:
             candidates = [box for _, box in thick_blobs(mask)]
             source = f"podloga nije vidljiva (puna korpa), najdeblja promjena ({len(candidates)})"
             max_share = MAX_ITEM_SHARE
-        found, reasons = None, []
+        found, reasons, accepted = None, [], []
         for box in candidates:
             reason = reject_reason(old_gray, gray, background_old, box, max_share)
             if reason is None:
-                found = box
-                break
-            reasons.append(reason)
+                accepted.append(box)
+                if found is None:
+                    found = box
+                if not source.startswith("prazno"):
+                    break
+            elif found is None:
+                reasons.append(reason)
+        extras = separate_boxes(found, accepted[1:]) if found is not None and source.startswith("prazno") else []
         self.parts = len(candidates)
         if found is None:
             self.last_note += f", {source}, odbačeno: {'; '.join(reasons) or 'nema kandidata'}"
@@ -445,9 +471,12 @@ class BasketTracker:
         cv2.rectangle(self.last_before, (left, top), (right, bottom), (255, 170, 60), 2)
         mask_view = cv2.cvtColor(cv2.resize(mask, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_NEAREST), cv2.COLOR_GRAY2BGR)
         cv2.rectangle(mask_view, (left, top), (right, bottom), (255, 170, 60), 2)
+        if extras:
+            self.last_note += f", još {len(extras)} odvojena artikla uzeta"
         self.take_number += 1
         self.history.appendleft({
             "number": self.take_number, "at": time.monotonic(), "clock": time.strftime("%H:%M:%S"),
             "before": self.last_before, "after": image.copy(), "mask": mask_view, "note": self.last_note,
         })
-        return BasketEvent("taken", old_image[top:bottom, left:right].copy(), change)
+        extra_items = tuple(_scaled_crop(old_image, box, scale, padding) for box in extras)
+        return BasketEvent("taken", old_image[top:bottom, left:right].copy(), change, extra_items)

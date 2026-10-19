@@ -26,6 +26,8 @@ HAND_MAX_AGE = 1.5
 CROP_PADDING = 10
 MULTIPLE_PROBLEM = "odloženo je više artikala"
 MULTIPLE_MESSAGE = "Odložili ste više artikala. Uklonite višak i ostavite samo skenirani artikal."
+UNSCANNED_MESSAGE = "Uzeli ste još jedan artikal iz zone A. Skenirajte ga."
+MAX_TAKES = 30
 
 
 @dataclass(frozen=True)
@@ -75,7 +77,10 @@ class CheckoutGuard:
         self.debug_folder: Path | None = None
         self._outcome_number = 0
         self._dump_number = 0
-        self._takes: list[tuple[np.ndarray, np.ndarray | None, float]] = []
+        self._takes: list[tuple[np.ndarray, np.ndarray | None, float, str]] = []
+        self._scan_takes: list[tuple[np.ndarray, np.ndarray | None, float, str]] = []
+        self.last_taken_index = 0
+        self._forgot_at = -1000.0
         self._taken_items: list[np.ndarray] = []
         self._taken_befores: list[np.ndarray | None] = []
         self._taken_at = 0.0
@@ -143,6 +148,41 @@ class CheckoutGuard:
     @property
     def zone_b_armed(self) -> bool:
         return any(watcher.armed for watcher in self.watchers.values())
+
+    @property
+    def unscanned(self) -> int:
+        counts: dict[str, int] = {}
+        for take in self._takes:
+            counts[take[3]] = counts.get(take[3], 0) + 1
+        return max(counts.values(), default=0)
+
+    def forgive_unscanned(self) -> None:
+        with self._lock:
+            if not self._takes:
+                return
+            self.log("osoblje", f"osoblje je poništilo {self.unscanned} neskeniranih uzimanja")
+            self._takes = []
+            if not self.busy:
+                self._set("ready", "Uzmite artikal i skenirajte ga.")
+
+    def _leftover_takes(self, takes: list, index: int) -> list:
+        if not takes:
+            return []
+        index = min(max(index, 0), len(takes) - 1)
+        best = takes[index]
+        rest = [take for position, take in enumerate(takes) if position != index]
+        used = {best[3]}
+        for camera in sorted({take[3] for take in rest} - used):
+            same_item = [take for take in rest if take[3] == camera and abs(take[2] - best[2]) <= TAKE_MERGE_SECONDS]
+            if same_item:
+                rest.remove(min(same_item, key=lambda take: abs(take[2] - best[2])))
+        return rest
+
+    def _return_unscanned(self, takes: list) -> None:
+        self._takes = (list(takes) + self._takes)[-MAX_TAKES:]
+        if self._takes:
+            self.log("zona-A", f"neskeniranih artikala: {self.unscanned}")
+            self._set("taken", UNSCANNED_MESSAGE)
 
     @property
     def busy(self) -> bool:
@@ -263,7 +303,6 @@ class CheckoutGuard:
                 return False
             now = time.monotonic()
             self._force_takes(now)
-            self._takes = [take for take in self._takes if now - take[2] <= TAKEN_MAX_AGE]
             recent_take = bool(self._takes)
             if not self.zone_a_ready:
                 self.log("zona-A", f"nije spremna: {self.zone_a_waiting_reason()}")
@@ -279,7 +318,7 @@ class CheckoutGuard:
             self._warm_references(product_code)
             if recent_take:
                 takes, self._takes = self._takes, []
-                self._wait_for_zone_b([take[0] for take in takes], takes[-1][2], [take[1] for take in takes])
+                self._wait_for_zone_b(takes)
                 return True
             self._pending_until = now + TAKEN_WAIT
             self._set("waiting_take", "Čekam da kamera vidi koji je artikal uzet iz zone A...")
@@ -294,6 +333,8 @@ class CheckoutGuard:
             self._job_id += 1
             self._judging = False
             self._set("ready", "Prekinuto.")
+            self._return_unscanned(self._scan_takes)
+            self._scan_takes = []
 
     def approve(self) -> None:
         with self._lock:
@@ -305,12 +346,17 @@ class CheckoutGuard:
             self._job_id += 1
             self._judging = False
             self._finish("accepted", "staff", "Osoblje je odobrilo artikal.")
+            self._return_unscanned(self._leftover_takes(self._scan_takes, self.last_taken_index))
+            self._scan_takes = []
 
-    def _wait_for_zone_b(self, items: list[np.ndarray], taken_at: float, befores: list | None = None) -> None:
+    def _wait_for_zone_b(self, takes: list) -> None:
         self._pending_until = None
+        self._scan_takes = list(takes)
+        self.last_taken_index = 0
+        items = [take[0] for take in takes]
         self._taken_items = list(items)
-        self._taken_befores = list(befores) if befores else [None] * len(items)
-        self._taken_at = taken_at
+        self._taken_befores = [take[1] for take in takes]
+        self._taken_at = takes[-1][2]
         self._taken_signatures = {}
         self._warm_taken(self._taken_items)
         for index, item in enumerate(items):
@@ -370,6 +416,7 @@ class CheckoutGuard:
             score_product = best[0] if best else None
             rotated = True
         taken_index = best_taken[1] if best_taken else 0
+        self.last_taken_index = taken_index
         sizes = sorted(self.store.reference_sizes(product_code, since=self.references_since))
         old_references = self.store.old_reference_count(product_code, self.references_since)
         old_note = f", {old_references} starih ne računam" if old_references else ""
@@ -482,28 +529,58 @@ class CheckoutGuard:
             return
         if event.kind == "added":
             self.basket_status = f"ima artikala ({occupancy:.0%})"
-            if not self.busy:
+            if self._takes and not self.zone_b_armed and now - self._forgot_at > TAKE_MERGE_SECONDS:
+                self._forgot_at = now
+                self._forget_last_take(camera)
+            if not self.busy and not self._takes:
                 self._set("ready", "Uzmite artikal i skenirajte ga.")
             return
         self.basket_status = f"uzet artikal, ostalo {occupancy:.0%}"
-        if self.zone_b_armed and now - self._taken_at <= TAKE_MERGE_SECONDS:
+        extras = [(item, None, now + 0.001 * (position + 1), camera) for position, item in enumerate(getattr(event, "extra", ()))]
+        if extras:
+            self.log(f"zona-{camera}", f"uzeto {len(extras) + 1} artikala odjednom")
+        take = (event.item, before, now, camera)
+        if self.zone_b_armed and now - self._taken_at <= TAKE_MERGE_SECONDS and not any(
+                item[3] == camera for item in self._scan_takes):
+            self._scan_takes.append(take)
             self._taken_items.append(event.item)
             self._taken_befores.append(before)
             self._warm_taken([event.item])
+            self._takes.extend(extras)
             return
         if self._pending_until is not None:
-            self._wait_for_zone_b([event.item], now, [before])
+            self._wait_for_zone_b([take])
+            self._takes.extend(extras)
             if sync:
                 self._force_takes(now, source=camera, reason=f"{camera} je vidjela uzimanje")
             return
-        if self.zone_b_armed:
+        if self.zone_b_armed or self._judging:
+            self._takes.extend([take] + extras)
+            self._takes = self._takes[-MAX_TAKES:]
+            self.log(f"zona-{camera}", f"uzimanje dok se čeka zona B, neskeniranih: {self.unscanned}")
             return
-        self._takes.append((event.item, before, now))
+        self._takes.extend([take] + extras)
+        self._takes = self._takes[-MAX_TAKES:]
         if sync:
             self._force_takes(now, source=camera, reason=f"{camera} je vidjela uzimanje")
-        if len(self._takes) > 1:
-            self.log(f"zona-{camera}", f"{len(self._takes)} uzimanja prije skeniranja — porediću sa svima i uzeti najsličnije")
-        self._set("taken", "Artikal uzet iz zone A. Skenirajte ga.")
+        if self.unscanned > 1:
+            self.log(f"zona-{camera}", f"{self.unscanned} neskenirana artikla — svaki se mora skenirati")
+            self._set("taken", UNSCANNED_MESSAGE)
+        else:
+            self._set("taken", "Artikal uzet iz zone A. Skenirajte ga.")
+
+    def _forget_last_take(self, camera: str) -> None:
+        latest = max(take[2] for take in self._takes)
+        kept, removed = [], set()
+        for take in sorted(self._takes, key=lambda item: item[2], reverse=True):
+            if take[3] not in removed and latest - take[2] <= TAKE_MERGE_SECONDS:
+                removed.add(take[3])
+                continue
+            kept.append(take)
+        self._takes = sorted(kept, key=lambda item: item[2])
+        self.log(f"zona-{camera}", f"artikal vraćen u zonu A, neskeniranih: {self.unscanned}")
+        if self._takes:
+            self._set("taken", UNSCANNED_MESSAGE if self.unscanned > 1 else "Artikal uzet iz zone A. Skenirajte ga.")
 
     def _watch_zone_b(self) -> None:
         now = time.monotonic()
@@ -530,6 +607,8 @@ class CheckoutGuard:
             for name, (frame, _) in frames.items():
                 self.store.save("timeout", self.barcode, self.product_code, self.product_name, name, full_image=frame)
             self._finish("timeout", "timeout", "Artikal nije odložen. Pozovite osoblje.")
+            self._return_unscanned(self._scan_takes)
+            self._scan_takes = []
 
     def _on_placed(self, placements: dict, frames: dict, now: float) -> None:
         items, change_ratio = [], max(placement.change_ratio for placement in placements.values())
@@ -608,6 +687,8 @@ class CheckoutGuard:
                 return
             message = "Artikal prvi put viđen, naučen." if verdict == "learned" else "Artikal odgovara."
             self._finish("accepted", verdict, message)
+            self._return_unscanned(self._leftover_takes(self._scan_takes, self.last_taken_index))
+            self._scan_takes = []
 
     def step(self) -> None:
         with self._lock:

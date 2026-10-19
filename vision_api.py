@@ -26,6 +26,7 @@ def snapshot(guard, boot: str) -> dict:
         "boot": boot, "state": guard.state, "message": guard.message, "busy": bool(guard.busy),
         "outcome": outcome_data(guard.outcome), "cameras": cameras_data(guard),
         "zone_a_ready": bool(getattr(guard, "zone_a_ready", True)),
+        "unscanned": int(getattr(guard, "unscanned", 0)),
         "zone_a_reason": guard.zone_a_waiting_reason() if hasattr(guard, "zone_a_waiting_reason") else "-",
     }
 
@@ -82,6 +83,9 @@ class VisionHandler(BaseHTTPRequestHandler):
                 self._send(200, {**snapshot(guard, self.server.boot), "ok": True})
             elif self.path == "/approve":
                 guard.approve()
+                self._send(200, {**snapshot(guard, self.server.boot), "ok": True})
+            elif self.path == "/forgive":
+                guard.forgive_unscanned()
                 self._send(200, {**snapshot(guard, self.server.boot), "ok": True})
             else:
                 self._send(404, {"error": "nepoznata adresa"})
