@@ -171,7 +171,8 @@ class MainWindow(QMainWindow):
             self.guard.forgive_unscanned()
 
     def show_payment(self) -> None:
-        if self.guard is not None and (getattr(self.guard, "unscanned", 0) > 0 or getattr(self.guard, "checking", False)):
+        if self.guard is not None and (getattr(self.guard, "unscanned", 0) > 0 or getattr(self.guard, "zone_a_left", 0) > 0
+                                       or getattr(self.guard, "checking", False)):
             return
         self.screens.setCurrentWidget(self.payment)
         self.payment.begin()
@@ -218,7 +219,8 @@ class MainWindow(QMainWindow):
         can_approve = guard is not None and self.drop.waiting and (guard.busy or guard.state in ("mismatch", "timeout", "offline"))
         self.screens.setCurrentWidget(self.staff)
         can_learn = can_approve and guard.state == "mismatch"
-        self.staff.begin(can_approve, getattr(guard, "unscanned", 0) if guard is not None else 0, can_learn)
+        unscanned = getattr(guard, "unscanned", 0) + getattr(guard, "zone_a_left", 0) if guard is not None else 0
+        self.staff.begin(can_approve, unscanned, can_learn)
 
     def show_settings(self) -> None:
         self.screens.setCurrentWidget(self.settings_screen)

@@ -105,6 +105,7 @@ class CheckoutGuard:
         self.a_ledgers = {name: ZoneALedger() for name in self.cameras_a if name in counting_cameras()}
         self.b_ledgers = {name: ZoneBLedger() for name in self.cameras_b if name in counting_cameras()}
         self._counting = False
+        self._zone_a_ignored = 0
         self._a_baseline: dict[str, tuple[np.ndarray, np.ndarray]] = {}
         self._scanned_since_baseline = 0
         self._check_pending_since: float | None = None
@@ -216,6 +217,16 @@ class CheckoutGuard:
         return len(self._clusters([take for take in self._takes if self._item_like(take[0])]))
 
     @property
+    def zone_a_count(self) -> int:
+        if not self.counting_a:
+            return 0
+        return max((ledger.count or 0 for ledger in self.a_ledgers.values()), default=0)
+
+    @property
+    def zone_a_left(self) -> int:
+        return max(0, self.zone_a_count - self._zone_a_ignored)
+
+    @property
     def alert(self) -> bool:
         if self.counting_a:
             return (self.unscanned_placed > 0 or self.unscanned_taken > 1
@@ -312,6 +323,7 @@ class CheckoutGuard:
                         self.log(f"zona-{name}", f"YOLOX zona A: očekujem {ledger.expected}, vidim {count}, nedostaje {ledger.missing}")
                     else:
                         self.log(f"zona-{name}", f"YOLOX zona B: poznato {ledger.known}, vidim {count}, neskenirano {ledger.extra}")
+            self._zone_a_ignored = min(self._zone_a_ignored, self.zone_a_count)
             if changed:
                 self._after_count_change()
 
@@ -428,9 +440,11 @@ class CheckoutGuard:
 
     def forgive_unscanned(self) -> None:
         with self._lock:
-            if not self.unscanned:
+            if not self.unscanned and not self.zone_a_left:
                 return
-            self.log("osoblje", f"osoblje je poništilo {self.unscanned} neskeniranih artikala")
+            self.log("osoblje", f"osoblje je poništilo {self.unscanned} neskeniranih artikala"
+                                f"{f', zanemarujem {self.zone_a_count} artikala u zoni A' if self.zone_a_left else ''}")
+            self._zone_a_ignored = self.zone_a_count
             self._takes = []
             self._placed_unscanned = {}
             self._check_pending_since = None

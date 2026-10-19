@@ -108,6 +108,7 @@ class ZoneALedger:
     def reset(self) -> None:
         self.expected: int | None = None
         self.pending: int | None = None
+        self.count: int | None = None
         self.missing = 0
         self.extra_after_accept = False
         self.post_accept = False
@@ -116,7 +117,8 @@ class ZoneALedger:
         if count != self.pending:
             self.pending = count
             return False
-        before = (self.missing, self.extra_after_accept)
+        before = (self.missing, self.extra_after_accept, self.count)
+        self.count = count
         if self.expected is None or count >= self.expected:
             self.expected = count
             self.missing = 0
@@ -126,7 +128,7 @@ class ZoneALedger:
         if self.post_accept:
             self.extra_after_accept = self.missing >= 1
             self.post_accept = False
-        return before != (self.missing, self.extra_after_accept)
+        return before != (self.missing, self.extra_after_accept, self.count)
 
     def accepted(self) -> None:
         if self.expected is not None:

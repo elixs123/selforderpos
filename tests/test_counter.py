@@ -171,7 +171,35 @@ def test_count_loop_flags_extra_item_after_accept(monkeypatch, tmp_path):
     fake.counts = {1: 2, 2: 0}
     for _ in range(2):
         guard.count_once()
-    assert guard.unscanned == 0 and not guard.alert
+    assert guard.unscanned == 0 and not guard.alert and guard.zone_a_left == 2
+
+
+def test_payment_waits_until_zone_a_is_empty_unless_staff_ignores_it(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAMPLES_DIR", str(tmp_path))
+    fake = CountingCounter()
+    monkeypatch.setattr(guard_module, "get_counter", lambda: fake)
+    readers = {"A2": ControlledReader(), "B2": ControlledReader()}
+    guard = CheckoutGuard(readers)
+    guard.zones = {}
+    guard.trackers = {"A2": BasketTracker(stable_seconds=0.05)}
+    run(guard, readers, 0.3)
+    readers["A2"].frame[0, 0, 0] = 1
+    readers["B2"].frame[0, 0, 0] = 2
+    fake.counts = {1: 1, 2: 0}
+    for _ in range(2):
+        guard.count_once()
+    assert guard.unscanned == 0 and guard.zone_a_left == 1
+    guard.forgive_unscanned()
+    for _ in range(2):
+        guard.count_once()
+    assert guard.zone_a_left == 0
+    fake.counts = {1: 0, 2: 0}
+    for _ in range(2):
+        guard.count_once()
+    fake.counts = {1: 1, 2: 0}
+    for _ in range(2):
+        guard.count_once()
+    assert guard.zone_a_left == 1
 
 
 def test_taken_check_is_waived_after_multiple_items_and_for_count_licensed_scan(monkeypatch, tmp_path):

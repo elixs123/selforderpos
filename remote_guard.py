@@ -42,6 +42,7 @@ class RemoteGuard:
         self.message = "Spajam se na server kamera…"
         self.busy = False
         self.unscanned = 0
+        self.zone_a_left = 0
         self.alert = False
         self.checking = False
         self.outcome: Outcome | None = None
@@ -141,6 +142,7 @@ class RemoteGuard:
             self.message = str(data.get("message", ""))
             self.busy = bool(data.get("busy"))
             self.unscanned = int(data.get("unscanned") or 0)
+            self.zone_a_left = int(data.get("zone_a_left") or 0)
             self.alert = bool(data.get("alert"))
             self.checking = bool(data.get("checking"))
             raw = data.get("outcome")
@@ -163,6 +165,7 @@ class RemoteGuard:
             self.online = False
             self.busy = False
             self.unscanned = 0
+            self.zone_a_left = 0
             self.alert = False
             self.checking = False
             self.state = "offline"

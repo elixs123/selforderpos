@@ -93,7 +93,8 @@ class ScanScreen(QWidget):
         elif time.monotonic() >= self._alert_until:
             self.alert.hide()
         state = guard.state
-        key = (state, guard.message if state == "taken" else "")
+        left = getattr(guard, "zone_a_left", 0) > 0 and self.cart.item_count > 0
+        key = (state, guard.message if state == "taken" else "", left)
         if key == self.guide_state:
             return
         self.guide_state = key
@@ -112,7 +113,9 @@ class ScanScreen(QWidget):
             self._set_card("Sad ga skenirajte", subtitle, ICON_SCANNER, True)
         else:
             self.guide.set_step(0)
-            self._set_card("Uzmite artikal iz korpe", "Zatim ga skenirajte i odložite na polje", ICON_HAND, False)
+            subtitle = ("U korpi još ima artikala. Skenirajte sve artikle prije plaćanja." if left
+                        else "Zatim ga skenirajte i odložite na polje")
+            self._set_card("Uzmite artikal iz korpe", subtitle, ICON_HAND, False)
 
     def begin(self) -> None:
         self.guide_state = ""
@@ -381,7 +384,8 @@ class ScanScreen(QWidget):
         self._show_notice(message, success=False)
 
     def _pay_allowed(self) -> bool:
-        return self.guard is None or (getattr(self.guard, "unscanned", 0) == 0 and not getattr(self.guard, "checking", False))
+        return self.guard is None or (getattr(self.guard, "unscanned", 0) == 0 and getattr(self.guard, "zone_a_left", 0) == 0
+                                      and not getattr(self.guard, "checking", False))
 
     def _refresh(self) -> None:
         data = self.cart.to_dict()
