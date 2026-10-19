@@ -2,7 +2,7 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from formatting import format_amount
-from screens.components import GuideSteps, StepBar, TopBar
+from screens.components import AlertPopup, GuideSteps, StepBar, TopBar
 from styles import (
     BACKGROUND,
     BORDER,
@@ -51,6 +51,7 @@ class DropScreen(QWidget):
         layout.addWidget(StepBar(active=1))
         layout.addWidget(self._body(), stretch=1)
         layout.addWidget(self._footer())
+        self.alert = AlertPopup(self)
 
     @property
     def waiting(self) -> bool:
@@ -68,6 +69,7 @@ class DropScreen(QWidget):
             self.timer.start()
 
     def _stop(self) -> None:
+        self.alert.hide()
         self.timer.stop()
         self.product = None
 
@@ -92,7 +94,10 @@ class DropScreen(QWidget):
             return
         if guard.state == "mismatch":
             self._paint("problem", guard.message)
-        elif guard.state == "judging":
+            self.alert.show_message(guard.message, "ARTIKAL NE ODGOVARA")
+            return
+        self.alert.hide()
+        if guard.state == "judging":
             self.guide.set_step(2)
             self._paint("ok", "Provjeravam artikal…")
         elif guard.state == "waiting_take":

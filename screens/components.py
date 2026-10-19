@@ -19,6 +19,53 @@ from styles import (
 )
 
 STEP_NAMES = ("Skeniranje", "Plaćanje", "Račun")
+ALERT_RED = "#D5182A"
+
+
+class AlertPopup(QFrame):
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setObjectName("alertPopup")
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setStyleSheet(
+            f"#alertPopup {{ background: {ALERT_RED}; border: {px(6)}px solid #8E0E1A; border-radius: {px(36)}px; }}"
+        )
+        column = QVBoxLayout(self)
+        column.setContentsMargins(px(40), px(32), px(40), px(32))
+        column.setSpacing(px(14))
+        self.title = QLabel("PAŽNJA")
+        self.title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.title.setStyleSheet(f"color: white; font-size: {px(56)}px; font-weight: 900; background: transparent;")
+        self.text = QLabel("")
+        self.text.setWordWrap(True)
+        self.text.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.text.setStyleSheet(f"color: white; font-size: {px(38)}px; font-weight: 700; background: transparent;")
+        column.addWidget(self.title)
+        column.addWidget(self.text)
+        self.hide()
+        parent.installEventFilter(self)
+
+    def eventFilter(self, watched, event) -> bool:
+        if watched is self.parent() and event.type() == event.Type.Resize and self.isVisible():
+            self._place()
+        return False
+
+    def _place(self) -> None:
+        parent = self.parent()
+        width = min(parent.width() - px(80), px(900))
+        self.setFixedWidth(width)
+        self.adjustSize()
+        self.move((parent.width() - width) // 2, (parent.height() - self.height()) // 2)
+
+    def show_message(self, text: str, title: str = "PAŽNJA") -> None:
+        if self.isVisible() and self.text.text() == text and self.title.text() == title:
+            return
+        self.title.setText(title)
+        self.text.setText(text)
+        self.show()
+        self._place()
+        self.raise_()
 
 
 class TopBar(QWidget):

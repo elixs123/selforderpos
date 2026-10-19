@@ -59,6 +59,8 @@ MULTI_MIN_SHARE = 0.012
 MULTI_RELATIVE = 0.15
 MERGE_GAP = 0.15
 TAKEN_EXTRA_RELATIVE = 0.3
+ITEM_SATURATION = 40
+ITEM_EDGES = 0.01
 
 
 def align(reference: np.ndarray, image: np.ndarray) -> np.ndarray:
@@ -151,6 +153,17 @@ def separate_items(mask: np.ndarray) -> list[tuple[int, tuple[int, int, int, int
     kept = [(area, box) for area, box in clusters
             if area >= MULTI_MIN_SHARE * mask.size and area >= MULTI_RELATIVE * largest]
     return sorted(kept, reverse=True)
+
+
+def looks_like_item(image: np.ndarray | None) -> bool:
+    if image is None or image.size == 0:
+        return False
+    small = cv2.resize(image, (64, 64))
+    saturation = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)[..., 1]
+    if float(np.percentile(saturation, 90)) >= ITEM_SATURATION:
+        return True
+    edges = cv2.Canny(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY), 50, 150)
+    return float((edges > 0).mean()) >= ITEM_EDGES
 
 
 def separate_boxes(main: tuple[int, int, int, int], others: list[tuple[int, int, int, int]]) -> list[tuple[int, int, int, int]]:

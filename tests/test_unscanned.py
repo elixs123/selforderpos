@@ -42,7 +42,13 @@ def make_guard(monkeypatch, tmp_path):
 
 
 def item(value: int) -> np.ndarray:
-    return np.full((40, 30, 3), value, dtype=np.uint8)
+    image = np.full((40, 30, 3), value, dtype=np.uint8)
+    image[:, :, 0] = 40
+    return image
+
+
+def blank() -> np.ndarray:
+    return np.full((40, 30, 3), 170, dtype=np.uint8)
 
 
 def take(guard, camera, at, extra=()):
@@ -133,3 +139,11 @@ def test_staff_can_forgive_and_api_reports_count(monkeypatch, tmp_path):
     guard.forgive_unscanned()
     assert guard.unscanned == 0
     assert snapshot(guard, "boot")["unscanned"] == 0
+
+
+def test_blank_surface_takes_are_not_counted(monkeypatch, tmp_path):
+    guard = make_guard(monkeypatch, tmp_path)
+    take(guard, "A", 100.0)
+    for at in (110.0, 120.0, 130.0):
+        guard._on_zone_a_event("A", BasketEvent("taken", blank(), 0.1), at, sync=False)
+    assert guard.unscanned == 1

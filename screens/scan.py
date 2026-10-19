@@ -16,7 +16,7 @@ from cart import Cart
 from catalog import find_by_barcode
 from database import DatabaseError
 from formatting import format_amount, item_count_text
-from screens.components import GuideSteps, StepBar, TopBar
+from screens.components import AlertPopup, GuideSteps, StepBar, TopBar
 from styles import (
     BACKGROUND,
     BORDER,
@@ -66,6 +66,7 @@ class ScanScreen(QWidget):
         layout.addWidget(StepBar(active=1))
         layout.addWidget(self._body(), stretch=1)
         layout.addWidget(self._footer())
+        self.alert = AlertPopup(self)
 
     def _set_card(self, title: str, subtitle: str, shape: str, highlighted: bool) -> None:
         self.card_title.setText(title)
@@ -81,6 +82,10 @@ class ScanScreen(QWidget):
         if guard is None:
             return
         self.pay_button.setEnabled(self.cart.item_count > 0 and self._pay_allowed())
+        if getattr(guard, "unscanned", 0) > 0 and guard.state == "taken":
+            self.alert.show_message(guard.message, "NESKENIRAN ARTIKAL")
+        else:
+            self.alert.hide()
         state = guard.state
         key = (state, guard.message if state == "taken" else "")
         if key == self.guide_state:

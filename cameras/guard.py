@@ -13,7 +13,7 @@ from hands import load_hand_detector
 from reader import CameraReader
 from samples import SampleStore
 from similarity import Signature, compare, match_threshold, method_name, signature
-from watcher import BasketTracker, ZoneWatcher, main_box, separate_items
+from watcher import BasketTracker, ZoneWatcher, looks_like_item, main_box, separate_items
 from zones import crop, load_zones, zones_changed_at
 
 TIMEOUT_SECONDS = 30
@@ -86,6 +86,7 @@ class CheckoutGuard:
         self._scan_takes: list[tuple[np.ndarray, np.ndarray | None, float, str]] = []
         self.last_taken_index = 0
         self._forgot_at = -1000.0
+        self._item_like_cache: dict[int, tuple] = {}
         self._taken_items: list[np.ndarray] = []
         self._taken_befores: list[np.ndarray | None] = []
         self._taken_at = 0.0
@@ -162,8 +163,19 @@ class CheckoutGuard:
     def unscanned_taken(self) -> int:
         counts: dict[str, int] = {}
         for take in self._takes:
-            counts[take[3]] = counts.get(take[3], 0) + 1
+            if self._item_like(take[0]):
+                counts[take[3]] = counts.get(take[3], 0) + 1
         return max(counts.values(), default=0)
+
+    def _item_like(self, image) -> bool:
+        key = id(image)
+        cached = self._item_like_cache.get(key)
+        if cached is None or cached[0] is not image:
+            cached = (image, looks_like_item(image))
+            self._item_like_cache[key] = cached
+            if len(self._item_like_cache) > 200:
+                self._item_like_cache.clear()
+        return cached[1]
 
     @property
     def unscanned_placed(self) -> int:
