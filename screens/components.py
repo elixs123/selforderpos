@@ -100,12 +100,13 @@ class TopBar(QWidget):
             layout.addWidget(logo)
             title = QLabel("Samouslužna kasa")
             title.setStyleSheet(f"font-size: {px(30)}px; font-weight: 800; color: {TEXT};")
-            layout.addWidget(title)
+            title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+            layout.addWidget(title, stretch=1)
         else:
             back = self._pill_button(back_text, ICON_BACK, 2.2)
             back.clicked.connect(self.back_requested.emit)
             layout.addWidget(back)
-        layout.addStretch()
+            layout.addStretch()
 
         if show_staff:
             staff = self._pill_button("Pozovi osoblje", ICON_HEADSET, 1.9)
@@ -141,7 +142,9 @@ class StepBar(QWidget):
 
     def _connector(self, reached: bool) -> QWidget:
         line = QWidget()
-        line.setFixedSize(px(56), px(4))
+        line.setFixedHeight(px(4))
+        line.setMinimumWidth(px(16))
+        line.setMaximumWidth(px(56))
         color = GREEN if reached else LINE
         line.setStyleSheet(f"background: {color}; border-radius: {px(2)}px;")
         return line
@@ -311,6 +314,7 @@ class GuideSteps(QWidget):
             circle.setAlignment(Qt.AlignmentFlag.AlignCenter)
             row.addWidget(circle)
             label = QLabel(name)
+            label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
             row.addWidget(label, stretch=1)
             layout.addWidget(pill, stretch=1)
             self.pills.append((pill, circle, label))

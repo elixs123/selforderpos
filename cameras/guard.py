@@ -1,4 +1,5 @@
 import json
+import os
 import threading
 import time
 from collections import deque
@@ -38,6 +39,7 @@ CHECK_WAIT_SECONDS = 5.0
 LEARNED_MIN = 3
 LEARN_TAKEN_REFERENCES = 3
 LEARN_PRODUCT_SCORE = 0.85
+PRODUCT_MIN_SCORE = float(os.environ.get("CAM_PRODUCT_THRESHOLD", "0.8"))
 LEARNED_FACTOR = 1.7
 EXTRA_MARK = "*"
 
@@ -708,6 +710,7 @@ class CheckoutGuard:
         taken_befores: list, product_code: str | None, placed_count: int = 1,
     ) -> tuple[str, list[str], float | None, float | None]:
         threshold = match_threshold()
+        product_threshold = max(threshold, PRODUCT_MIN_SCORE)
         taken = [(index, self._taken_signature(item)) for index, item in enumerate(taken_items)
                  if item is not None and item.size]
         references = self._reference_signatures(product_code)
@@ -724,7 +727,7 @@ class CheckoutGuard:
         queries, best_taken, best = score(False)
         score_taken = best_taken[0] if best_taken else None
         score_product = best[0] if best else None
-        failing = score_taken is None or score_taken < threshold or (score_product is not None and score_product < threshold)
+        failing = score_taken is None or score_taken < threshold or (score_product is not None and score_product < product_threshold)
         rotated = False
         if failing and any(query.vectors for query in queries):
             queries, best_taken, best = score(True)
@@ -762,7 +765,7 @@ class CheckoutGuard:
         if placed_count > 1:
             problems.append(MULTIPLE_PROBLEM)
             self._waive_taken = True
-        waived = self._waive_taken and placed_count <= 1 and score_product is not None and score_product >= threshold
+        waived = self._waive_taken and placed_count <= 1 and score_product is not None and score_product >= product_threshold
         learning = (not waived and placed_count <= 1 and len(taken_references) < LEARN_TAKEN_REFERENCES
                     and score_product is not None and score_product >= max(threshold, LEARN_PRODUCT_SCORE)
                     and (score_taken is None or score_taken < threshold))
@@ -775,7 +778,7 @@ class CheckoutGuard:
             problems.append("nije viđeno šta je uzeto iz zone A")
         elif score_taken < threshold:
             problems.append("nije isto što je uzeto iz zone A")
-        if score_product is not None and score_product < threshold:
+        if score_product is not None and score_product < product_threshold:
             problems.append("ne liči na skenirani artikal")
         self.last_problems = problems
         self.log("poredjenje", self.scores + ("   PROBLEM: " + ", ".join(problems) if problems else "   OK"))

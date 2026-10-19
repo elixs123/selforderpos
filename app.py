@@ -76,6 +76,7 @@ class MainWindow(QMainWindow):
 
         self.welcome.started.connect(self.start_shopping)
         self.scan.pay_requested.connect(self.show_payment)
+        self.scan.quit_requested.connect(self.close)
         self.scan.place_requested.connect(self.show_drop)
         self.drop.accepted.connect(self.item_accepted)
         self.drop.rejected.connect(self.item_rejected)

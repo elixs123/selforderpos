@@ -49,6 +49,7 @@ class ScanScreen(QWidget):
     pay_requested = Signal()
     staff_requested = Signal()
     place_requested = Signal(object, int)
+    quit_requested = Signal()
 
     def __init__(self, cart: Cart) -> None:
         super().__init__()
@@ -171,8 +172,12 @@ class ScanScreen(QWidget):
         texts.setSpacing(px(4))
         title = QLabel("Skenirajte sljedeći artikal")
         title.setStyleSheet(f"font-size: {px(42)}px; font-weight: 800;")
+        title.setWordWrap(True)
+        title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         subtitle = QLabel("Prislonite barkod na skener ispod ekrana")
         subtitle.setStyleSheet(f"font-size: {px(24)}px; color: {MUTED_TEXT};")
+        subtitle.setWordWrap(True)
+        subtitle.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.card_title, self.card_subtitle = title, subtitle
         texts.addWidget(title)
         texts.addWidget(subtitle)
@@ -348,6 +353,17 @@ class ScanScreen(QWidget):
         self.pay_button.clicked.connect(self.pay_requested.emit)
         buttons.addWidget(self.pay_button, stretch=1)
         column.addLayout(buttons)
+
+        quit_button = QPushButton("Zatvori aplikaciju (test)")
+        quit_button.setFixedHeight(px(72))
+        quit_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        quit_button.setStyleSheet(
+            f"QPushButton {{ background: white; color: {MUTED_TEXT}; border: {px(2)}px solid {BORDER};"
+            f" border-radius: {px(36)}px; font-size: {px(24)}px; font-weight: 700; }}"
+            f"QPushButton:pressed {{ background: {BACKGROUND}; }}"
+        )
+        quit_button.clicked.connect(self.quit_requested.emit)
+        column.addWidget(quit_button)
         return footer
 
     def _on_barcode_entered(self) -> None:
