@@ -16,10 +16,17 @@ def outcome_data(outcome) -> dict | None:
     }
 
 
+def cameras_data(guard) -> dict:
+    readers = getattr(guard, "readers", {})
+    return {name: {"status": reader.status, "fps": round(reader.fps, 1)} for name, reader in readers.items()}
+
+
 def snapshot(guard, boot: str) -> dict:
     return {
         "boot": boot, "state": guard.state, "message": guard.message, "busy": bool(guard.busy),
-        "outcome": outcome_data(guard.outcome),
+        "outcome": outcome_data(guard.outcome), "cameras": cameras_data(guard),
+        "zone_a_ready": bool(getattr(guard, "zone_a_ready", True)),
+        "zone_a_reason": guard.zone_a_waiting_reason() if hasattr(guard, "zone_a_waiting_reason") else "-",
     }
 
 

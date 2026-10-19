@@ -23,6 +23,11 @@ class FakeGuard:
         self.scans = []
         self.approved = 0
         self.reject = False
+        self.readers = {"A": SimpleNamespace(status="uživo", fps=15.04), "A2": SimpleNamespace(status="nema veze", fps=0.0)}
+        self.zone_a_ready = True
+
+    def zone_a_waiting_reason(self):
+        return "A2: kamera nema sliku"
 
     def scan(self, barcode, product_code, product_name):
         self.scans.append((barcode, product_code, product_name))
@@ -163,3 +168,17 @@ def test_ping_reports_server_state(monkeypatch):
         server.shutdown()
         server.server_close()
     assert "nije dostupan" in RemoteGuard(address, "tajna").ping()
+
+
+def test_ping_lists_cameras_and_zone_a(monkeypatch):
+    guard = FakeGuard()
+    server = start_server(guard)
+    try:
+        address = f"127.0.0.1:{server.server_address[1]}"
+        text = RemoteGuard(address, "tajna").ping()
+        assert "A uživo" in text and "A2 nema veze" in text and "zona A spremna" in text
+        guard.zone_a_ready = False
+        assert "zona A nije spremna (A2: kamera nema sliku)" in RemoteGuard(address, "tajna").ping()
+    finally:
+        server.shutdown()
+        server.server_close()

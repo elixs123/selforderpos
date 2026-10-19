@@ -76,7 +76,10 @@ class RemoteGuard:
             if error.status == 401:
                 return "server odgovara, ali CAM_SERVER_TOKEN nije isti kao na serveru."
             return f"server nije dostupan ({error})."
-        return f"server radi, stanje: {data.get('state')} ({data.get('message')})."
+        cameras = data.get("cameras") or {}
+        names = ", ".join(f"{name} {info.get('status')}" for name, info in cameras.items()) or "nema podataka o kamerama"
+        zone = "zona A spremna" if data.get("zone_a_ready", True) else f"zona A nije spremna ({data.get('zone_a_reason')})"
+        return f"server radi, stanje: {data.get('state')}. Kamere: {names}. {zone}."
 
     def cancel(self) -> None:
         threading.Thread(target=self._send_quietly, args=("/cancel",), daemon=True).start()

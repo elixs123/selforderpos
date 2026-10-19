@@ -27,6 +27,12 @@ def report_cameras(guard) -> None:
             print(f"Kamera {name} ({host}): uživo")
         else:
             print(f"Kamera {name} ({host}): {reader.status}, {port_reason(host)}")
+    for _ in range(12):
+        if guard.zone_a_ready:
+            print("Zona A je spremna.")
+            return
+        print(f"Zona A još nije spremna: {guard.zone_a_waiting_reason()}")
+        time.sleep(5)
 
 
 def main() -> None:

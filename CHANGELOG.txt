@@ -1,6 +1,8 @@
 IZMJENE - samouslužna kasa
 
 2026-10-16
+- 'Testiraj kamere' u Postavkama kase piše i stanje svake kamere na serveru (uživo / nema veze) i je li zona A spremna (s razlogom ako nije).
+- Zona A je 'spremna' kad ijedna kamera koja ima sliku nauči praznu zonu (prije su morale sve, pa jedna kamera bez veze ili s pokretom u zoni blokira skeniranje porukom 'Kamera još uči praznu zonu'). Zona B se naoružava na kamerama koje imaju sliku. Razlog zašto zona nije spremna ('A2: kamera nema sliku', 'A: pokret u zoni 1.2%', 'ruka je u zoni') piše u događajima dijagnostike i u terminalu servera.
 - Postavke: dugme 'Testiraj kamere' provjerava server kamera (radi / pogrešan token / nije dostupan) i piše stanje.
 - Server kamera (vision_server.py): adrese kamera uvijek iz .env (ako su tamo upisane), ne iz stare settings.json; pri pokretanju ispiše adrese i nakon 6 s stanje svake kamere, a za kameru bez veze i razlog (port 554 se ne otvara = mreža/dozvola za lokalnu mrežu na Macu; otvara se = pogrešan korisnik ili lozinka).
 - Kamere i AI mogu raditi na drugom računaru (npr. laptop 10.20.99.50) umjesto na kasi: vision_server.py (python vision_server.py --monitor) vodi kamere, AI i dijagnostiku, a kasa (Windows) samo pita server: remote_guard.py (HTTP, bez OpenCV-a i AI modela). Printanje, račun, kartica i fiskalni printer ostaju na kasi. Postavka 'Adresa servera kamera' (CAM_SERVER_URL), zajednička lozinka CAM_SERVER_TOKEN u .env na oba računara. Ako server nije dostupan, kasa javi 'Kamere nisu dostupne', a osoblje može odobriti artikal.

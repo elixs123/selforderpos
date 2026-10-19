@@ -285,6 +285,18 @@ class BasketTracker:
     def occupied(self) -> bool:
         return self.occupancy >= self.occupied_min
 
+    @property
+    def learning_note(self) -> str:
+        if self._background is not None:
+            return "spremna"
+        if self._previous is None:
+            return "još nema slike"
+        if self._previous_ignore is not None and self._previous_ignore.any():
+            return "ruka je u zoni"
+        if self.motion_ratio > self.motion_max:
+            return f"pokret u zoni {self.motion_ratio:.1%} (dozvoljeno {self.motion_max:.1%})"
+        return "čekam mirovanje"
+
     def _clean(self, mask: np.ndarray) -> np.ndarray:
         return cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
 

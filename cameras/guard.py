@@ -113,9 +113,22 @@ class CheckoutGuard:
     def watcher(self) -> ZoneWatcher:
         return self.watchers[self.cameras_b[0]]
 
+    def _is_live(self, name: str) -> bool:
+        reader = self.readers.get(name)
+        return reader is not None and reader.status == "uživo"
+
     @property
     def zone_a_ready(self) -> bool:
-        return bool(self.trackers) and all(tracker.ready for tracker in self.trackers.values())
+        return any(tracker.ready for name, tracker in self.trackers.items() if self._is_live(name))
+
+    def zone_a_waiting_reason(self) -> str:
+        parts = []
+        for name, tracker in self.trackers.items():
+            if not self._is_live(name):
+                parts.append(f"{name}: kamera nema sliku ({self.readers[name].status})")
+            elif not tracker.ready:
+                parts.append(f"{name}: {tracker.learning_note}")
+        return "; ".join(parts) or "-"
 
     @property
     def zone_a_occupied(self) -> bool:
@@ -251,12 +264,13 @@ class CheckoutGuard:
             self._takes = [take for take in self._takes if now - take[2] <= TAKEN_MAX_AGE]
             recent_take = bool(self._takes)
             if not self.zone_a_ready:
+                self.log("zona-A", f"nije spremna: {self.zone_a_waiting_reason()}")
                 self._finish("rejected", "not_ready", "Kamera još uči praznu zonu A. Sačekajte trenutak.")
                 return False
             if not self.zone_a_occupied and not recent_take:
                 self._finish("rejected", "zone_a_empty", "Stavite korpu ili artikle u zonu A.")
                 return False
-            if not self.cameras_b or any(self.latest(name) is None for name in self.cameras_b):
+            if not any(self.latest(name) is not None for name in self.cameras_b):
                 self._finish("rejected", "camera_b", "Kamera zone B nema sliku. Pozovite osoblje.")
                 return False
             self.scores = "-"
@@ -300,7 +314,10 @@ class CheckoutGuard:
         for index, item in enumerate(items):
             self.store.save("taken", self.barcode, self.product_code, self.product_name, f"A{index + 1}", crop_image=item)
         for name, watcher in self.watchers.items():
-            roi, _ = crop(self.latest(name), self.zones.get(name))
+            frame = self.latest(name)
+            if frame is None:
+                continue
+            roi, _ = crop(frame, self.zones.get(name))
             watcher.arm(roi)
         self._armed_at = time.monotonic()
         self._set("waiting_place", f"Odložite artikal u zonu B: {self.product_name or self.barcode}")
