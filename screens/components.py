@@ -1,12 +1,13 @@
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtGui import QColor, QIcon
+from PySide6.QtWidgets import QFrame, QGraphicsDropShadowEffect, QGridLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
 from styles import (
     BORDER,
     DARK_GREEN,
     GREEN,
     ICON_BACK,
+    ICON_ALERT,
     ICON_CHECK,
     ICON_HEADSET,
     LIGHT_GREEN,
@@ -19,7 +20,10 @@ from styles import (
 )
 
 STEP_NAMES = ("Skeniranje", "Plaćanje", "Račun")
-ALERT_RED = "#D5182A"
+ALERT_TONES = {
+    "warning": ("#FFF8E8", "#E8A317", "#5C3B00", "#7A5410"),
+    "error": ("#FFF1F2", "#D5182A", "#5E0B14", "#7F1D2A"),
+}
 
 
 class AlertPopup(QFrame):
@@ -28,21 +32,27 @@ class AlertPopup(QFrame):
         self.setObjectName("alertPopup")
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.setStyleSheet(
-            f"#alertPopup {{ background: {ALERT_RED}; border: {px(6)}px solid #8E0E1A; border-radius: {px(36)}px; }}"
-        )
-        column = QVBoxLayout(self)
-        column.setContentsMargins(px(40), px(32), px(40), px(32))
-        column.setSpacing(px(14))
-        self.title = QLabel("PAŽNJA")
-        self.title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.title.setStyleSheet(f"color: white; font-size: {px(56)}px; font-weight: 900; background: transparent;")
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(px(48))
+        shadow.setOffset(0, px(10))
+        shadow.setColor(QColor(22, 33, 26, 60))
+        self.setGraphicsEffect(shadow)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(px(34), px(28), px(40), px(28))
+        row.setSpacing(px(26))
+        self.badge = QLabel()
+        self.badge.setFixedSize(px(76), px(76))
+        self.badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        row.addWidget(self.badge, alignment=Qt.AlignmentFlag.AlignTop)
+        column = QVBoxLayout()
+        column.setSpacing(px(6))
+        self.title = QLabel("")
         self.text = QLabel("")
         self.text.setWordWrap(True)
-        self.text.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.text.setStyleSheet(f"color: white; font-size: {px(38)}px; font-weight: 700; background: transparent;")
         column.addWidget(self.title)
         column.addWidget(self.text)
+        row.addLayout(column, stretch=1)
+        self.tone = ""
         self.hide()
         parent.installEventFilter(self)
 
@@ -51,16 +61,31 @@ class AlertPopup(QFrame):
             self._place()
         return False
 
+    def _paint(self, tone: str) -> None:
+        if tone == self.tone:
+            return
+        self.tone = tone
+        background, accent, title_color, text_color = ALERT_TONES.get(tone, ALERT_TONES["warning"])
+        self.setStyleSheet(
+            f"#alertPopup {{ background: {background}; border: {px(2)}px solid {accent}; "
+            f"border-left: {px(14)}px solid {accent}; border-radius: {px(28)}px; }}"
+        )
+        self.badge.setPixmap(icon(ICON_ALERT, px(44), "#FFFFFF", 2.2))
+        self.badge.setStyleSheet(f"background: {accent}; border-radius: {px(38)}px;")
+        self.title.setStyleSheet(f"color: {title_color}; font-size: {px(36)}px; font-weight: 800; background: transparent;")
+        self.text.setStyleSheet(f"color: {text_color}; font-size: {px(30)}px; font-weight: 500; background: transparent;")
+
     def _place(self) -> None:
         parent = self.parent()
-        width = min(parent.width() - px(80), px(900))
+        width = min(parent.width() - px(80), px(960))
         self.setFixedWidth(width)
         self.adjustSize()
-        self.move((parent.width() - width) // 2, (parent.height() - self.height()) // 2)
+        self.move((parent.width() - width) // 2, px(250))
 
-    def show_message(self, text: str, title: str = "PAŽNJA") -> None:
-        if self.isVisible() and self.text.text() == text and self.title.text() == title:
+    def show_message(self, text: str, title: str = "Pažnja", tone: str = "warning") -> None:
+        if self.isVisible() and self.text.text() == text and self.title.text() == title and self.tone == tone:
             return
+        self._paint(tone)
         self.title.setText(title)
         self.text.setText(text)
         self.show()

@@ -92,3 +92,32 @@ def test_scanned_item_placed_in_zone_b_is_not_counted(monkeypatch, tmp_path):
     run(guard, readers, 4.0)
     assert guard.state != "waiting_place"
     assert guard.unscanned_placed == 0
+
+
+def test_hand_lingering_after_accept_does_not_count_the_scanned_item(monkeypatch, tmp_path):
+    guard, readers = make_guard(monkeypatch, tmp_path)
+    guard._judge = lambda *args, **kwargs: ("ok", [], 0.9, 0.9)
+    hand_until = {"time": time.monotonic() + 1000}
+
+    def hand_mask(name, roi, offset):
+        if time.monotonic() > hand_until["time"]:
+            return None
+        mask = np.zeros(roi.shape[:2], np.uint8)
+        mask[0:120, 0:120] = 255
+        return mask
+
+    guard._hand_mask = hand_mask
+    taken = with_items((120, 90, 70, 80))[80:180, 110:200].copy()
+    guard._takes = [(taken, None, time.monotonic(), "A")]
+    assert guard.scan("1001", None, "Test") is True
+    placed = with_items((150, 140, 70, 80))
+    place(readers, placed)
+    run(guard, readers, 0.2)
+    readers["B"].frame = placed
+    end = time.monotonic() + 25
+    while guard.state in ("waiting_place", "judging") and time.monotonic() < end:
+        run(guard, readers, 0.1)
+    assert guard.outcome is not None and guard.outcome.kind == "accepted", (guard.state, guard.message)
+    hand_until["time"] = time.monotonic() + 4
+    run(guard, readers, 6)
+    assert guard.unscanned_placed == 0

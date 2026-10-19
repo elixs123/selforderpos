@@ -94,7 +94,7 @@ class DropScreen(QWidget):
             return
         if guard.state == "mismatch":
             self._paint("problem", guard.message)
-            self.alert.show_message(guard.message, "ARTIKAL NE ODGOVARA")
+            self.alert.show_message(guard.message, "Artikal ne odgovara", "error")
             return
         self.alert.hide()
         if guard.state == "judging":

@@ -29,7 +29,7 @@ MULTIPLE_MESSAGE = "Odložili ste više artikala. Uklonite višak i ostavite sam
 UNSCANNED_MESSAGE = "Uzeli ste još jedan artikal iz zone A. Skenirajte ga."
 NOT_TAKEN_MESSAGE = "Taj artikal nije uzet iz zone A. Ako ste ga već skenirali, ne skenirajte ga ponovo."
 PLACED_UNSCANNED_MESSAGE = "U zonu B je odložen artikal koji nije skeniran. Uklonite ga iz zone B pa ga skenirajte."
-ZONE_B_QUIET_SECONDS = 2.0
+ZONE_B_QUIET_SECONDS = 3.0
 MAX_TAKES = 30
 
 
@@ -649,6 +649,8 @@ class CheckoutGuard:
                 placements[name] = placement
             if self.zone_b_armed or self._judging or placement is not None:
                 self._b_active_at = now
+            if now - self._b_active_at < ZONE_B_QUIET_SECONDS:
+                self.idle_b[name].absorb()
             idle_event = self.idle_b[name].update(roi, now, hands)
             if idle_event is not None:
                 self._on_idle_b_event(name, idle_event, now)

@@ -358,6 +358,10 @@ class BasketTracker:
         self._stable_ignore_old: np.ndarray | None = None
         self._stable_since: float | None = None
         self._moved = False
+        self._absorb = False
+
+    def absorb(self) -> None:
+        self._absorb = True
 
     @property
     def ready(self) -> bool:
@@ -405,6 +409,13 @@ class BasketTracker:
             self.occupancy = 0.0
             self._moved = False
             return BasketEvent("empty", None, 0.0)
+        if self._absorb:
+            if hand is not None and hand.any():
+                return None
+            self._absorb = False
+            self._moved = False
+            self._stable_gray, self._stable_image, self._stable_ignore = gray, image.copy(), hand
+            return None
         if not self._moved:
             return None
         self._moved = False

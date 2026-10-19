@@ -89,7 +89,7 @@ class ScanScreen(QWidget):
             return
         self.pay_button.setEnabled(self.cart.item_count > 0 and self._pay_allowed())
         if getattr(guard, "unscanned", 0) > 0 and guard.state == "taken":
-            self.alert.show_message(guard.message, "NESKENIRAN ARTIKAL")
+            self.alert.show_message(guard.message, "Artikal nije skeniran")
         elif time.monotonic() >= self._alert_until:
             self.alert.hide()
         state = guard.state
@@ -370,7 +370,7 @@ class ScanScreen(QWidget):
         if not self.guard.scan(barcode, product.code, product.name):
             self._show_notice(self.guard.message, success=False)
             self._alert_until = time.monotonic() + ALERT_SECONDS
-            self.alert.show_message(self.guard.message, "PAŽNJA")
+            self.alert.show_message(self.guard.message, "Skeniranje nije prihvaćeno")
             return
         self.place_requested.emit(product, seen)
 
