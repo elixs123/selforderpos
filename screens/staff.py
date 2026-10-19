@@ -43,6 +43,7 @@ class StaffScreen(QWidget):
     learn_requested = Signal()
     forgive_requested = Signal()
     settings_requested = Signal()
+    cleared = Signal()
 
     def __init__(self, cart: Cart) -> None:
         super().__init__()
@@ -197,28 +198,32 @@ class StaffScreen(QWidget):
         scroll.setWidget(content)
         column.addWidget(scroll, stretch=1)
 
-        extra = QHBoxLayout()
-        extra.setSpacing(px(18))
+        extra = QVBoxLayout()
+        extra.setSpacing(px(14))
         self.approve_button = QPushButton("Odobri skenirani artikal")
         self.approve_button.setFixedHeight(px(96))
         self.approve_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.approve_button.setStyleSheet(self._outline_style(GREEN, GREEN))
         self.approve_button.clicked.connect(self._on_approve)
-        extra.addWidget(self.approve_button, stretch=1)
-        self.learn_button = QPushButton("Tačan artikal — zapamti")
-        self.learn_button.setFixedHeight(px(96))
+        extra.addWidget(self.approve_button)
+        self.learn_button = QPushButton("Kamera nije prepoznala artikal\nOdobri i zapamti ga u bazi")
+        self.learn_button.setFixedHeight(px(120))
         self.learn_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.learn_button.setStyleSheet(self._outline_style(GREEN, GREEN))
+        self.learn_button.setStyleSheet(
+            f"QPushButton {{ background: {GREEN}; color: white; border: none; border-radius: {px(48)}px;"
+            f" font-size: {px(28)}px; font-weight: 800; }}"
+            f"QPushButton:pressed {{ background: #2C5C14; }}"
+        )
         self.learn_button.clicked.connect(self._on_learn)
         self.learn_button.setVisible(False)
-        extra.addWidget(self.learn_button, stretch=1)
+        extra.addWidget(self.learn_button)
         self.forgive_button = QPushButton("Poništi neskenirana uzimanja")
         self.forgive_button.setFixedHeight(px(96))
         self.forgive_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.forgive_button.setStyleSheet(self._outline_style(BORDER, TEXT))
         self.forgive_button.clicked.connect(self._on_forgive)
         self.forgive_button.setVisible(False)
-        extra.addWidget(self.forgive_button, stretch=1)
+        extra.addWidget(self.forgive_button)
         settings = QPushButton("Postavke")
         settings.setFixedHeight(px(96))
         settings.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -337,4 +342,4 @@ class StaffScreen(QWidget):
 
     def _on_clear(self) -> None:
         self.cart.clear()
-        self._refresh_panel()
+        self.cleared.emit()

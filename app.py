@@ -90,6 +90,7 @@ class MainWindow(QMainWindow):
         for screen in (self.scan, self.drop, self.payment, self.card, self.qr):
             screen.staff_requested.connect(self.show_staff)
         self.staff.closed.connect(self.back_to_scan)
+        self.staff.cleared.connect(self.cancel_shopping)
         self.staff.approve_requested.connect(self.approve_item)
         self.staff.learn_requested.connect(self.learn_item)
         self.staff.forgive_requested.connect(self.forgive_unscanned)
@@ -241,6 +242,15 @@ class MainWindow(QMainWindow):
             self.back_to_scan()
         else:
             self.screens.setCurrentWidget(self.welcome)
+
+    def cancel_shopping(self) -> None:
+        if self.guard is not None:
+            if self.drop.waiting:
+                self.guard.cancel()
+            self.guard.forgive_unscanned()
+        self.drop.cancel()
+        self.cart.clear()
+        self.screens.setCurrentWidget(self.welcome)
 
     def finish_shopping(self) -> None:
         self.cart.clear()

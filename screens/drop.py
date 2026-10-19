@@ -76,6 +76,9 @@ class DropScreen(QWidget):
         if self.waiting:
             self.timer.start()
 
+    def cancel(self) -> None:
+        self._stop()
+
     def _stop(self) -> None:
         self.alert.hide()
         self.timer.stop()
