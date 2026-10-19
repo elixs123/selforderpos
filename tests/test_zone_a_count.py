@@ -112,3 +112,55 @@ def test_size_is_learned_from_normal_sales(monkeypatch, tmp_path):
     sell_one(guard, readers, zone((20, 20), (130, 20)))
     assert len(guard._sizes["P"]["A"]) == 1
     assert guard._sizes_path.exists()
+
+
+def circles(*centers) -> np.ndarray:
+    import cv2
+
+    image = np.full((240, 320, 3), 80, dtype=np.uint8)
+    for index, (x, y) in enumerate(centers):
+        cv2.circle(image, (x, y), 28, COLORS[index % len(COLORS)], -1)
+    return image
+
+
+def test_two_touching_round_bottles_are_caught_without_learning(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAMPLES_DIR", str(tmp_path))
+    readers = {"A": ControlledReader(), "B": ControlledReader()}
+    guard = CheckoutGuard(readers)
+    guard.zones = {}
+    guard.trackers = {"A": BasketTracker(stable_seconds=0.2)}
+    run(guard, readers, 0.5)
+    show(guard, readers, circles((60, 60), (150, 150), (205, 150)))
+    sell_one(guard, readers, circles((60, 60)))
+    assert guard.alert
+    assert guard.unscanned == 1
+
+
+def test_one_long_box_is_one_item(monkeypatch, tmp_path):
+    guard, readers = make_guard(monkeypatch, tmp_path, [(20, 20)])
+    long_box = zone((20, 20))
+    long_box[120:170, 100:240] = COLORS[1]
+    show(guard, readers, long_box)
+    sell_one(guard, readers, zone((20, 20)))
+    assert not guard.alert
+    assert guard.unscanned == 0
+
+
+def test_two_identical_items_taken_next_to_a_third_identical_one(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAMPLES_DIR", str(tmp_path))
+    readers = {"A": ControlledReader(), "B": ControlledReader()}
+    guard = CheckoutGuard(readers)
+    guard.zones = {}
+    guard.trackers = {"A": BasketTracker(stable_seconds=0.2)}
+    run(guard, readers, 0.5)
+
+    def same(*items):
+        image = np.full((240, 320, 3), 80, dtype=np.uint8)
+        for x, y in items:
+            image[y:y + 50, x:x + 50] = (60, 200, 90)
+            image[y + 10:y + 20, x + 10:x + 40] = (250, 250, 250)
+        return image
+
+    show(guard, readers, same((20, 20), (90, 20), (160, 20)))
+    sell_one(guard, readers, same((20, 20)))
+    assert guard.alert

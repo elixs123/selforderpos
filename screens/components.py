@@ -20,43 +20,44 @@ from styles import (
 )
 
 STEP_NAMES = ("Skeniranje", "Plaćanje", "Račun")
-ALERT_TONES = {
-    "warning": ("#E8A317", "#FFF7E6"),
-    "error": ("#D5182A", "#FDECEE"),
-}
+ALERT_ACCENT = "#D5182A"
+ALERT_SOFT = "#FDECEE"
 
 
 class AlertPopup(QFrame):
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
-        self.backdrop = QWidget(parent)
-        self.backdrop.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        self.backdrop.setStyleSheet("background: rgba(22, 33, 26, 70);")
-        self.backdrop.hide()
         self.setObjectName("alertPopup")
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setStyleSheet(
+            f"#alertPopup {{ background: #FFFFFF; border: {px(1)}px solid #F3C4CA; "
+            f"border-left: {px(12)}px solid {ALERT_ACCENT}; border-radius: {px(30)}px; }}"
+        )
         shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(px(70))
-        shadow.setOffset(0, px(16))
-        shadow.setColor(QColor(22, 33, 26, 70))
+        shadow.setBlurRadius(px(60))
+        shadow.setOffset(0, px(14))
+        shadow.setColor(QColor(22, 33, 26, 64))
         self.setGraphicsEffect(shadow)
-        column = QVBoxLayout(self)
-        column.setContentsMargins(px(56), px(44), px(56), px(48))
-        column.setSpacing(px(18))
-        self.badge = QLabel()
-        self.badge.setFixedSize(px(104), px(104))
-        self.badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        column.addWidget(self.badge, alignment=Qt.AlignmentFlag.AlignHCenter)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(px(30), px(26), px(36), px(26))
+        row.setSpacing(px(24))
+        badge = QLabel()
+        badge.setFixedSize(px(80), px(80))
+        badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        badge.setPixmap(icon(ICON_ALERT, px(44), ALERT_ACCENT, 2.6))
+        badge.setStyleSheet(f"background: {ALERT_SOFT}; border-radius: {px(40)}px;")
+        row.addWidget(badge, alignment=Qt.AlignmentFlag.AlignVCenter)
+        column = QVBoxLayout()
+        column.setSpacing(px(4))
         self.title = QLabel("")
-        self.title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.title.setWordWrap(True)
+        self.title.setStyleSheet(f"color: {TEXT}; font-size: {px(36)}px; font-weight: 800; background: transparent;")
         self.text = QLabel("")
-        self.text.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.text.setWordWrap(True)
+        self.text.setStyleSheet(f"color: {MUTED_TEXT}; font-size: {px(28)}px; font-weight: 500; background: transparent;")
         column.addWidget(self.title)
         column.addWidget(self.text)
-        self.tone = ""
+        row.addLayout(column, stretch=1)
         self.hide()
         parent.installEventFilter(self)
 
@@ -65,40 +66,18 @@ class AlertPopup(QFrame):
             self._place()
         return False
 
-    def _paint(self, tone: str) -> None:
-        if tone == self.tone:
-            return
-        self.tone = tone
-        accent, soft = ALERT_TONES.get(tone, ALERT_TONES["warning"])
-        self.setStyleSheet(
-            f"#alertPopup {{ background: #FFFFFF; border-top: {px(10)}px solid {accent}; border-radius: {px(40)}px; }}"
-        )
-        self.badge.setPixmap(icon(ICON_ALERT, px(56), accent, 2.6))
-        self.badge.setStyleSheet(f"background: {soft}; border-radius: {px(52)}px;")
-        self.title.setStyleSheet(f"color: {TEXT}; font-size: {px(42)}px; font-weight: 800; background: transparent;")
-        self.text.setStyleSheet(f"color: {MUTED_TEXT}; font-size: {px(30)}px; font-weight: 500; background: transparent;")
-
     def _place(self) -> None:
         parent = self.parent()
-        self.backdrop.setGeometry(0, 0, parent.width(), parent.height())
-        width = min(parent.width() - px(80), px(820))
+        width = min(parent.width() - px(48), px(1000))
         self.setFixedWidth(width)
         self.adjustSize()
-        self.move((parent.width() - width) // 2, max(px(200), int(parent.height() * 0.3) - self.height() // 2))
+        self.move((parent.width() - width) // 2, px(18))
 
-    def hide(self) -> None:
-        super().hide()
-        if hasattr(self, "backdrop"):
-            self.backdrop.hide()
-
-    def show_message(self, text: str, title: str = "Pažnja", tone: str = "warning") -> None:
-        if self.isVisible() and self.text.text() == text and self.title.text() == title and self.tone == tone:
+    def show_message(self, text: str, title: str) -> None:
+        if self.isVisible() and self.text.text() == text and self.title.text() == title:
             return
-        self._paint(tone)
         self.title.setText(title)
         self.text.setText(text)
-        self.backdrop.setVisible(tone == "error")
-        self.backdrop.raise_()
         self.show()
         self._place()
         self.raise_()

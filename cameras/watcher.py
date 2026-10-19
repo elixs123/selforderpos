@@ -63,6 +63,7 @@ ITEM_SATURATION = 40
 ITEM_EDGES = 0.01
 SHIFT_AREA = (0.5, 2.0)
 SHIFT_DISTANCE = 2.5
+REMOVED_RELATIVE = 0.35
 
 
 def align(reference: np.ndarray, image: np.ndarray) -> np.ndarray:
@@ -162,7 +163,7 @@ def _objects(gray: np.ndarray, background: np.ndarray) -> np.ndarray:
     return cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
 
 
-def _still_there(before: np.ndarray, after: np.ndarray, box: tuple[int, int, int, int]) -> bool:
+def _still_there(before: np.ndarray, after: np.ndarray, box: tuple[int, int, int, int], occupied: np.ndarray) -> bool:
     x, y, w, h = box
     if w <= 3 or h <= 3:
         return False
@@ -173,8 +174,45 @@ def _still_there(before: np.ndarray, after: np.ndarray, box: tuple[int, int, int
     window = after[top:min(height, y + h + pad_y), left:min(width, x + w + pad_x)]
     if window.shape[0] <= h or window.shape[1] <= w:
         return False
-    match = cv2.matchTemplate(window, patch, cv2.TM_CCOEFF_NORMED)
-    return float(np.nan_to_num(match).max()) >= STILL_THERE
+    match = np.nan_to_num(cv2.matchTemplate(window, patch, cv2.TM_CCOEFF_NORMED))
+    _, best, _, (mx, my) = cv2.minMaxLoc(match)
+    if best < STILL_THERE:
+        return False
+    landed = occupied[top + my:top + my + h, left + mx:left + mx + w]
+    return landed.size > 0 and float((landed > 0).mean()) >= 0.3
+
+
+def _split_touching(mask: np.ndarray) -> list[tuple[int, tuple[int, int, int, int]]]:
+    cleaned = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    count, labels = cv2.connectedComponents(cleaned)
+    parts = []
+    for component in range(1, count):
+        region = (labels == component).astype(np.uint8) * 255
+        thickness = cv2.distanceTransform(region, cv2.DIST_L2, 3)
+        peak = float(thickness.max())
+        if peak < MIN_THICKNESS:
+            continue
+        cores = (thickness >= CORE_SHARE * peak).astype(np.uint8)
+        core_count, core_labels = cv2.connectedComponents(cores)
+        markers = core_labels.astype(np.int32) + 1
+        markers[(region > 0) & (cores == 0)] = 0
+        cv2.watershed(cv2.cvtColor(region, cv2.COLOR_GRAY2BGR), markers)
+        for label in range(2, core_count + 1):
+            ys, xs = np.nonzero(markers == label)
+            if len(xs) == 0:
+                continue
+            box = (int(xs.min()), int(ys.min()), int(xs.max() - xs.min() + 1), int(ys.max() - ys.min() + 1))
+            parts.append((int(len(xs)), box))
+    return sorted(parts, reverse=True)
+
+
+def _item_parts(mask: np.ndarray) -> list[tuple[int, tuple[int, int, int, int]]]:
+    parts = _split_touching(mask)
+    if not parts:
+        return []
+    largest = parts[0][0]
+    return [(area, box) for area, box in parts
+            if area >= MULTI_MIN_SHARE * mask.size and area >= REMOVED_RELATIVE * largest]
 
 
 def removed_items(before: np.ndarray, after: np.ndarray, background: np.ndarray) -> list[tuple[int, tuple[int, int, int, int]]]:
@@ -183,16 +221,16 @@ def removed_items(before: np.ndarray, after: np.ndarray, background: np.ndarray)
     old, new = _objects(before, background), _objects(after, background)
     freed = cv2.bitwise_and(old, cv2.bitwise_not(new))
     occupied = cv2.bitwise_and(new, cv2.bitwise_not(old))
-    arrived = [part for part in separate_items(occupied)]
+    arrived = _item_parts(occupied)
     kept = []
-    for area, box in separate_items(freed):
+    for area, box in _item_parts(freed):
         size = max(box[2], box[3])
         shifted = next((part for part in arrived if SHIFT_AREA[0] * area <= part[0] <= SHIFT_AREA[1] * area
                         and _box_gap(box, part[1]) <= SHIFT_DISTANCE * size), None)
         if shifted is not None:
             arrived.remove(shifted)
             continue
-        if _still_there(before, after, box):
+        if _still_there(before, after, box, occupied):
             continue
         kept.append((area, box))
     return kept

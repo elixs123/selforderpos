@@ -102,8 +102,11 @@ class DropScreen(QWidget):
             return
         if guard.state == "mismatch":
             self._paint("problem", guard.message)
-            title, text = customer_problem(guard.message)
-            self.alert.show_message(text, title, "error")
+            if "više artikala" in guard.message:
+                title, text = customer_problem(guard.message)
+                self.alert.show_message(text, title)
+            else:
+                self.alert.hide()
             return
         self.alert.hide()
         if guard.state == "judging":
