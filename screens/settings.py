@@ -67,6 +67,8 @@ SECRET = {"terminal_api_key"}
 class SettingsScreen(QWidget):
     closed = Signal()
     saved = Signal(object)
+    restart_requested = Signal(object)
+    quit_requested = Signal(object)
     test_finished = Signal(str)
 
     def __init__(self, settings: Settings) -> None:
@@ -105,7 +107,7 @@ class SettingsScreen(QWidget):
         page = QWidget()
         column = QVBoxLayout(page)
         column.setContentsMargins(px(40), px(10), px(40), px(30))
-        column.setSpacing(px(16))
+        column.setSpacing(px(12))
         title = QLabel("Postavke")
         title.setStyleSheet(f"font-size: {px(56)}px; font-weight: 800;")
         column.addWidget(title)
@@ -154,6 +156,12 @@ class SettingsScreen(QWidget):
         save.clicked.connect(self._save)
         actions.addWidget(save)
         column.addLayout(actions)
+        restart = self._button("Spremi i restartuj aplikaciju", primary=False)
+        restart.clicked.connect(self._save_and_restart)
+        column.addWidget(restart)
+        quit_button = self._button("Spremi i ugasi aplikaciju", primary=False)
+        quit_button.clicked.connect(self._save_and_quit)
+        column.addWidget(quit_button)
         return page
 
     def _section(self, heading: str, names: list[str], types: dict) -> QFrame:
@@ -226,14 +234,14 @@ class SettingsScreen(QWidget):
 
     def _button(self, text: str, primary: bool) -> QPushButton:
         button = QPushButton(text)
-        button.setFixedHeight(px(90))
+        button.setFixedHeight(px(76))
         button.setCursor(Qt.CursorShape.PointingHandCursor)
         if primary:
             style = f"background: {GREEN}; color: white; border: none;"
         else:
             style = f"background: white; color: {TEXT}; border: {px(3)}px solid {BORDER};"
         button.setStyleSheet(
-            f"QPushButton {{ {style} border-radius: {px(45)}px; font-size: {px(28)}px; font-weight: 800; }}"
+            f"QPushButton {{ {style} border-radius: {px(38)}px; font-size: {px(26)}px; font-weight: 800; }}"
         )
         return button
 
@@ -241,6 +249,14 @@ class SettingsScreen(QWidget):
         self.settings = self.current()
         self.saved.emit(self.settings)
         self.status.setText("Postavke su spremljene.")
+
+    def _save_and_restart(self) -> None:
+        self.settings = self.current()
+        self.restart_requested.emit(self.settings)
+
+    def _save_and_quit(self) -> None:
+        self.settings = self.current()
+        self.quit_requested.emit(self.settings)
 
     def _run_test(self, job) -> None:
         self.status.setText("Provjeravam...")

@@ -24,7 +24,7 @@ if getattr(sys, "frozen", False):
     os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = str(plugins / "platforms")
     os.environ.setdefault("QT_DEBUG_PLUGINS", "1")
 
-from PySide6.QtCore import QStandardPaths
+from PySide6.QtCore import QProcess, QStandardPaths
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QStackedWidget
 
@@ -96,6 +96,8 @@ class MainWindow(QMainWindow):
         self.staff.forgive_requested.connect(self.forgive_unscanned)
         self.staff.settings_requested.connect(self.show_settings)
         self.settings_screen.saved.connect(self.apply_settings)
+        self.settings_screen.restart_requested.connect(self.restart_app)
+        self.settings_screen.quit_requested.connect(self.quit_app)
         self.settings_screen.closed.connect(self.close_settings)
 
         shortcut = QShortcut(QKeySequence("Ctrl+Shift+S"), self)
@@ -236,6 +238,16 @@ class MainWindow(QMainWindow):
         save_settings(settings, self.settings_path)
         if cameras_changed:
             self.start_cameras()
+
+    def restart_app(self, settings: Settings) -> None:
+        save_settings(settings, self.settings_path)
+        arguments = sys.argv[1:] if getattr(sys, "frozen", False) else sys.argv
+        self.close()
+        QProcess.startDetached(sys.executable, arguments)
+
+    def quit_app(self, settings: Settings) -> None:
+        save_settings(settings, self.settings_path)
+        self.close()
 
     def close_settings(self) -> None:
         if self.cart.item_count or self.drop.waiting or self.card.locked:
