@@ -47,6 +47,13 @@ WHERE product_code = ? AND event = 'taken' AND verdict IN ('ok', 'verified') AND
 ORDER BY verdict = 'verified' DESC, id DESC LIMIT ?
 """
 
+OTHER_REFERENCES = """
+SELECT product_code, product_name, crop_path FROM samples
+WHERE product_code IS NOT NULL AND product_code != ? AND event = 'placed' AND verdict IN ('learned', 'ok', 'verified')
+AND crop_path IS NOT NULL AND created_at >= ?
+ORDER BY verdict = 'verified' DESC, id DESC LIMIT ?
+"""
+
 OLD_REFERENCES = """
 SELECT COUNT(*) FROM samples
 WHERE product_code = ? AND event = 'placed' AND verdict IN ('learned', 'ok', 'verified') AND crop_path IS NOT NULL
@@ -108,6 +115,11 @@ class SampleStore:
         query = REFERENCES.format(column="crop_path")
         with closing(sqlite3.connect(self.database)) as connection:
             return [row[0] for row in connection.execute(query, (product_code, since, limit)).fetchall()]
+
+    def other_reference_paths(self, product_code: str | None, limit: int = 60, since: str = "") -> list[tuple[str, str, str]]:
+        with closing(sqlite3.connect(self.database)) as connection:
+            return [(row[0], row[1] or row[0], row[2])
+                    for row in connection.execute(OTHER_REFERENCES, (product_code or "", since, limit)).fetchall()]
 
     def taken_reference_paths(self, product_code: str | None, limit: int = 20, since: str = "") -> list[str]:
         if not product_code:

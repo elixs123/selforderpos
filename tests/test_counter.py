@@ -284,3 +284,22 @@ def test_staff_verified_item_is_remembered_as_reference(monkeypatch, tmp_path):
     assert guard.outcome.kind == "accepted" and guard.outcome.verdict == "verified"
     assert guard.store.load_image(guard.store.taken_reference_paths("P")[0])[0, 0, 0] == 200
     assert guard.store.load_image(guard.store.reference_paths("P")[0])[0, 0, 0] == 40
+
+
+def test_product_without_references_is_rejected_when_it_looks_like_another_product(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAMPLES_DIR", str(tmp_path))
+    monkeypatch.setenv("CAM_MATCH_THRESHOLD", "0.6")
+    readers = {"A2": ControlledReader(), "B2": ControlledReader()}
+    guard = CheckoutGuard(readers)
+    monkeypatch.setattr(guard_module, "signature", lambda image, rotations=False: SimpleNamespace(vectors=None, kind=int(image[0, 0, 0])))
+    monkeypatch.setattr(guard_module, "compare", lambda query, other: 0.9 if other.kind == 9 else 0.3)
+    monkeypatch.setattr(guard, "_taken_signature", lambda item: SimpleNamespace(vectors=None, kind=int(item[0, 0, 0])))
+    monkeypatch.setattr(guard, "_reference_signatures", lambda code: [])
+    monkeypatch.setattr(guard, "_taken_reference_signatures", lambda code: [])
+    placed = np.full((20, 20, 3), 5, np.uint8)
+    monkeypatch.setattr(guard, "_other_signatures", lambda code: [])
+    assert guard._judge([placed], 0.1, [placed], [None], "NEW", 1)[0] == "learned"
+    monkeypatch.setattr(guard, "_other_signatures", lambda code: [("JAMNICA", SimpleNamespace(vectors=None, kind=9))])
+    verdict, problems, _, _ = guard._judge([placed], 0.1, [placed], [None], "NEW", 1)
+    assert verdict == "mismatch"
+    assert "liči na drugi artikal (JAMNICA)" in problems

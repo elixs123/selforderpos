@@ -762,6 +762,13 @@ class CheckoutGuard:
             "threshold": threshold,
         }
         problems = []
+        lookalike = None
+        if score_product is None and placed_count <= 1:
+            others = self._other_signatures(product_code)
+            lookalike = max(((compare(query, other), name) for query in queries for name, other in others),
+                            key=lambda pair: pair[0], default=None)
+            if lookalike is not None and lookalike[0] < product_threshold:
+                lookalike = None
         if placed_count > 1:
             problems.append(MULTIPLE_PROBLEM)
             self._waive_taken = True
@@ -780,6 +787,9 @@ class CheckoutGuard:
             problems.append("nije isto što je uzeto iz zone A")
         if score_product is not None and score_product < product_threshold:
             problems.append("ne liči na skenirani artikal")
+        if lookalike is not None:
+            self.log("poredjenje", f"artikal bez slika liči na drugi poznati artikal: {lookalike[1]} ({lookalike[0]:.2f})")
+            problems.append(f"liči na drugi artikal ({lookalike[1]})")
         self.last_problems = problems
         self.log("poredjenje", self.scores + ("   PROBLEM: " + ", ".join(problems) if problems else "   OK"))
         if problems:
@@ -801,6 +811,21 @@ class CheckoutGuard:
                         continue
                     self._reference_cache[path] = signature(image, rotations=False)
                 result.append(self._reference_cache[path])
+            return result
+
+    def _other_signatures(self, product_code: str | None) -> list[tuple[str, Signature]]:
+        with self._reference_lock:
+            result = []
+            for _, name, path in self.store.other_reference_paths(product_code, since=self.references_since):
+                if path in self._missing_references:
+                    continue
+                if path not in self._reference_cache:
+                    image = self.store.load_image(path)
+                    if image is None:
+                        self._missing_references.add(path)
+                        continue
+                    self._reference_cache[path] = signature(image, rotations=False)
+                result.append((name, self._reference_cache[path]))
             return result
 
     def _reference_take_index(self) -> int | None:
