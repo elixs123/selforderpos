@@ -140,10 +140,10 @@ class SettingsScreen(QWidget):
         printer_test = self._button("Testiraj printer", primary=False)
         printer_test.clicked.connect(self._test_printer)
         tests.addWidget(printer_test)
+        column.addLayout(tests)
         cameras_test = self._button("Testiraj kamere", primary=False)
         cameras_test.clicked.connect(self._test_cameras)
-        tests.addWidget(cameras_test)
-        column.addLayout(tests)
+        column.addWidget(cameras_test)
 
         actions = QHBoxLayout()
         actions.setSpacing(px(14))
