@@ -128,7 +128,15 @@ class CheckoutGuard:
 
     def log(self, kind: str, text: str) -> None:
         self.event_number += 1
-        self.events.append((self.event_number, datetime.now().strftime("%H:%M:%S"), kind, text))
+        moment = datetime.now()
+        self.events.append((self.event_number, moment.strftime("%H:%M:%S"), kind, text))
+        try:
+            folder = self.store.folder.parent / "logs"
+            folder.mkdir(parents=True, exist_ok=True)
+            with open(folder / f"events-{moment:%Y%m%d}.log", "a", encoding="utf-8") as file:
+                file.write(f"{moment:%H:%M:%S.%f}"[:-3] + f" {kind}: {text}\n")
+        except (OSError, AttributeError):
+            pass
 
     @property
     def tracker(self) -> BasketTracker:
