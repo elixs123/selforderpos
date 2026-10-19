@@ -1,5 +1,5 @@
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
 from formatting import format_amount
 from screens.components import AlertPopup, GuideSteps, StepBar, TopBar
@@ -68,6 +68,7 @@ class DropScreen(QWidget):
     def begin(self, product, guard, seen_outcome: int) -> None:
         self.product, self.guard, self.seen_outcome = product, guard, seen_outcome
         self.name_label.setText(product.name)
+        self.name_label.setStyleSheet(f"font-size: {px(36) if len(product.name) <= 28 else px(26)}px; font-weight: 800;")
         self.price_label.setText(f"{format_amount(product.price)} KM")
         self._poll()
         self.timer.start()
@@ -169,6 +170,8 @@ class DropScreen(QWidget):
         caption.setStyleSheet(f"font-size: {px(23)}px; font-weight: 600; color: {MUTED_TEXT};")
         texts.addWidget(caption)
         self.name_label = QLabel()
+        self.name_label.setWordWrap(True)
+        self.name_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.name_label.setStyleSheet(f"font-size: {px(36)}px; font-weight: 800;")
         texts.addWidget(self.name_label)
         texts.addStretch()
