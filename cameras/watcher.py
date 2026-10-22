@@ -1,3 +1,4 @@
+import os
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -5,9 +6,13 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-VERSION = "zona A v6 (poravnanje svjetla, provjera sadržaja izreza, pomjeren artikal se ne računa)"
+VERSION = "zona A v7 (poravnanje svjetla, sunčeve pruge se ne računaju, pomjeren artikal se ne računa)"
 PIXEL_THRESHOLD = 25
 EMPTY_SHARE = 0.6
+IGNORE_SUN = os.environ.get("CAM_IGNORE_SUN", "1").lower() not in ("", "off", "0", "ne")
+SUN_LEVEL = 100
+SUN_SPREAD = 22
+SUN_FILL = 0.08
 
 
 def _small(image: np.ndarray, work_width: int) -> tuple[np.ndarray, float]:
@@ -23,8 +28,25 @@ def _gray(image: np.ndarray, work_width: int) -> tuple[np.ndarray, float]:
     return cv2.GaussianBlur(small, (5, 5), 0), scale
 
 
+def _sun_only(first: np.ndarray, second: np.ndarray, distance: np.ndarray) -> np.ndarray:
+    """Sunčeve pruge i promjena ekspozicije: svijetla podloga bez boje promijeni samo jačinu svjetla.
+    Isti takav dio usred artikla (bijela etiketa između obojenih dijelova) se ne briše."""
+    both = np.stack((first, second))
+    brightest = both.max(axis=3)
+    light = (brightest.min(axis=0) >= SUN_LEVEL) & ((brightest - both.min(axis=3)).max(axis=0) <= SUN_SPREAD)
+    real = ((distance >= PIXEL_THRESHOLD) & ~light).astype(np.uint8) * 255
+    size = max(5, round(SUN_FILL * distance.shape[1])) | 1
+    item = cv2.morphologyEx(real, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size)))
+    contours, _ = cv2.findContours(item, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cv2.drawContours(item, contours, -1, 255, cv2.FILLED)
+    return light & (item == 0)
+
+
 def _distance(first: np.ndarray, second: np.ndarray) -> np.ndarray:
-    return cv2.absdiff(first, second).max(axis=2)
+    distance = cv2.absdiff(first, second).max(axis=2)
+    if IGNORE_SUN:
+        distance[_sun_only(first, second, distance)] = 0
+    return distance
 
 
 def _ignore(ignore: np.ndarray | None, shape: tuple[int, int]) -> np.ndarray | None:
