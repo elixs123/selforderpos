@@ -35,7 +35,11 @@ EXTRA_COLUMNS = {
     "card_number": "TEXT",
     "fiscal_printed": "INTEGER NOT NULL DEFAULT 0",
     "fiscal_message": "TEXT",
+    "fiscal_number": "TEXT",
+    "gate_used_at": "TEXT",
 }
+
+GATE_GRACE_SECONDS = 120
 
 INSERT_RECEIPT = """
 INSERT INTO receipts (created_at, payment_method, item_count, total, payment_reference, approval_code, rrn, bank_id, card_number)
@@ -94,12 +98,34 @@ class ReceiptStore:
             row = connection.execute("SELECT id FROM receipts WHERE number = ?", (number,)).fetchone()
         return row[0] if row else 0
 
-    def mark_fiscal(self, number: str, printed: bool, message: str) -> None:
+    def mark_fiscal(self, number: str, printed: bool, message: str, fiscal_number: str = "") -> None:
         with closing(self._connect()) as connection, connection:
             connection.execute(
-                "UPDATE receipts SET fiscal_printed = ?, fiscal_message = ? WHERE number = ?",
-                (1 if printed else 0, message, number),
+                "UPDATE receipts SET fiscal_printed = ?, fiscal_message = ?, fiscal_number = ? WHERE number = ?",
+                (1 if printed else 0, message, fiscal_number or None, number),
             )
+
+    def claim_for_gate(self, fiscal_number: str, now: datetime | None = None) -> tuple[bool, str]:
+        """Račun (BF) otvara vrata samo jednom; ponovni sken u roku od GATE_GRACE_SECONDS se još prihvata."""
+        wanted = fiscal_number.strip().lstrip("0")
+        if not wanted:
+            return False, "nema broja računa"
+        now = now or datetime.now()
+        with closing(self._connect()) as connection, connection:
+            row = connection.execute(
+                "SELECT id, gate_used_at FROM receipts WHERE ltrim(fiscal_number, '0') = ? ORDER BY id DESC LIMIT 1",
+                (wanted,),
+            ).fetchone()
+            if row is None:
+                return False, "račun nije pronađen"
+            if row["gate_used_at"]:
+                if (now - datetime.fromisoformat(row["gate_used_at"])).total_seconds() > GATE_GRACE_SECONDS:
+                    return False, f"račun je već iskorišten ({row['gate_used_at']})"
+                return True, "ponovljeno skeniranje"
+            connection.execute(
+                "UPDATE receipts SET gate_used_at = ? WHERE id = ?", (now.isoformat(timespec="seconds"), row["id"])
+            )
+        return True, "račun pronađen"
 
     def unsynced(self) -> list[dict]:
         with closing(self._connect()) as connection:

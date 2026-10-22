@@ -28,6 +28,7 @@ from PySide6.QtCore import QProcess, QStandardPaths
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QStackedWidget
 
+import gate_api
 from cart import Cart
 from fiscal import FiscalOptions, FiscalPrinter
 from receipts import ReceiptStore
@@ -53,6 +54,7 @@ class MainWindow(QMainWindow):
         if not self.settings.fullscreen:
             self.setFixedSize(px(820), px(1360))
         self.store = ReceiptStore(database_path())
+        self.gate_server = self.start_gate_api()
         self.cart = Cart()
         self.guard = None
         self.diagnostics = None
@@ -128,6 +130,13 @@ class MainWindow(QMainWindow):
             except Exception as error:
                 print(f"Kamere nisu pokrenute: {error}")
         self.scan.guard = self.guard
+
+    def start_gate_api(self):
+        try:
+            return gate_api.start_from_env(self.store)
+        except (OSError, ValueError) as error:
+            print(f"Servis za vrata nije pokrenut: {error}")
+            return None
 
     def open_diagnostics(self) -> None:
         if getattr(self.guard, "remote", False):
@@ -213,7 +222,7 @@ class MainWindow(QMainWindow):
 
         def job():
             result = printer.print_receipt(receipt_id, cart_data, payment_method)
-            store.mark_fiscal(number, result.ok, result.message)
+            store.mark_fiscal(number, result.ok, result.message, result.fiscal_number)
             return result
 
         return job
@@ -274,6 +283,8 @@ class MainWindow(QMainWindow):
             self.diagnostics.close()
         if self.guard is not None:
             self.guard.stop()
+        if self.gate_server is not None:
+            self.gate_server.shutdown()
         super().closeEvent(event)
 
 

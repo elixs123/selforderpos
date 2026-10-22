@@ -1,5 +1,8 @@
 IZMJENE - samouslužna kasa
 
+2026-10-21
+- Vrata s QR kodom: nakon štampe fiskalnog računa kasa iz odgovora Tring printera čita broj fiskalnog računa (BrojFiskalnogRacuna = BF) i sprema ga u kasa.db (kolona fiscal_number). Kasa ima servis za vrata (gate_api.py, port 8770, GATE_API_TOKEN u .env): vrata pošalju BF sa skeniranog QR koda, a kasa odgovori smije li se otvoriti. Račun otvara vrata samo jednom (kolona gate_used_at); ponovni sken u roku od 2 minute se još prihvata. Servis se pokreće samo kad je GATE_API_TOKEN upisan.
+
 2026-10-19
 - Plati je ugašeno dok YOLOX vidi ijedan artikal u zoni A (npr. višak koji je vraćen iz zone B u zonu A, a nije skeniran): svi artikli iz zone A moraju biti skenirani prije plaćanja. Kartica na ekranu kaže 'U korpi još ima artikala. Skenirajte sve artikle prije plaćanja.' Ako YOLOX pogrešno vidi artikal ili kupac ne želi artikal, osoblje dugmetom 'Poništi neskenirana uzimanja' zanemaruje artikle koji su trenutno u zoni A.
 - Zadani AI model je sad CLIP (CAM_MODEL=clip): na snimcima od danas najbolje poredi sliku iz zone A sa slikom iz zone B (AUC 0.87 prema kameri B, dinov2 0.70). Kombinacije modela su bile lošije.

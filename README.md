@@ -43,12 +43,23 @@ python -m pytest -v
 | `catalog.py` | artikli i cijene (u feninzima) |
 | `cart.py` | računanje korpe |
 | `database.py` | veza sa MSSQL bazom (postavke iz `.env`) |
+| `gate_api.py` | servis za vrata: provjerava BF s računa |
 | `check_db.py` | provjera veze sa bazom |
 | `find_columns.py` | traženje tabela i kolona u bazi |
 | `tests/` | testovi za korpu i katalog |
 | `cameras/` | servis za kamere (kasnije) |
 | `_old_web/` | stara web verzija, više se ne koristi |
 
+
+## Vrata (QR kod s računa)
+
+Kad fiskalni printer odštampa račun, kasa sprema broj fiskalnog računa (BF) u `kasa.db`.
+Vrata (Odroid, program `qrgate`) skeniraju QR s računa i pitaju kasu postoji li taj BF:
+račun otvara vrata samo jednom (ponovni sken u roku od 2 minute se još prihvata).
+
+1. U `.env` na kasi upiši `GATE_API_TOKEN` (i po želji `GATE_API_PORT`, zadano 8770).
+2. Port 8770 mora biti dozvoljen u firewallu kase.
+3. Na Odroidu u `/home/odroid/qrgate/qrgate.json` upiši `kasa_url` (`http://<IP kase>:8770`) i isti token kao `kasa_token`.
 
 ## Kamere na drugom računaru
 

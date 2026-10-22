@@ -4,9 +4,15 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from cart import Cart
 from catalog import Product
-from fiscal import FiscalOptions, FiscalPrinter, build_request
+from fiscal import FiscalOptions, FiscalPrinter, build_request, parse_fiscal_number
 
 RECEIVED = []
+TRING_RESPONSE = (
+    '<?xml version="1.0" encoding="utf-8"?>\n<RacunOdgovor><VrstaOdgovora>OK</VrstaOdgovora><Odgovori>'
+    "<Odgovor><Naziv>BrojFiskalnogRacuna</Naziv><Vrijednost xsi:type=\"xsd:int\">84366</Vrijednost></Odgovor>"
+    "<Odgovor><Naziv>DatumVrijeme</Naziv><Vrijednost>21.10.2026 10:10</Vrijednost></Odgovor>"
+    "</Odgovori></RacunOdgovor>"
+)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -14,7 +20,7 @@ class Handler(BaseHTTPRequestHandler):
         RECEIVED.append((self.path, self.headers["Content-Type"], self.rfile.read(int(self.headers["Content-Length"]))))
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"OK")
+        self.wfile.write(TRING_RESPONSE.encode())
 
     def log_message(self, *args):
         pass
@@ -60,10 +66,17 @@ def test_print_posts_xml_to_tring_route():
     result = FiscalPrinter(f"http://127.0.0.1:{server.server_port}").print_receipt(5, sample_cart(), "card")
     server.shutdown()
     assert result.ok
+    assert result.fiscal_number == "84366"
     path, content_type, body = RECEIVED[-1]
     assert path == "/stampatifiskalniracun"
     assert content_type.startswith("application/xml")
     assert b"<RacunZahtjev" in body
+
+
+def test_parse_fiscal_number_from_tring_response():
+    assert parse_fiscal_number(TRING_RESPONSE) == "84366"
+    assert parse_fiscal_number("<RacunOdgovor><VrstaOdgovora>Greska</VrstaOdgovora></RacunOdgovor>") == ""
+    assert parse_fiscal_number("OK") == ""
 
 
 def test_print_reports_unreachable_printer():

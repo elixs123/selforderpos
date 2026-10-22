@@ -1,3 +1,4 @@
+import re
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ElementTree
@@ -6,6 +7,7 @@ from dataclasses import dataclass
 PRINT_PATH = "/stampatifiskalniracun"
 PRINT_TIMEOUT = 30
 NAME_LIMIT = 32
+FISCAL_NUMBER = re.compile(r"<Naziv>\s*BrojFiskalnogRacuna\s*</Naziv>.*?<Vrijednost[^>]*>\s*([^<]*?)\s*</Vrijednost>", re.DOTALL)
 
 
 @dataclass(frozen=True)
@@ -54,10 +56,17 @@ def build_request(receipt_number: int, cart: dict, payment_method: str, options:
     return b'<?xml version="1.0" encoding="utf-8"?>\n' + ElementTree.tostring(root, encoding="utf-8")
 
 
+def parse_fiscal_number(response: str) -> str:
+    """Broj fiskalnog računa (BF) iz Tring odgovora: <Naziv>BrojFiskalnogRacuna</Naziv> ... <Vrijednost>84366</Vrijednost>."""
+    match = FISCAL_NUMBER.search(response)
+    return match.group(1) if match else ""
+
+
 @dataclass(frozen=True)
 class FiscalResult:
     ok: bool
     message: str
+    fiscal_number: str = ""
 
 
 class FiscalPrinter:
@@ -71,7 +80,8 @@ class FiscalPrinter:
         request.add_header("Content-Type", "application/xml; charset=utf-8")
         try:
             with urllib.request.urlopen(request, timeout=PRINT_TIMEOUT) as response:
-                return FiscalResult(True, response.read().decode(errors="replace"))
+                text = response.read().decode(errors="replace")
+                return FiscalResult(True, text, parse_fiscal_number(text))
         except urllib.error.HTTPError as error:
             return FiscalResult(False, f"Printer je odbio račun ({error.code}): {error.read().decode(errors='replace')}")
         except (urllib.error.URLError, TimeoutError, ConnectionError) as error:

@@ -64,6 +64,35 @@ def test_card_payment_details_and_fiscal_flag(tmp_path):
     assert row["fiscal_message"] == "printer nije dostupan"
 
 
+def test_fiscal_number_is_stored(tmp_path):
+    store = ReceiptStore(tmp_path / "kasa.db")
+    number = store.save(filled_cart(), "card")
+    store.mark_fiscal(number, True, "<RacunOdgovor/>", "84366")
+    assert store.unsynced()[0]["fiscal_number"] == "84366"
+
+
+def test_receipt_opens_gate_only_once(tmp_path):
+    from datetime import datetime, timedelta
+
+    store = ReceiptStore(tmp_path / "kasa.db")
+    number = store.save(filled_cart(), "card")
+    store.mark_fiscal(number, True, "", "84366")
+    now = datetime(2026, 10, 21, 10, 10)
+    assert store.claim_for_gate("084366", now) == (True, "račun pronađen")
+    assert store.claim_for_gate("084366", now + timedelta(seconds=60)) == (True, "ponovljeno skeniranje")
+    allowed, reason = store.claim_for_gate("084366", now + timedelta(minutes=5))
+    assert not allowed
+    assert "već iskorišten" in reason
+
+
+def test_unknown_receipt_does_not_open_gate(tmp_path):
+    store = ReceiptStore(tmp_path / "kasa.db")
+    number = store.save(filled_cart(), "card")
+    store.mark_fiscal(number, True, "", "84366")
+    assert store.claim_for_gate("084367") == (False, "račun nije pronađen")
+    assert store.claim_for_gate("") == (False, "nema broja računa")
+
+
 def test_old_database_gets_new_columns(tmp_path):
     import sqlite3
 
