@@ -40,6 +40,7 @@ LEARNED_MIN = 3
 LEARN_TAKEN_REFERENCES = 3
 LEARN_PRODUCT_SCORE = 0.85
 PRODUCT_MIN_SCORE = float(os.environ.get("CAM_PRODUCT_THRESHOLD", "0.8"))
+RIVAL_MARGIN = float(os.environ.get("CAM_RIVAL_MARGIN", "0.02"))
 LEARNED_FACTOR = 1.7
 EXTRA_MARK = "*"
 
@@ -763,12 +764,17 @@ class CheckoutGuard:
         }
         problems = []
         lookalike = None
-        if score_product is None and placed_count <= 1:
+        rival = None
+        if placed_count <= 1:
             others = self._other_signatures(product_code)
-            lookalike = max(((compare(query, other), name) for query in queries for name, other in others),
-                            key=lambda pair: pair[0], default=None)
-            if lookalike is not None and lookalike[0] < product_threshold:
-                lookalike = None
+            closest = max(((compare(query, other), name) for query in queries for name, other in others),
+                          key=lambda pair: pair[0], default=None)
+            if score_product is None:
+                lookalike = closest if closest is not None and closest[0] >= product_threshold else None
+            elif closest is not None:
+                self.scores += f"   najbliži drugi: {closest[1]} {closest[0]:.2f}"
+                if RIVAL_MARGIN > 0 and closest[0] >= score_product + RIVAL_MARGIN:
+                    rival = closest
         if placed_count > 1:
             problems.append(MULTIPLE_PROBLEM)
             self._waive_taken = True
@@ -787,6 +793,9 @@ class CheckoutGuard:
             problems.append("nije isto što je uzeto iz zone A")
         if score_product is not None and score_product < product_threshold:
             problems.append("ne liči na skenirani artikal")
+        if rival is not None:
+            self.log("poredjenje", f"artikal više liči na drugi artikal: {rival[1]} ({rival[0]:.2f}) nego na skenirani ({score_product:.2f})")
+            problems.append(f"više liči na drugi artikal ({rival[1]})")
         if lookalike is not None:
             self.log("poredjenje", f"artikal bez slika liči na drugi poznati artikal: {lookalike[1]} ({lookalike[0]:.2f})")
             problems.append(f"liči na drugi artikal ({lookalike[1]})")

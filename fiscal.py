@@ -1,3 +1,4 @@
+import http.client
 import re
 import urllib.error
 import urllib.request
@@ -84,7 +85,7 @@ class FiscalPrinter:
                 return FiscalResult(True, text, parse_fiscal_number(text))
         except urllib.error.HTTPError as error:
             return FiscalResult(False, f"Printer je odbio račun ({error.code}): {error.read().decode(errors='replace')}")
-        except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
+        except (urllib.error.URLError, OSError, http.client.HTTPException) as error:
             return FiscalResult(False, f"Fiskalni printer nije dostupan: {error}")
 
     def reachable(self) -> FiscalResult:

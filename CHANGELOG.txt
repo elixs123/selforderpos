@@ -109,3 +109,4 @@ IZMJENE - samouslužna kasa
 2026-10-16
 - Kamere: po dvije kamere u zoni (A, A2, B, B2). Uzimanje iz A spaja isječke s obje kamere, odlaganje u B uzima isječke s obje kamere; poređenje uzima najbolje poklapanje. Reference se spremaju iz oba ugla. Monitor prikazuje mrežu 2x2. Postavke i .env: CAM_A2_HOST, CAM_B2_HOST (prazno = nema druge kamere).
 - Monitor: --debug sprema slike i log svakog događaja (data/debug), prozor Poredjenje, kamere jedna ispod druge; disable_osd.py gasi sat i naziv na kamerama.
+- Kamere: glavni tok (CAM_CHANNEL=101, 2560x1440) umjesto pod-toka, isječci artikala su 4x veći pa se etikete bolje vide. Provjera suparnika: ako artikal u zoni B više liči na drugi poznati artikal nego na skenirani (razlika CAM_RIVAL_MARGIN, zadano 0.02; 0 gasi), odbija se.

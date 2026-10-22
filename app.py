@@ -30,7 +30,7 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QStackedWi
 
 import gate_api
 from cart import Cart
-from fiscal import FiscalOptions, FiscalPrinter
+from fiscal import FiscalOptions, FiscalPrinter, FiscalResult
 from receipts import ReceiptStore
 from screens.drop import DropScreen
 from screens.payment import PaymentScreen
@@ -221,8 +221,15 @@ class MainWindow(QMainWindow):
         store = self.store
 
         def job():
-            result = printer.print_receipt(receipt_id, cart_data, payment_method)
-            store.mark_fiscal(number, result.ok, result.message, result.fiscal_number)
+            try:
+                result = printer.print_receipt(receipt_id, cart_data, payment_method)
+            except Exception as error:
+                result = FiscalResult(False, f"Greška pri slanju računa: {error!r}")
+            print(f"Fiskalni račun {number}: {'OK' if result.ok else 'NIJE ODŠTAMPAN'} {result.message[:300]}")
+            try:
+                store.mark_fiscal(number, result.ok, result.message, result.fiscal_number)
+            except Exception as error:
+                print(f"Fiskalni račun {number}: upis u bazu nije uspio: {error!r}")
             return result
 
         return job
