@@ -133,10 +133,13 @@ class MainWindow(QMainWindow):
 
     def start_gate_api(self):
         try:
-            return gate_api.start_from_env(self.store)
+            server = gate_api.start_from_env(self.store)
         except (OSError, ValueError) as error:
             print(f"Servis za vrata nije pokrenut: {error}")
             return None
+        if server is None:
+            print("Servis za vrata nije pokrenut: GATE_API_TOKEN nije upisan u .env.")
+        return server
 
     def open_diagnostics(self) -> None:
         if getattr(self.guard, "remote", False):
