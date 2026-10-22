@@ -33,7 +33,8 @@ MULTIPLE_MESSAGE = "Odložili ste više artikala. Višak vratite u zonu A, a u z
 UNSCANNED_MESSAGE = "Uzeli ste još jedan artikal iz zone A. Vratite ga u zonu A, pa ga uzmite i skenirajte."
 NOT_TAKEN_MESSAGE = "Taj artikal nije uzet iz zone A. Ako ste ga već skenirali, ne skenirajte ga ponovo."
 PLACED_UNSCANNED_MESSAGE = "U zonu B je odložen artikal koji nije skeniran. Uklonite ga iz zone B pa ga skenirajte."
-HELD_UNSCANNED_MESSAGE = "Držite artikal koji nije skeniran. Prislonite njegov barkod na skener."
+HELD_UNSCANNED_MESSAGE = "Imate artikal u ruci koji nije skeniran. Stavite ga u zonu A, pa ga skenirajte. Do tada ne možete nastaviti."
+CARRY_STATES = ("waiting_take", "judging", "learning", "offline")
 HELD_UNPLACED_MESSAGE = "Artikal je skeniran. Odložite ga u zonu B."
 ARRIVED_MIN_CHANGE = 0.2
 HOLD_PASS_SECONDS = 0.5
@@ -334,7 +335,7 @@ class CheckoutGuard:
             time.sleep(max(0.05, HOLD_PASS_SECONDS - (time.monotonic() - started)))
 
     def hold_once(self) -> None:
-        """Kamere C: artikal u ruci koji nije skeniran (ready/taken) ili nije odložen u B (waiting_place)."""
+        """Kamere C: artikal u ruci koji nije skeniran (i poslije prihvatanja drugog artikla) ili nije odložen u B (waiting_place)."""
         held = False
         for name in self.cameras_c:
             zone = self.zones.get(name)
@@ -354,10 +355,11 @@ class CheckoutGuard:
         message = ""
         if self._held_since is not None:
             held_for = now - self._held_since
-            if state in ("ready", "taken") and held_for >= HOLD_SCAN_SECONDS:
+            if state == "waiting_place":
+                if held_for >= HOLD_PLACE_SECONDS:
+                    message = HELD_UNPLACED_MESSAGE
+            elif state not in CARRY_STATES and held_for >= HOLD_SCAN_SECONDS:
                 message = HELD_UNSCANNED_MESSAGE
-            elif state == "waiting_place" and held_for >= HOLD_PLACE_SECONDS:
-                message = HELD_UNPLACED_MESSAGE
         if message != self.held_message:
             self.log("ruka", message or "artikal više nije u ruci")
             self.held_message = message

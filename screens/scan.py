@@ -403,7 +403,7 @@ class ScanScreen(QWidget):
 
     def _pay_allowed(self) -> bool:
         return self.guard is None or (getattr(self.guard, "unscanned", 0) == 0 and getattr(self.guard, "zone_a_left", 0) == 0
-                                      and not getattr(self.guard, "checking", False))
+                                      and not getattr(self.guard, "checking", False) and not getattr(self.guard, "held_message", ""))
 
     def _refresh(self) -> None:
         data = self.cart.to_dict()

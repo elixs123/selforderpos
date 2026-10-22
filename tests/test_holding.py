@@ -60,3 +60,26 @@ def test_item_lying_still_next_to_person_stops_counting(monkeypatch):
     lying = np.array([150.0, 150.0, 190.0, 220.0])
     results = [check(detector, fake, [lying]).held for _ in range(STILL_PASSES + 1)]
     assert results[0] and not results[-1]
+
+
+def test_item_in_hand_is_reported_also_after_another_item_was_accepted(monkeypatch):
+    import guard as guard_module
+    from guard import CheckoutGuard, HELD_UNSCANNED_MESSAGE, HOLD_SCAN_SECONDS
+
+    guard = CheckoutGuard.__new__(CheckoutGuard)
+    guard.cameras_c, guard.zones, guard.hold_results = ["C2"], {"C2": object()}, {}
+    guard.held_message, guard._held_since, guard._held_seen, guard._held_state = "", None, -1000.0, ""
+    guard.latest = lambda name: np.zeros((10, 10, 3), np.uint8)
+    guard.holder = type("Holder", (), {"check": lambda self, name, frame, zone: holding.HoldResult(True)})()
+    guard.log = lambda *args: None
+    clock = [100.0]
+    monkeypatch.setattr(guard_module.time, "monotonic", lambda: clock[0])
+    guard.state = "accepted"
+    guard.hold_once()
+    assert guard.held_message == ""
+    clock[0] += HOLD_SCAN_SECONDS
+    guard.hold_once()
+    assert guard.held_message == HELD_UNSCANNED_MESSAGE
+    guard.state = "waiting_take"
+    guard.hold_once()
+    assert guard.held_message == ""
