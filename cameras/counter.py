@@ -63,7 +63,7 @@ class ObjectCounter:
             partial.rename(path)
         return path
 
-    def detect(self, image: np.ndarray) -> list[np.ndarray]:
+    def detect(self, image: np.ndarray, ignored: set[int] | None = None) -> list[np.ndarray]:
         if image is None or image.size == 0:
             return []
         height, width = image.shape[:2]
@@ -76,7 +76,7 @@ class ObjectCounter:
         sizes = np.exp(output[:, 2:4]) * self.strides
         scores = output[:, 4:5] * output[:, 5:]
         classes, confidence = scores.argmax(1), scores.max(1)
-        keep = (confidence >= MIN_CONFIDENCE) & ~np.isin(classes, list(IGNORED_CLASSES))
+        keep = (confidence >= MIN_CONFIDENCE) & ~np.isin(classes, list(IGNORED_CLASSES if ignored is None else ignored))
         if not keep.any():
             return []
         centers, sizes, confidence = centers[keep], sizes[keep], confidence[keep]

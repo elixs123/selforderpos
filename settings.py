@@ -38,6 +38,8 @@ class Settings:
     camera_a2_host: str = field(default_factory=lambda: os.environ.get("CAM_A2_HOST", ""))
     camera_b_host: str = field(default_factory=lambda: os.environ.get("CAM_B_HOST", ""))
     camera_b2_host: str = field(default_factory=lambda: os.environ.get("CAM_B2_HOST", ""))
+    camera_c_host: str = field(default_factory=lambda: os.environ.get("CAM_C_HOST", ""))
+    camera_c2_host: str = field(default_factory=lambda: os.environ.get("CAM_C2_HOST", ""))
     camera_channel: str = field(default_factory=lambda: os.environ.get("CAM_CHANNEL", "102"))
     camera_model: str = "clip"
     match_threshold: float = 0.0

@@ -9,7 +9,7 @@ from locations import env_file
 
 load_dotenv(env_file())
 
-CAMERA_NAMES = ("A", "A2", "B", "B2")
+CAMERA_NAMES = ("A", "A2", "B", "B2", "C", "C2")
 
 
 @dataclass(frozen=True)

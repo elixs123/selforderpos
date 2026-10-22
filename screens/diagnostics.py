@@ -219,7 +219,7 @@ class DiagnosticsWindow(QWidget):
         self.tiles.clear()
         if guard is None:
             return
-        for row, names in enumerate((guard.cameras_a, guard.cameras_b)):
+        for row, names in enumerate((guard.cameras_a, guard.cameras_b, guard.cameras_c)):
             for column, name in enumerate(names):
                 label = QLabel(name)
                 label.setFixedSize(TILE_WIDTH, TILE_WIDTH * 9 // 16)
@@ -260,6 +260,15 @@ class DiagnosticsWindow(QWidget):
                 bx, by, bw, bh = watcher.last_box
                 cv2.rectangle(frame, (box[0] + bx, box[1] + by), (box[0] + bx + bw, box[1] + by + bh), (255, 170, 60), 3)
             color = RED if watcher.armed else (140, 140, 140)
+        elif name[0] == "C":
+            color = YELLOW
+            result = guard.hold_results.get(name)
+            if result is not None:
+                for item in result.items:
+                    held = any(item is other for other in result.held_items)
+                    cv2.rectangle(frame, (int(item[0]), int(item[1])), (int(item[2]), int(item[3])), RED if held else (255, 170, 60), 3)
+                if result.hands:
+                    cv2.polylines(frame, result.hands, True, YELLOW, 3)
         else:
             tracker = guard.trackers[name]
             tint(frame, box, tracker.last_mask, GREEN)

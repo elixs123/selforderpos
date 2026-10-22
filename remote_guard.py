@@ -44,6 +44,7 @@ class RemoteGuard:
         self.unscanned = 0
         self.zone_a_left = 0
         self.alert = False
+        self.held_message = ""
         self.checking = False
         self.outcome: Outcome | None = None
         self.online = False
@@ -144,6 +145,7 @@ class RemoteGuard:
             self.unscanned = int(data.get("unscanned") or 0)
             self.zone_a_left = int(data.get("zone_a_left") or 0)
             self.alert = bool(data.get("alert"))
+            self.held_message = str(data.get("held") or "")
             self.checking = bool(data.get("checking"))
             raw = data.get("outcome")
             if raw:
@@ -167,6 +169,7 @@ class RemoteGuard:
             self.unscanned = 0
             self.zone_a_left = 0
             self.alert = False
+            self.held_message = ""
             self.checking = False
             self.state = "offline"
             self.message = "Pogrešan CAM_SERVER_TOKEN." if error.status == 401 else "Server kamera nije dostupan. Pozovite osoblje."

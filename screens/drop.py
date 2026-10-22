@@ -112,7 +112,11 @@ class DropScreen(QWidget):
             else:
                 self.alert.hide()
             return
-        self.alert.hide()
+        held = getattr(guard, "held_message", "")
+        if held:
+            self.alert.show_message(held, "Artikal u ruci")
+        else:
+            self.alert.hide()
         if guard.state == "judging":
             self.guide.set_step(2)
             self._paint("ok", "Provjeravam artikal…")

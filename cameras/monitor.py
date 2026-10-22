@@ -18,7 +18,7 @@ from zones import outline
 
 TILE_WIDTH = 720
 GRID_TILE_WIDTH = 480
-PANEL_HEIGHT = 280
+PANEL_HEIGHT = 306
 LINE_HEIGHT = 26
 FONT_SCALE = 0.6
 TITLE = "Monitor kamera - barkod+ENTER, ESC izlaz"
@@ -127,10 +127,17 @@ class Monitor:
             status = reader.status if reader else "nije podesena"
             cv2.putText(tile, ascii_text(f"{name}: {status}"), (12, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.8, RED, 2)
             return tile
-        color = RED if zone_of(name) == "B" and guard.zone_b_armed else GREEN
+        color = RED if zone_of(name) == "B" and guard.zone_b_armed else YELLOW if zone_of(name) == "C" else GREEN
         cv2.polylines(frame, [outline(guard.zones.get(name), frame_width, frame_height)], True, color, 3, cv2.LINE_AA)
         if guard.hand_shapes.get(name):
             cv2.polylines(frame, guard.hand_shapes[name], True, YELLOW, 3)
+        result = guard.hold_results.get(name) if zone_of(name) == "C" else None
+        if result is not None:
+            for item in result.items:
+                held = any(item is other for other in result.held_items)
+                cv2.rectangle(frame, (int(item[0]), int(item[1])), (int(item[2]), int(item[3])), RED if held else (255, 170, 60), 3)
+            if result.hands:
+                cv2.polylines(frame, result.hands, True, YELLOW, 3)
         tile = cv2.resize(frame, (width, width * 9 // 16))
         label = ascii_text(f"{name}  {reader.status}  {reader.fps:.1f} FPS")
         cv2.putText(tile, label, (12, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.8, GREEN, 2)
@@ -139,9 +146,11 @@ class Monitor:
     def frame(self) -> np.ndarray:
         guard = self.guard
         rows = []
-        columns = max(len(guard.cameras_a), len(guard.cameras_b))
+        columns = max(len(guard.cameras_a), len(guard.cameras_b), len(guard.cameras_c))
         width = TILE_WIDTH if columns == 1 else GRID_TILE_WIDTH
-        for names in (guard.cameras_a, guard.cameras_b):
+        for names in (guard.cameras_a, guard.cameras_b, guard.cameras_c):
+            if not names:
+                continue
             row = [self.tile(name, width) for name in names]
             while len(row) < columns:
                 row.append(np.zeros((width * 9 // 16, width, 3), dtype=np.uint8))
@@ -155,6 +164,7 @@ class Monitor:
             (f"velicina {guard.scores.split('velicina', 1)[1]}" if "velicina" in guard.scores else "", WHITE),
             (f"Zadnji dogadjaj A: {guard.last_event_a}", WHITE),
             (f"Unos: {self.typed}_", WHITE),
+            (ascii_text(f"Artikal u ruci (C): {guard.held_message or 'ne'}"), RED if guard.held_message else WHITE),
             (f"Zadnji barkod: {guard.barcode or '-'}  {ascii_text(guard.product_name or '')}", WHITE),
             ("Zona B: " + "  ".join(f"{name} promjena {w.change_ratio:.1%} pokret {w.motion_ratio:.2%}" for name, w in guard.watchers.items()) + f"  uzoraka: {guard.store.count()}", WHITE),
         ]

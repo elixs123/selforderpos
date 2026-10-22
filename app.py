@@ -260,7 +260,7 @@ class MainWindow(QMainWindow):
     def apply_settings(self, settings: Settings) -> None:
         cameras_changed = any(
             getattr(settings, name) != getattr(self.settings, name)
-            for name in ("cameras_enabled", "camera_a_host", "camera_a2_host", "camera_b_host", "camera_b2_host", "camera_channel", "camera_model", "match_threshold")
+            for name in ("cameras_enabled", "camera_a_host", "camera_a2_host", "camera_b_host", "camera_b2_host", "camera_c_host", "camera_c2_host", "camera_channel", "camera_model", "match_threshold")
         )
         self.settings = settings
         save_settings(settings, self.settings_path)

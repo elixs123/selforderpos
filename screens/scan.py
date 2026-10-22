@@ -91,6 +91,8 @@ class ScanScreen(QWidget):
         self.pay_button.setEnabled(self.cart.item_count > 0 and self._pay_allowed())
         if getattr(guard, "alert", False) and guard.state == "taken":
             self.alert.show_message(guard.message, "Imate neskeniran artikal")
+        elif getattr(guard, "held_message", ""):
+            self.alert.show_message(guard.held_message, "Artikal u ruci")
         elif time.monotonic() >= self._alert_until:
             self.alert.hide()
         state = guard.state

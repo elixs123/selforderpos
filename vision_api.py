@@ -29,6 +29,7 @@ def snapshot(guard, boot: str) -> dict:
         "unscanned": int(getattr(guard, "unscanned", 0)),
         "zone_a_left": int(getattr(guard, "zone_a_left", 0)),
         "alert": bool(getattr(guard, "alert", False)),
+        "held": str(getattr(guard, "held_message", "")),
         "checking": bool(getattr(guard, "checking", False)),
         "zone_a_reason": guard.zone_a_waiting_reason() if hasattr(guard, "zone_a_waiting_reason") else "-",
     }

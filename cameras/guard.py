@@ -11,6 +11,7 @@ import cv2
 import numpy as np
 
 from hands import load_hand_detector
+from holding import HeldItemDetector, HoldResult
 from reader import CameraReader
 from samples import SampleStore
 from similarity import Signature, compare, match_threshold, method_name, signature
@@ -31,6 +32,12 @@ MULTIPLE_MESSAGE = "Odložili ste više artikala. Višak vratite u zonu A, a u z
 UNSCANNED_MESSAGE = "Uzeli ste još jedan artikal iz zone A. Vratite ga u zonu A, pa ga uzmite i skenirajte."
 NOT_TAKEN_MESSAGE = "Taj artikal nije uzet iz zone A. Ako ste ga već skenirali, ne skenirajte ga ponovo."
 PLACED_UNSCANNED_MESSAGE = "U zonu B je odložen artikal koji nije skeniran. Uklonite ga iz zone B pa ga skenirajte."
+HELD_UNSCANNED_MESSAGE = "Držite artikal koji nije skeniran. Prislonite njegov barkod na skener."
+HELD_UNPLACED_MESSAGE = "Artikal je skeniran. Odložite ga u zonu B."
+HOLD_PASS_SECONDS = 0.5
+HOLD_SCAN_SECONDS = 3.0
+HOLD_PLACE_SECONDS = 10.0
+HOLD_GRACE_SECONDS = 1.0
 ZONE_B_QUIET_SECONDS = 3.0
 MAX_TAKES = 30
 TAKE_CLUSTER_SECONDS = 4.0
@@ -71,6 +78,7 @@ class CheckoutGuard:
         self.readers = readers
         self.cameras_a = sorted(name for name in readers if zone_of(name) == "A")
         self.cameras_b = sorted(name for name in readers if zone_of(name) == "B")
+        self.cameras_c = sorted(name for name in readers if zone_of(name) == "C")
         self.zones = load_zones()
         self.references_since = zones_changed_at()
         self.trackers = {name: BasketTracker() for name in self.cameras_a}
@@ -81,6 +89,12 @@ class CheckoutGuard:
         self.store = SampleStore()
         self.hands = load_hand_detector()
         self.hand_shapes: dict[str, list[np.ndarray]] = {name: [] for name in readers}
+        self.holder = HeldItemDetector(load_hand_detector()) if self.cameras_c else None
+        self.hold_results: dict[str, HoldResult] = {}
+        self.held_message = ""
+        self._held_since: float | None = None
+        self._held_seen = -1000.0
+        self._held_state = ""
         self.state = "learning"
         self.message = "Zona A mora biti prazna dok kamera uči pozadinu..."
         self.basket_status = "učim praznu zonu"
@@ -289,6 +303,44 @@ class CheckoutGuard:
                 print(f"Brojanje artikala: {error}")
             time.sleep(max(0.05, COUNT_SECONDS - (time.monotonic() - started)))
 
+    def _hold_loop(self) -> None:
+        while self._running:
+            started = time.monotonic()
+            try:
+                self.hold_once()
+            except Exception as error:
+                print(f"Artikal u ruci: {error}")
+            time.sleep(max(0.05, HOLD_PASS_SECONDS - (time.monotonic() - started)))
+
+    def hold_once(self) -> None:
+        """Kamere C: artikal u ruci koji nije skeniran (ready/taken) ili nije odložen u B (waiting_place)."""
+        held = False
+        for name in self.cameras_c:
+            zone = self.zones.get(name)
+            frame = self.latest(name)
+            if frame is None or zone is None:
+                continue
+            result = self.holder.check(frame, zone)
+            self.hold_results[name] = result
+            held = held or result.held
+        now, state = time.monotonic(), self.state
+        if held:
+            self._held_seen = now
+            if self._held_since is None or state != self._held_state:
+                self._held_since, self._held_state = now, state
+        elif now - self._held_seen > HOLD_GRACE_SECONDS:
+            self._held_since = None
+        message = ""
+        if self._held_since is not None:
+            held_for = now - self._held_since
+            if state in ("ready", "taken") and held_for >= HOLD_SCAN_SECONDS:
+                message = HELD_UNSCANNED_MESSAGE
+            elif state == "waiting_place" and held_for >= HOLD_PLACE_SECONDS:
+                message = HELD_UNPLACED_MESSAGE
+        if message != self.held_message:
+            self.log("ruka", message or "artikal više nije u ruci")
+            self.held_message = message
+
     def count_once(self) -> None:
         counter = get_counter()
         if counter is None:
@@ -492,6 +544,8 @@ class CheckoutGuard:
             threading.Thread(target=self._hand_loop, daemon=True).start()
         if self.a_ledgers or self.b_ledgers:
             threading.Thread(target=self._count_loop, daemon=True).start()
+        if self.holder is not None:
+            threading.Thread(target=self._hold_loop, daemon=True).start()
 
     def stop(self) -> None:
         self._running = False
