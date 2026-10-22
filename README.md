@@ -69,3 +69,9 @@ Laptop (ili server) radi kamere i AI, kasa samo pita:
 2. Na laptopu: `python vision_server.py --monitor` (prozor dijagnostike), bez prozora: `python vision_server.py`. `--debug` sprema slike.
 3. Zone se crtaju i reference uče na laptopu (tamo su `cameras/zones.json` i `data/samples`).
 4. Laptop ne smije spavati (`caffeinate -i python vision_server.py`), a port 8765 mora biti dozvoljen u firewallu.
+
+## Fiskalni printer (Tring)
+
+`python check_fiscal.py` provjerava odgovara li servis (`localhost:8085`) i ispisuje XML koji bi se poslao.
+`python check_fiscal.py --print` šalje pravi fiskalni račun od 0.10 KM. Radi samo na računaru na kojem je printer.
+Zahtjev ide na `/stampatifiskalniracun`, a oblik prati Tring primjer (vidi `fiscal.py`, `build_request`).

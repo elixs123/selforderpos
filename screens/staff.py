@@ -206,7 +206,7 @@ class StaffScreen(QWidget):
         self.approve_button.setStyleSheet(self._outline_style(GREEN, GREEN))
         self.approve_button.clicked.connect(self._on_approve)
         extra.addWidget(self.approve_button)
-        self.learn_button = QPushButton("Kamera nije prepoznala artikal\nOdobri i zapamti ga u bazi")
+        self.learn_button = QPushButton("Nauči artikal\nKamera ga nije prepoznala, odobri i zapamti u bazi")
         self.learn_button.setFixedHeight(px(120))
         self.learn_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.learn_button.setStyleSheet(
