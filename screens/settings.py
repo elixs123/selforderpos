@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from fiscal import FiscalPrinter
 from printec import PrintecClient
+from qr_slip import print_gate_slip
 from screens.components import PinPad, TopBar
 from settings import Settings
 from staff_auth import check_admin_pin
@@ -31,6 +32,7 @@ SECTIONS = [
     ("Kasa", ["register_id", "fullscreen", "demo_payments", "receipt_return_seconds"]),
     ("Kartični terminal (PrintecECR)", ["terminal_url", "terminal_api_key", "terminal_print_slip", "terminal_slip_copies"]),
     ("Fiskalni printer (Tring)", ["fiscal_enabled", "fiscal_url", "fiscal_unit", "fiscal_tax_label", "fiscal_card_payment", "fiscal_qr_payment"]),
+    ("QR slip za vrata (test)", ["qr_slip_enabled", "qr_slip_printer", "qr_slip_ibfm"]),
     ("Kamere", ["cameras_enabled", "vision_server_url", "camera_a_host", "camera_a2_host", "camera_b_host", "camera_b2_host", "camera_channel", "camera_model", "match_threshold"]),
 ]
 
@@ -49,6 +51,9 @@ LABELS = {
     "fiscal_tax_label": "Poreska stopa",
     "fiscal_card_payment": "Oznaka plaćanja karticom",
     "fiscal_qr_payment": "Oznaka plaćanja QR kodom",
+    "qr_slip_enabled": "Štampaj slip s QR kodom za vrata poslije fiskalnog računa",
+    "qr_slip_printer": "Ime Windows printera za slip (prazno = zadani printer)",
+    "qr_slip_ibfm": "IBFM u QR kodu",
     "cameras_enabled": "Kamere uključene",
     "vision_server_url": "Adresa servera kamera (prazno = kamere na ovom računaru)",
     "camera_a_host": "IP kamere A (korpa)",
@@ -143,6 +148,9 @@ class SettingsScreen(QWidget):
         printer_test.clicked.connect(self._test_printer)
         tests.addWidget(printer_test)
         column.addLayout(tests)
+        slip_test = self._button("Testiraj QR slip", primary=False)
+        slip_test.clicked.connect(self._test_qr_slip)
+        column.addWidget(slip_test)
         cameras_test = self._button("Testiraj kamere", primary=False)
         cameras_test.clicked.connect(self._test_cameras)
         column.addWidget(cameras_test)
@@ -282,6 +290,18 @@ class SettingsScreen(QWidget):
     def _test_printer(self) -> None:
         settings = self.current()
         self._run_test(lambda: "Printer: " + FiscalPrinter(settings.fiscal_url).reachable().message)
+
+    def _test_qr_slip(self) -> None:
+        settings = self.current()
+
+        def job() -> str:
+            try:
+                print_gate_slip(settings.qr_slip_ibfm, "000000", 0.0, settings.qr_slip_printer)
+            except Exception as error:
+                return f"QR slip: nije odštampan ({error})."
+            return "QR slip: poslano na printer (testni BF 000000, vrata ga ne prihvataju)."
+
+        self._run_test(job)
 
     def _test_cameras(self) -> None:
         url = self.current().vision_server_url

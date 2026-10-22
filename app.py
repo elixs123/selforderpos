@@ -31,6 +31,7 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QStackedWi
 import gate_api
 from cart import Cart
 from fiscal import FiscalOptions, FiscalPrinter, FiscalResult
+from qr_slip import print_gate_slip
 from receipts import ReceiptStore
 from screens.drop import DropScreen
 from screens.payment import PaymentScreen
@@ -233,6 +234,13 @@ class MainWindow(QMainWindow):
                 store.mark_fiscal(number, result.ok, result.message, result.fiscal_number)
             except Exception as error:
                 print(f"Fiskalni račun {number}: upis u bazu nije uspio: {error!r}")
+            if result.ok and settings.qr_slip_enabled:
+                try:
+                    if not result.fiscal_number:
+                        raise ValueError("printer nije vratio broj fiskalnog računa")
+                    print_gate_slip(settings.qr_slip_ibfm, result.fiscal_number, cart_data["total"], settings.qr_slip_printer)
+                except Exception as error:
+                    print(f"QR slip za vrata {number}: nije odštampan: {error!r}")
             return result
 
         return job

@@ -6,3 +6,4 @@ opencv-python
 numpy
 onnxruntime
 mediapipe
+segno
