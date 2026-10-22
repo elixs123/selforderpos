@@ -468,6 +468,7 @@ class BasketTracker:
         self._previous: np.ndarray | None = None
         self._previous_ignore: np.ndarray | None = None
         self._background: np.ndarray | None = None
+        self._background_image: np.ndarray | None = None
         self._stable_gray: np.ndarray | None = None
         self._stable_image: np.ndarray | None = None
         self._stable_ignore: np.ndarray | None = None
@@ -475,7 +476,25 @@ class BasketTracker:
         self._stable_since: float | None = None
         self._moved = False
         self._absorb = False
+        self._saved: tuple[np.ndarray, np.ndarray] | None = None
+        self.fresh = False
         self.previous_stable: tuple[np.ndarray, np.ndarray] | None = None
+
+    def load_saved(self, gray: np.ndarray, image: np.ndarray) -> None:
+        """Pozadina naučena ranije: koristi se umjesto novog učenja (ako se veličina slike poklapa)."""
+        self._saved = (gray, image)
+
+    def saved_background(self) -> tuple[np.ndarray, np.ndarray] | None:
+        if self._background is None or self._stable_image is None:
+            return None
+        return self._background, self._background_image if self._background_image is not None else self._stable_image
+
+    def forget_background(self) -> None:
+        self._background = self._background_image = self._saved = None
+        self._stable_gray = self._stable_image = self._stable_ignore = None
+        self._stable_since = None
+        self._moved = False
+        self.occupancy = 0.0
 
     def absorb(self) -> None:
         self._absorb = True
@@ -518,10 +537,21 @@ class BasketTracker:
             return None
         if now - self._stable_since < self.stable_seconds:
             return None
+        if self._background is None and self._saved is not None:
+            saved_gray, saved_image = self._saved
+            self._saved = None
+            if saved_gray.shape == gray.shape and saved_image.shape == image.shape:
+                self._background, self._background_image = saved_gray, saved_image
+                self._stable_gray, self._stable_image, self._stable_ignore = saved_gray, saved_image, None
+                self.occupancy = 0.0
+                self._moved = True
+                return BasketEvent("empty", None, 0.0)
         if self._background is None or self._background.shape != gray.shape:
             if hand is not None and hand.any():
                 return None
             self._background = gray
+            self._background_image = image.copy()
+            self.fresh = True
             self._stable_gray, self._stable_image, self._stable_ignore = gray, image.copy(), hand
             self.occupancy = 0.0
             self._moved = False

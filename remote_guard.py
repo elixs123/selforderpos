@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 POLL_SECONDS = 0.15
 POLL_TIMEOUT = 1.5
-ACTION_TIMEOUT = 3.0
+ACTION_TIMEOUT = 8.0
 OFFLINE_AFTER = 3
 
 

@@ -3,6 +3,7 @@ import os
 import threading
 import time
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -34,6 +35,7 @@ NOT_TAKEN_MESSAGE = "Taj artikal nije uzet iz zone A. Ako ste ga već skenirali,
 PLACED_UNSCANNED_MESSAGE = "U zonu B je odložen artikal koji nije skeniran. Uklonite ga iz zone B pa ga skenirajte."
 HELD_UNSCANNED_MESSAGE = "Držite artikal koji nije skeniran. Prislonite njegov barkod na skener."
 HELD_UNPLACED_MESSAGE = "Artikal je skeniran. Odložite ga u zonu B."
+ARRIVED_MIN_CHANGE = 0.2
 HOLD_PASS_SECONDS = 0.5
 HOLD_SCAN_SECONDS = 3.0
 HOLD_PLACE_SECONDS = 10.0
@@ -87,6 +89,7 @@ class CheckoutGuard:
         self._placed_unscanned: dict[str, int] = {}
         self._b_active_at = -1000.0
         self.store = SampleStore()
+        self._load_backgrounds()
         self.hands = load_hand_detector()
         self.hand_shapes: dict[str, list[np.ndarray]] = {name: [] for name in readers}
         self.holder = HeldItemDetector(load_hand_detector()) if self.cameras_c else None
@@ -107,6 +110,7 @@ class CheckoutGuard:
         self.debug: dict | None = None
         self.debug_number = 0
         self.debug_folder: Path | None = None
+        self._dump_writer = ThreadPoolExecutor(max_workers=1)
         self._outcome_number = 0
         self._dump_number = 0
         self._takes: list[tuple[np.ndarray, np.ndarray | None, float, str]] = []
@@ -293,6 +297,22 @@ class CheckoutGuard:
             self.log(f"zona-{name}", f"YOLOX greška: {error}")
             return None
         return len(before_boxes), len(after_boxes), unmatched(before_boxes, after_boxes)
+
+    def _arrived_in_change(self, name: str, shape: tuple, arrived: list) -> list:
+        """Novi artikal mora imati promjenu na slici u odnosu na stanje prije odlaganja; artikal koji je već bio u zoni B (a YOLOX ga je prije promašio) se ne računa."""
+        mask = self.watchers[name].last_mask
+        if mask is None or not arrived:
+            return arrived
+        height, width = shape[:2]
+        changed = cv2.resize(mask, (width, height), interpolation=cv2.INTER_NEAREST) > 0
+        kept = []
+        for box in arrived:
+            left, top = max(0, int(box[0])), max(0, int(box[1]))
+            right, bottom = min(width, int(box[2])), min(height, int(box[3]))
+            region = changed[top:bottom, left:right]
+            if region.size and float(region.mean()) >= ARRIVED_MIN_CHANGE:
+                kept.append(box)
+        return kept
 
     def _count_loop(self) -> None:
         while self._running:
@@ -611,9 +631,7 @@ class CheckoutGuard:
                 for index, image in enumerate(value):
                     if isinstance(image, np.ndarray):
                         images[f"{key}-{index + 1}"] = image
-        for name, image in images.items():
-            if image is not None and getattr(image, "size", 0):
-                cv2.imwrite(f"{prefix}-{name}.jpg", image)
+        images = {name: image.copy() for name, image in images.items() if image is not None and getattr(image, "size", 0)}
         info = {
             "time": datetime.now().isoformat(timespec="seconds"),
             "event": event, "state": self.state, "message": self.message,
@@ -626,8 +644,18 @@ class CheckoutGuard:
             "scores": self.scores, "zones": self.zones, "hands": self.hands is not None,
         }
         info.update({key: value for key, value in extra.items() if not isinstance(value, (np.ndarray, list))})
-        with open(self.debug_folder / "log.jsonl", "a", encoding="utf-8") as log:
-            log.write(json.dumps(info, ensure_ascii=False) + "\n")
+        self._dump_writer.submit(self._write_dump, self.debug_folder, prefix, images, json.dumps(info, ensure_ascii=False))
+
+    @staticmethod
+    def _write_dump(folder: Path, prefix: Path, images: dict[str, np.ndarray], line: str) -> None:
+        """Snimanje slika ide u pozadini, da skeniranje na kasi ne čeka disk (u zaključanom dijelu guarda)."""
+        try:
+            for name, image in images.items():
+                cv2.imwrite(f"{prefix}-{name}.jpg", image)
+            with open(folder / "log.jsonl", "a", encoding="utf-8") as log:
+                log.write(line + "\n")
+        except Exception as error:
+            print(f"Debug zapis: {error}")
 
     def _set(self, state: str, message: str) -> None:
         if state != self.state or message != self.message:
@@ -928,6 +956,50 @@ class CheckoutGuard:
         self.hand_shapes[name] = cached[1]
         return cached[0]
 
+    def _background_file(self, name: str) -> Path:
+        return self.store.folder.parent / "backgrounds" / f"zone_{name}.npz"
+
+    def _zone_key(self, name: str) -> str:
+        zone = self.zones.get(name)
+        return json.dumps([list(zone), [list(point) for point in getattr(zone, "polygon", ())]]) if zone is not None else ""
+
+    def _load_backgrounds(self) -> None:
+        """Pozadina zone A se uči jednom i pamti na disku; ponovo se uči samo na zahtjev (relearn_background)."""
+        for name, tracker in self.trackers.items():
+            path = self._background_file(name)
+            if not path.exists():
+                continue
+            try:
+                with np.load(path) as data:
+                    if str(data["zone"]) != self._zone_key(name):
+                        print(f"Pozadina zone {name}: zona je promijenjena, učim ponovo.")
+                        continue
+                    tracker.load_saved(data["gray"], data["image"])
+            except Exception as error:
+                print(f"Pozadina zone {name} nije učitana ({error}), učim ponovo.")
+
+    def _save_background(self, name: str) -> None:
+        saved = self.trackers[name].saved_background()
+        if saved is None:
+            return
+        path = self._background_file(name)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            np.savez_compressed(path, gray=saved[0], image=saved[1], zone=self._zone_key(name))
+            self.log(f"zona-{name}", "pozadina naučena i spremljena (ostaje dok se ne pritisne Nauči pozadinu)")
+        except Exception as error:
+            print(f"Pozadina zone {name} nije spremljena: {error}")
+
+    def relearn_background(self) -> None:
+        """Briše spremljenu pozadinu zone A i uči novu (zona A mora biti prazna)."""
+        with self._lock:
+            for name, tracker in self.trackers.items():
+                tracker.forget_background()
+                self._background_file(name).unlink(missing_ok=True)
+            self.basket_status = "učim praznu zonu"
+            self._set("learning", "Zona A mora biti prazna dok kamera uči pozadinu...")
+            self.log("zona-A", "osoblje je tražilo ponovno učenje pozadine")
+
     def _watch_zone_a(self) -> None:
         now = time.monotonic()
         for name, tracker in self.trackers.items():
@@ -970,6 +1042,9 @@ class CheckoutGuard:
             self.log(f"zona-{camera}", f"izrez uzetog artikla {width}x{height} px")
         occupancy = max(tracker.occupancy for tracker in self.trackers.values())
         if event.kind == "empty":
+            if self.trackers[camera].fresh:
+                self.trackers[camera].fresh = False
+                self._save_background(camera)
             if self.zone_a_ready:
                 self.basket_status = "prazna (pozadina naučena)"
                 self._set("empty", "Stavite korpu ili artikle u zonu A.")
@@ -1144,6 +1219,10 @@ class CheckoutGuard:
                 after_count, before_count, arrived = yolo
                 self._b_after_counts[name] = after_count
                 self.log(f"zona-{name}", f"YOLOX zona B: prije {before_count}, sada {after_count}, novih {len(arrived)}")
+                kept = self._arrived_in_change(name, roi.shape, arrived)
+                if len(kept) != len(arrived):
+                    self.log(f"zona-{name}", f"YOLOX: {len(arrived) - len(kept)} 'novih' je bilo i prije odlaganja (nema promjene na slici), ne računam ih")
+                arrived = kept
                 placed_count = max(placed_count, len(arrived))
         try:
             verdict, problems, score_taken, score_product = self._judge(

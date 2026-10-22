@@ -1,6 +1,5 @@
 from datetime import datetime
 
-import segno
 from PySide6.QtCore import QRect, Qt
 from PySide6.QtGui import QColor, QFont, QImage, QPainter
 from PySide6.QtPrintSupport import QPrinter, QPrinterInfo
@@ -21,6 +20,8 @@ def build_payload(ibfm: str, fiscal_number: str, when: datetime, total: float) -
 
 
 def render_slip(payload: str, lines: list[str]) -> QImage:
+    import segno
+
     matrix = segno.make(payload, error="m").matrix
     modules = len(matrix) + 2 * QUIET_MODULES
     scale = max(2, QR_SIZE // modules)

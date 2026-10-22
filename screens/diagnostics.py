@@ -4,7 +4,7 @@ from typing import Callable
 import cv2
 import numpy as np
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QColor, QImage, QPixmap
+from PySide6.QtGui import QColor, QImage, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QFrame, QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget,
 )
@@ -201,7 +201,11 @@ class DiagnosticsWindow(QWidget):
         self.folder.setWordWrap(True)
         clear = QPushButton("Očisti događaje")
         clear.clicked.connect(self.events.clear)
+        relearn = QPushButton("Nauči pozadinu zone A (B)")
+        relearn.clicked.connect(self.relearn_background)
+        QShortcut(QKeySequence("B"), self, activated=self.relearn_background)
         bottom.addWidget(self.folder, 1)
+        bottom.addWidget(relearn)
         bottom.addWidget(clear)
         right.addLayout(bottom)
         root.addLayout(right, 2)
@@ -233,6 +237,14 @@ class DiagnosticsWindow(QWidget):
             self.folder.setText(f"Slike i log: {guard.debug_folder}")
         self.add_event("--:--:--", "info", f"Dijagnostika spojena na kasu. Algoritam: {VERSION}")
         self.setWindowTitle(f"Dijagnostika kamera · {VERSION}")
+
+    def relearn_background(self) -> None:
+        guard = self.guard
+        if guard is None or not hasattr(guard, "relearn_background"):
+            self.add_event(time.strftime("%H:%M:%S"), "info", "Pozadina se uči na računaru s kamerama.")
+            return
+        guard.relearn_background()
+        self.add_event(time.strftime("%H:%M:%S"), "info", "Učim novu pozadinu zone A. Zona A mora biti prazna.")
 
     def add_event(self, clock: str, kind: str, text: str) -> None:
         item = QListWidgetItem(f"{clock}  {kind:<12} {text}")
