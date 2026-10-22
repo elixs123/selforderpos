@@ -48,11 +48,14 @@ def test_request_matches_tring_format():
     assert article.findtext("JM") == "ko"
     assert article.findtext("Cijena") == "0.54"
     assert article.findtext("Stopa") == "E"
-    assert lines[0].findtext("Kolicina") == "2"
-    assert lines[0].findtext("Rabat") == "0"
+    assert lines[0].findtext("Kolicina") == "2.000"
+    assert lines[0].findtext("Rabat") == "0.00"
     assert root.findtext("NoviObjekat/VrstePlacanja/VrstaPlacanja/Oznaka") == "Kartica"
     assert root.findtext("NoviObjekat/VrstePlacanja/VrstaPlacanja/Iznos") == "1.99"
-    assert root.findtext("NoviObjekat/BrojRacuna") == "238000"
+    assert root.findtext("BrojZahtjeva") == "238000"
+    assert root.find("NoviObjekat/BrojRacuna") is None
+    assert article.find("Grupa") is None and article.find("PLU") is None
+    assert root.findtext("NoviObjekat/Datum")
 
 
 def test_qr_uses_qr_payment_label():

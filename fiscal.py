@@ -4,6 +4,7 @@ import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ElementTree
 from dataclasses import dataclass
+from datetime import datetime
 
 PRINT_PATH = "/stampatifiskalniracun"
 PRINT_TIMEOUT = 30
@@ -29,13 +30,16 @@ def _number(value: float) -> str:
     return f"{value:.2f}"
 
 
-def build_request(receipt_number: int, cart: dict, payment_method: str, options: FiscalOptions) -> bytes:
+def build_request(receipt_number: int | None, cart: dict, payment_method: str, options: FiscalOptions) -> bytes:
     root = ElementTree.Element("RacunZahtjev", {
         "xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
         "xmlns:xsd": "http://www.w3.org/2001/XMLSchema",
     })
+    if receipt_number is not None:
+        _text(root, "BrojZahtjeva", receipt_number)
     _text(root, "VrstaZahtjeva", 0)
     receipt = ElementTree.SubElement(root, "NoviObjekat")
+    _text(receipt, "Datum", datetime.now().isoformat(timespec="seconds"))
     items = ElementTree.SubElement(receipt, "StavkeRacuna")
     for item in cart["items"]:
         line = ElementTree.SubElement(items, "RacunStavka")
@@ -45,15 +49,12 @@ def build_request(receipt_number: int, cart: dict, payment_method: str, options:
         _text(article, "JM", options.unit)
         _text(article, "Cijena", _number(item["price"]))
         _text(article, "Stopa", options.tax_label)
-        _text(article, "Grupa", 0)
-        _text(article, "PLU", 0)
-        _text(line, "Kolicina", item["quantity"])
-        _text(line, "Rabat", 0)
+        _text(line, "Kolicina", f"{item['quantity']:.3f}")
+        _text(line, "Rabat", _number(0))
     payments = ElementTree.SubElement(receipt, "VrstePlacanja")
     payment = ElementTree.SubElement(payments, "VrstaPlacanja")
     _text(payment, "Oznaka", options.card_payment if payment_method == "card" else options.qr_payment)
     _text(payment, "Iznos", _number(cart["total"]))
-    _text(receipt, "BrojRacuna", receipt_number)
     return b'<?xml version="1.0" encoding="utf-8"?>\n' + ElementTree.tostring(root, encoding="utf-8")
 
 
@@ -75,7 +76,7 @@ class FiscalPrinter:
         self.base_url = base_url.rstrip("/")
         self.options = options or FiscalOptions()
 
-    def print_receipt(self, receipt_number: int, cart: dict, payment_method: str) -> FiscalResult:
+    def print_receipt(self, receipt_number: int | None, cart: dict, payment_method: str) -> FiscalResult:
         body = build_request(receipt_number, cart, payment_method, self.options)
         request = urllib.request.Request(self.base_url + PRINT_PATH, data=body, method="POST")
         request.add_header("Content-Type", "application/xml; charset=utf-8")
