@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 
 from camera_service import CAMERAS_FOLDER
 from watcher import VERSION
+from holding import draw as draw_hold
 from zones import outline, to_pixels
 
 TILE_WIDTH = 440
@@ -201,10 +202,15 @@ class DiagnosticsWindow(QWidget):
         self.folder.setWordWrap(True)
         clear = QPushButton("Očisti događaje")
         clear.clicked.connect(self.events.clear)
+        self.zoomed = False
+        self.zoom_button = QPushButton("Zum na zone (Z)")
+        self.zoom_button.clicked.connect(self.toggle_zoom)
+        QShortcut(QKeySequence("Z"), self, activated=self.toggle_zoom)
         relearn = QPushButton("Nauči pozadinu zone A (B)")
         relearn.clicked.connect(self.relearn_background)
         QShortcut(QKeySequence("B"), self, activated=self.relearn_background)
         bottom.addWidget(self.folder, 1)
+        bottom.addWidget(self.zoom_button)
         bottom.addWidget(relearn)
         bottom.addWidget(clear)
         right.addLayout(bottom)
@@ -237,6 +243,11 @@ class DiagnosticsWindow(QWidget):
             self.folder.setText(f"Slike i log: {guard.debug_folder}")
         self.add_event("--:--:--", "info", f"Dijagnostika spojena na kasu. Algoritam: {VERSION}")
         self.setWindowTitle(f"Dijagnostika kamera · {VERSION}")
+
+    def toggle_zoom(self) -> None:
+        """Prikaz samo zone u punoj rezoluciji kamere: tako kamera vidi artikal kad ga poredi."""
+        self.zoomed = not self.zoomed
+        self.zoom_button.setText("Cijela slika (Z)" if self.zoomed else "Zum na zone (Z)")
 
     def relearn_background(self) -> None:
         guard = self.guard
@@ -276,11 +287,7 @@ class DiagnosticsWindow(QWidget):
             color = YELLOW
             result = guard.hold_results.get(name)
             if result is not None:
-                for item in result.items:
-                    held = any(item is other for other in result.held_items)
-                    cv2.rectangle(frame, (int(item[0]), int(item[1])), (int(item[2]), int(item[3])), RED if held else (255, 170, 60), 3)
-                if result.hands:
-                    cv2.polylines(frame, result.hands, True, YELLOW, 3)
+                draw_hold(frame, result, RED, (255, 170, 60), YELLOW)
         else:
             tracker = guard.trackers[name]
             tint(frame, box, tracker.last_mask, GREEN)
@@ -292,7 +299,12 @@ class DiagnosticsWindow(QWidget):
         if guard.hand_shapes.get(name):
             cv2.polylines(frame, guard.hand_shapes[name], True, YELLOW, 3)
         reader = guard.readers.get(name)
-        cv2.putText(frame, f"{name}  {width}x{height}  {reader.fps:.1f} FPS", (12, 34), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+        if self.zoomed:
+            x, y, w, h = box
+            pad = round(0.05 * max(w, h))
+            frame = frame[max(0, y - pad):y + h + pad, max(0, x - pad):x + w + pad]
+        label_text = f"{name}  {width}x{height}  {reader.fps:.1f} FPS" + (f"  zona {frame.shape[1]}x{frame.shape[0]} px" if self.zoomed else "")
+        cv2.putText(frame, label_text, (12, 34), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
         label.setPixmap(to_pixmap(frame, label.width(), label.height()))
 
     def refresh(self) -> None:

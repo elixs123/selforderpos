@@ -39,7 +39,7 @@ ARRIVED_MIN_CHANGE = 0.2
 HOLD_PASS_SECONDS = 0.5
 HOLD_SCAN_SECONDS = 3.0
 HOLD_PLACE_SECONDS = 10.0
-HOLD_GRACE_SECONDS = 1.0
+HOLD_GRACE_SECONDS = 2.5
 ZONE_B_QUIET_SECONDS = 3.0
 MAX_TAKES = 30
 TAKE_CLUSTER_SECONDS = 4.0
@@ -50,6 +50,7 @@ LEARN_TAKEN_REFERENCES = 3
 LEARN_PRODUCT_SCORE = 0.85
 PRODUCT_MIN_SCORE = float(os.environ.get("CAM_PRODUCT_THRESHOLD", "0.8"))
 RIVAL_MARGIN = float(os.environ.get("CAM_RIVAL_MARGIN", "0.02"))
+PRIMARY_CAMERAS = {name.strip() for name in os.environ.get("CAM_PRIMARY", "A2,B2").split(",") if name.strip()}
 LEARNED_FACTOR = 1.7
 EXTRA_MARK = "*"
 
@@ -92,7 +93,7 @@ class CheckoutGuard:
         self._load_backgrounds()
         self.hands = load_hand_detector()
         self.hand_shapes: dict[str, list[np.ndarray]] = {name: [] for name in readers}
-        self.holder = HeldItemDetector(load_hand_detector()) if self.cameras_c else None
+        self.holder = HeldItemDetector() if self.cameras_c else None
         self.hold_results: dict[str, HoldResult] = {}
         self.held_message = ""
         self._held_since: float | None = None
@@ -340,7 +341,7 @@ class CheckoutGuard:
             frame = self.latest(name)
             if frame is None or zone is None:
                 continue
-            result = self.holder.check(frame, zone)
+            result = self.holder.check(name, frame, zone)
             self.hold_results[name] = result
             held = held or result.held
         now, state = time.monotonic(), self.state
@@ -790,8 +791,9 @@ class CheckoutGuard:
 
     def _judge(
         self, items: list[np.ndarray], change_ratio: float, taken_items: list[np.ndarray],
-        taken_befores: list, product_code: str | None, placed_count: int = 1,
+        taken_befores: list, product_code: str | None, placed_count: int = 1, cameras: list[str] | None = None,
     ) -> tuple[str, list[str], float | None, float | None]:
+        primary = [index for index, camera in enumerate(cameras or []) if camera in PRIMARY_CAMERAS]
         threshold = match_threshold()
         product_threshold = max(threshold, PRODUCT_MIN_SCORE)
         taken = [(index, self._taken_signature(item)) for index, item in enumerate(taken_items)
@@ -804,7 +806,8 @@ class CheckoutGuard:
         def score(rotations: bool):
             queries = [signature(item, rotations=rotations) for item in items]
             best_taken = max(((compare(query, other), index) for query in queries for index, other in taken), default=None)
-            scored = [(compare(query, reference), reference) for query in queries for reference in references]
+            main = [queries[index] for index in primary] or queries
+            scored = [(compare(query, reference), reference) for query in main for reference in references]
             return queries, best_taken, max(scored, key=lambda pair: pair[0], default=None)
 
         queries, best_taken, best = score(False)
@@ -833,6 +836,7 @@ class CheckoutGuard:
             f"skenirano->odlozeno: {'-' if score_product is None else f'{score_product:.2f}'} ({len(references)} ref{old_note})   "
             f"velicina: {size}   prag {threshold} ({method_name()}{', sa rotacijama' if rotated else ''})   "
             f"kamera A: {len(taken)}, B: {len(queries)}   artikala u zoni B: {placed_count}"
+            f"   artikal se poredi sa: {', '.join(cameras[index] for index in primary) if primary else 'sve kamere'}"
         )
         self.debug_number += 1
         self.debug = {
@@ -849,7 +853,8 @@ class CheckoutGuard:
         rival = None
         if placed_count <= 1:
             others = self._other_signatures(product_code)
-            closest = max(((compare(query, other), name) for query in queries for name, other in others),
+            main = [queries[index] for index in primary] or queries
+            closest = max(((compare(query, other), name) for query in main for name, other in others),
                           key=lambda pair: pair[0], default=None)
             if score_product is None:
                 lookalike = closest if closest is not None and closest[0] >= product_threshold else None
@@ -957,7 +962,7 @@ class CheckoutGuard:
         return cached[0]
 
     def _background_file(self, name: str) -> Path:
-        return self.store.folder.parent / "backgrounds" / f"zone_{name}.npz"
+        return self.store.folder / "backgrounds" / f"zone_{name}.npz"
 
     def _zone_key(self, name: str) -> str:
         zone = self.zones.get(name)
@@ -1226,7 +1231,7 @@ class CheckoutGuard:
                 placed_count = max(placed_count, len(arrived))
         try:
             verdict, problems, score_taken, score_product = self._judge(
-                crops, change_ratio, taken_items, taken_befores, product_code, placed_count,
+                crops, change_ratio, taken_items, taken_befores, product_code, placed_count, [name for name, _, _ in items],
             )
         except Exception as error:
             print(f"Poređenje: {error}")

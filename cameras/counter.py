@@ -64,6 +64,13 @@ class ObjectCounter:
         return path
 
     def detect(self, image: np.ndarray, ignored: set[int] | None = None) -> list[np.ndarray]:
+        skipped = IGNORED_CLASSES if ignored is None else ignored
+        return [box for _, _, box in self.detections(image, MIN_CONFIDENCE, skipped)]
+
+    def detections(
+        self, image: np.ndarray, min_confidence: float = MIN_CONFIDENCE, skipped: set[int] = frozenset(),
+    ) -> list[tuple[int, float, np.ndarray]]:
+        """(COCO klasa, pouzdanost, okvir x1 y1 x2 y2); klase iz skipped se izbace prije NMS-a."""
         if image is None or image.size == 0:
             return []
         height, width = image.shape[:2]
@@ -76,15 +83,14 @@ class ObjectCounter:
         sizes = np.exp(output[:, 2:4]) * self.strides
         scores = output[:, 4:5] * output[:, 5:]
         classes, confidence = scores.argmax(1), scores.max(1)
-        keep = (confidence >= MIN_CONFIDENCE) & ~np.isin(classes, list(IGNORED_CLASSES if ignored is None else ignored))
+        keep = (confidence >= min_confidence) & ~np.isin(classes, list(skipped))
         if not keep.any():
             return []
-        centers, sizes, confidence = centers[keep], sizes[keep], confidence[keep]
+        centers, sizes, confidence, classes = centers[keep], sizes[keep], confidence[keep], classes[keep]
         boxes = np.concatenate([centers - sizes / 2, centers + sizes / 2], 1) / ratio
         rectangles = [[float(x1), float(y1), float(x2 - x1), float(y2 - y1)] for x1, y1, x2, y2 in boxes]
-        chosen = np.array(cv2.dnn.NMSBoxes(rectangles, confidence.tolist(), MIN_CONFIDENCE, 0.45)).reshape(-1)
-        return [boxes[index] for index in chosen]
-
+        chosen = np.array(cv2.dnn.NMSBoxes(rectangles, confidence.tolist(), min_confidence, 0.45)).reshape(-1)
+        return [(int(classes[index]), float(confidence[index]), boxes[index]) for index in chosen]
 
 _counter = None
 _failed = False

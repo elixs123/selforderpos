@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import CameraConfigError, load_cameras
 from guard import CheckoutGuard, zone_of
 from reader import CameraReader
+from holding import draw as draw_hold
 from zones import outline
 
 TILE_WIDTH = 720
@@ -133,11 +134,7 @@ class Monitor:
             cv2.polylines(frame, guard.hand_shapes[name], True, YELLOW, 3)
         result = guard.hold_results.get(name) if zone_of(name) == "C" else None
         if result is not None:
-            for item in result.items:
-                held = any(item is other for other in result.held_items)
-                cv2.rectangle(frame, (int(item[0]), int(item[1])), (int(item[2]), int(item[3])), RED if held else (255, 170, 60), 3)
-            if result.hands:
-                cv2.polylines(frame, result.hands, True, YELLOW, 3)
+            draw_hold(frame, result, RED, (255, 170, 60), YELLOW)
         tile = cv2.resize(frame, (width, width * 9 // 16))
         label = ascii_text(f"{name}  {reader.status}  {reader.fps:.1f} FPS")
         cv2.putText(tile, label, (12, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.8, GREEN, 2)

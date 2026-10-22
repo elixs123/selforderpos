@@ -78,7 +78,7 @@ def test_yolox_catches_two_touching_items_in_zone_b(monkeypatch, tmp_path):
     guard = CheckoutGuard(readers)
     guard.zones = {}
     guard.trackers = {"A": BasketTracker(stable_seconds=0.05)}
-    guard._judge = lambda items, ratio, taken, befores, code, placed_count=1: (
+    guard._judge = lambda items, ratio, taken, befores, code, placed_count=1, cameras=None: (
         ("mismatch", ["odloženo je više artikala"], 0.9, None) if placed_count > 1 else ("ok", [], 0.9, None))
     for watcher in guard.watchers.values():
         watcher.stable_seconds = 0.15
