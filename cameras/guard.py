@@ -38,7 +38,9 @@ CARRY_STATES = ("waiting_take", "judging", "learning", "offline")
 HELD_UNPLACED_MESSAGE = "Artikal je skeniran. Odložite ga u zonu B."
 ARRIVED_MIN_CHANGE = 0.2
 HOLD_PASS_SECONDS = 0.5
-HOLD_SCAN_SECONDS = 3.0
+HOLD_SCAN_SECONDS = 5.0
+HOLD_TAKEN_SECONDS = 20.0
+EXTRA_BLOB_SHARE = 0.25
 HOLD_PLACE_SECONDS = 10.0
 HOLD_GRACE_SECONDS = 2.5
 ZONE_B_QUIET_SECONDS = 3.0
@@ -346,10 +348,15 @@ class CheckoutGuard:
             self.hold_results[name] = result
             held = held or result.held
         now, state = time.monotonic(), self.state
+        phase = "place" if state == "waiting_place" else "carry" if state in CARRY_STATES else "free"
+        # Brojač kreće ispočetka kad kupac pređe u nošenje skeniranog artikla ili iz njega (i kad se tada artikal
+        # ne vidi); obične promjene poruka kase (ready/taken/accepted) ga ne resetuju.
+        if phase != self._held_state:
+            self._held_since, self._held_state = (now if held else None), phase
         if held:
             self._held_seen = now
-            if self._held_since is None or state != self._held_state:
-                self._held_since, self._held_state = now, state
+            if self._held_since is None:
+                self._held_since = now
         elif now - self._held_seen > HOLD_GRACE_SECONDS:
             self._held_since = None
         message = ""
@@ -358,7 +365,7 @@ class CheckoutGuard:
             if state == "waiting_place":
                 if held_for >= HOLD_PLACE_SECONDS:
                     message = HELD_UNPLACED_MESSAGE
-            elif state not in CARRY_STATES and held_for >= HOLD_SCAN_SECONDS:
+            elif state not in CARRY_STATES and held_for >= (HOLD_TAKEN_SECONDS if state == "taken" else HOLD_SCAN_SECONDS):
                 message = HELD_UNSCANNED_MESSAGE
         if message != self.held_message:
             self.log("ruka", message or "artikal više nije u ruci")
@@ -380,9 +387,11 @@ class CheckoutGuard:
                     frame = self.latest(name)
                     if frame is not None:
                         jobs.append(("A", name, crop(frame, self.zones.get(name))[0].copy()))
+            holding = now - self._held_seen < HOLD_GRACE_SECONDS
             for name in self.b_ledgers:
                 idle = self.idle_b[name]
-                if (self._is_live(name) and now - self._b_active_at >= ZONE_B_QUIET_SECONDS
+                # Artikal u ruci (kamere C) iznad zone B nije odložen: brojanje zone B čeka da ga kupac spusti.
+                if (self._is_live(name) and now - self._b_active_at >= ZONE_B_QUIET_SECONDS and not holding
                         and idle.motion_ratio <= idle.motion_max and not self.hand_shapes.get(name)):
                     frame = self.latest(name)
                     if frame is not None:
@@ -809,8 +818,13 @@ class CheckoutGuard:
             queries = [signature(item, rotations=rotations) for item in items]
             best_taken = max(((compare(query, other), index) for query in queries for index, other in taken), default=None)
             main = [queries[index] for index in primary] or queries
-            scored = [(compare(query, reference), reference) for query in main for reference in references]
-            return queries, best_taken, max(scored, key=lambda pair: pair[0], default=None)
+            best = max(((compare(query, reference), reference) for query in main for reference in references),
+                       key=lambda pair: pair[0], default=None)
+            if len(main) < len(queries) and (best is None or best[0] < product_threshold):
+                # Glavna (bočna) kamera ne vidi dobro (npr. artikal je zaklonjen drugim): pomoćna kamera potvrđuje.
+                best = max(((compare(query, reference), reference) for query in queries for reference in references),
+                           key=lambda pair: pair[0], default=None)
+            return queries, best_taken, best
 
         queries, best_taken, best = score(False)
         score_taken = best_taken[0] if best_taken else None
@@ -856,6 +870,10 @@ class CheckoutGuard:
         if placed_count <= 1:
             others = self._other_signatures(product_code)
             main = [queries[index] for index in primary] or queries
+            if score_product is not None and score_product >= product_threshold and len(main) < len(queries):
+                main_best = max((compare(query, reference) for query in main for reference in references), default=0.0)
+                if main_best < product_threshold:
+                    main = queries
             closest = max(((compare(query, other), name) for query in main for name, other in others),
                           key=lambda pair: pair[0], default=None)
             if score_product is None:
@@ -968,7 +986,8 @@ class CheckoutGuard:
 
     def _zone_key(self, name: str) -> str:
         zone = self.zones.get(name)
-        return json.dumps([list(zone), [list(point) for point in getattr(zone, "polygon", ())]]) if zone is not None else ""
+        return json.dumps([list(zone), [list(point) for point in getattr(zone, "polygon", ())],
+                           [[list(point) for point in area] for area in getattr(zone, "exclude", ())]]) if zone is not None else ""
 
     def _load_backgrounds(self) -> None:
         """Pozadina zone A se uči jednom i pamti na disku; ponovo se uči samo na zahtjev (relearn_background)."""
@@ -1196,6 +1215,7 @@ class CheckoutGuard:
             watcher.disarm()
         crops = [item for _, item, _ in items]
         counts = {name: len(self.watchers[name].items) for name, _, _ in items}
+        self._placed_blobs = {name: list(self.watchers[name].items) for name, _, _ in items}
         placed_count = max(counts.values(), default=1)
         for name, count in counts.items():
             watcher = self.watchers[name]
@@ -1219,6 +1239,7 @@ class CheckoutGuard:
         taken_items, taken_befores, product_code = snapshot
         started = time.monotonic()
         self._b_after_counts = {}
+        yolo_new = None
         for name, (frame, _) in frames.items():
             roi, _ = crop(frame, self.zones.get(name))
             yolo = self._yolo_change(name, roi, self._b_before.get(name))
@@ -1230,7 +1251,16 @@ class CheckoutGuard:
                 if len(kept) != len(arrived):
                     self.log(f"zona-{name}", f"YOLOX: {len(arrived) - len(kept)} 'novih' je bilo i prije odlaganja (nema promjene na slici), ne računam ih")
                 arrived = kept
-                placed_count = max(placed_count, len(arrived))
+                yolo_new = max(yolo_new or 0, len(arrived))
+        blobs = getattr(self, "_placed_blobs", {})
+        if yolo_new is not None and yolo_new <= 1 and placed_count > 1:
+            # Mrlje mnogo manje od artikla (sjena, odsjaj, pomjeren rub) se ne broje kad YOLOX vidi samo jedan novi artikal.
+            large = max((sum(1 for area, _ in parts if area >= EXTRA_BLOB_SHARE * max(a for a, _ in parts)) for parts in blobs.values() if parts),
+                        default=1)
+            if large < placed_count:
+                self.log("zona-B", f"male promjene uz artikal ne računam kao drugi artikal (YOLOX vidi {yolo_new} novi)")
+                placed_count = large
+        placed_count = max(placed_count, yolo_new or 0)
         try:
             verdict, problems, score_taken, score_product = self._judge(
                 crops, change_ratio, taken_items, taken_befores, product_code, placed_count, [name for name, _, _ in items],

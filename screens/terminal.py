@@ -63,10 +63,15 @@ class PaymentWaitScreen(QWidget):
     def live(self) -> bool:
         return self.method == "card" and self.settings is not None and not self.settings.demo_payments
 
+    @property
+    def demo(self) -> bool:
+        return self.settings is not None and self.settings.demo_payments
+
     def begin(self, settings=None, invoice_id: str = "") -> None:
         self.settings = settings
         self.total_label.setText(f"{format_amount(self.cart.total)} KM")
         if self.method != "card":
+            self.simulate_button.setVisible(self.demo)
             return
         if invoice_id != self.invoice_id:
             self.must_retry = False
@@ -116,6 +121,10 @@ class PaymentWaitScreen(QWidget):
             self._show_state("Terminal nije dostupan", "Ništa nije naplaćeno. Pozovite osoblje.", cancel=True, retry=True, problem=True)
         else:
             self._show_state("Greška u postavkama terminala", detail, cancel=True, retry=False, problem=True)
+
+    def _simulate_paid(self) -> None:
+        if self.demo:
+            self.paid.emit({})
 
     def _retry(self) -> None:
         if self.live:
@@ -255,6 +264,7 @@ class PaymentWaitScreen(QWidget):
             f"QPushButton {{ background: transparent; border: none; color: {MUTED_TEXT};"
             f" font-size: {px(22)}px; font-weight: 600; padding: {px(6)}px; }}"
         )
-        self.simulate_button.clicked.connect(lambda _checked=False: self.paid.emit({}))
+        self.simulate_button.clicked.connect(self._simulate_paid)
+        self.simulate_button.setVisible(False)
         column.addWidget(self.simulate_button)
         return footer

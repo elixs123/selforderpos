@@ -42,3 +42,66 @@ Poslije toga:
 14. QR plaćanje: pravi API (sada simulacija).
 15. Kamere u kasi: rad u posebnoj niti je gotov; provjeriti brzinu na pravoj kasi (Windows).
 16. Pakovanje za Windows (PyInstaller + Inno Setup).
+
+========================================================================
+PREGLED KODA (2026-10-22) - šta ispraviti
+========================================================================
+
+KRITIČNO (prije prave upotrebe)
+
+K1. GOTOVO: QR plaćanje = besplatna roba. Na QR ekranu (screens/terminal.py) dugme
+    "Prototip: plaćanje je uspjelo" je uvijek vidljivo, a QR opcija se uvijek nudi
+    (screens/payment.py:69). Kupac izabere QR, pritisne dugme, dobije fiskalni
+    račun i QR za vrata bez plaćanja.
+    -> Sakriti QR opciju dok nema pravog API-ja, simulaciju samo uz demo_payments.
+
+K2. Fiskalni račun nije uspio, a novac je skinut: ekran ostane na "Pozovite
+    osoblje" (screens/receipt.py:73), timer se ne pokreće, nema ponovnog pokušaja.
+    -> Dugme "Pokušaj ponovo" + lista računa sa fiscal_printed = 0 u panelu osoblja.
+
+K3. GOTOVO: Ctrl+Shift+Q gasi kasu bez PIN-a, Ctrl+Shift+D otvara dijagnostiku (app.py:107-112).
+    -> Zaštititi PIN-om ili ugasiti u fullscreen načinu.
+    OSTAJE: dugme "Zatvori aplikaciju (test)" na ekranu skeniranja (screens/scan.py)
+    gasi kasu bez PIN-a; namjerno ostavljeno zasad, ukloniti prije prave upotrebe.
+
+K4. Cijene su float (cart.py, receipts.py). Zbir može biti 12.299999; iznos za
+    terminal (amount_minor) i iznos u fiskalnom XML-u mogu se razlikovati za 1 fening.
+    -> Sve u feninzima (int) ili Decimal, KM samo za prikaz i XML.
+
+OZBILJNO
+
+O1. Sken blokira ekran: find_by_barcode otvara novu MSSQL vezu za svaki sken na
+    UI niti (timeout 5 s); guard.scan() na remote serveru čeka do 8 s.
+    -> Stalna veza ili lokalni keš artikala + upit u posebnoj niti.
+
+O2. catalog.py upit: "acCode = ? OR acIdent = ?" + fetchone() -> više barkodova
+    ili dupli kod daju nasumičan red; nema filtera za neaktivne artikle;
+    anSalePrice NULL -> float(None) sruši sken.
+
+O3. Kad server kamera padne, remote_guard.py (~168) postavi unscanned = 0 i
+    zone_a_left = 0 -> plaćanje se otključa. Izvučen kabl = neskenirano oprošteno.
+    -> Offline mora zaključati plaćanje.
+
+O4. PIN se može pogađati bez ograničenja; .env.example ima ADMIN_PIN=0000.
+    -> Zaključavanje nakon N pogrešnih pokušaja, obavezna promjena default PIN-a.
+
+O5. Nema provjere 18+ (vidi stavku 10).
+
+O6. Kolona synced postoji, ali ništa ne šalje račune na server; nema bekapa kasa.db.
+
+KVALITET KODA
+
+Q1. Git poruke ("fsdfsfs") -> pisati kratko šta je promijenjeno.
+Q2. .DS_Store i _old_web/ su u gitu -> .DS_Store u .gitignore, _old_web obrisati.
+Q3. cameras/guard.py ima 1300+ linija i 60+ metoda -> razbiti (zona A, zona B,
+    judge, učenje), konstante na jedno mjesto.
+Q4. .env se učitava u 3 modula (database, settings, staff_auth) -> jednom.
+Q5. print() u kasa.log bez rotacije -> logging + RotatingFileHandler.
+
+DODATI (po prioritetu)
+
+D1. Ponovna fiskalizacija i pregled neuspjelih računa u panelu osoblja (vidi K2).
+D2. Lokalni keš artikala da kasa radi kad MSSQL kratko padne.
+D3. Slanje računa na server (synced) i bekap kasa.db.
+D4. Dnevni izvještaj (Z-izvještaj) i storno uz PIN.
+D5. Timeout neaktivnosti: kupac ode s punom korpom -> "Jeste li još tu?" -> početak.

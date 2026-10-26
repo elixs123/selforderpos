@@ -32,7 +32,7 @@ STATE_NAMES = {
     "accepted": "PRIHVAĆENO", "rejected": "ODBIJENO", "timeout": "ISTEKLO VRIJEME",
 }
 EVENT_COLORS = {"scan": "#3D8BFD", "poredjenje": "#E0A800", "mismatch": "#E5484D", "rejected": "#E5484D",
-                "timeout": "#E5484D", "accepted": "#30A46C"}
+                "timeout": "#E5484D", "accepted": "#30A46C", "ruka": "#FF7A45"}
 STYLE = """
 QWidget#diagnostics { background: #14181C; }
 QLabel { color: #E6EAED; font-size: 13px; }
@@ -329,7 +329,7 @@ class DiagnosticsWindow(QWidget):
             f"zadnje poređenje {guard.judge_ms:.0f} ms"
         )
         self.flow.setText(self.flow_text(guard, now))
-        self.why.setText(self.why_text(guard, now))
+        self.why.setText(self.hold_text(guard, now) + self.why_text(guard, now))
         for number, clock, kind, text in list(guard.events):
             if number > self.seen_event:
                 self.add_event(clock, kind, text)
@@ -378,6 +378,30 @@ class DiagnosticsWindow(QWidget):
         if guard._pending_until is not None:
             lines.append(f"<span style='color:#E0A800'>Čekam uzimanje iz A još {guard._pending_until - now:.0f} s</span>")
         return "<br>".join(lines)
+
+    def hold_text(self, guard, now: float) -> str:
+        """Kamere C: šta detektor vidi (osoba, predmeti, artikal u ruci) i šta je poslano kasi."""
+        cameras = getattr(guard, "cameras_c", [])
+        if not cameras:
+            return ""
+        lines = []
+        for name in cameras:
+            result = guard.hold_results.get(name)
+            if result is None:
+                lines.append(f"<b>{name}</b> <span style='color:#8A949C'>još nema provjere</span>")
+                continue
+            held = "<span style='color:#E5484D'><b>ARTIKAL U RUCI</b></span>" if result.held else "<span style='color:#8A949C'>nema artikla u ruci</span>"
+            lines.append(f"<b>{name}</b> osoba {len(result.people)} · predmeta {len(result.items)} · {held}")
+        since = getattr(guard, "_held_since", None)
+        holding = now - getattr(guard, "_held_seen", -1000.0) < 2.5
+        if since is not None and holding:
+            lines.append(f"Drži artikal <b>{now - since:.1f} s</b> (poruka poslije 3 s, dok nosi skenirani poslije 10 s)")
+        if holding:
+            lines.append("<span style='color:#E0A800'>Brojanje zone B pauzirano dok je artikal u ruci</span>")
+        message = getattr(guard, "held_message", "")
+        lines.append(f"<b>Poruka kasi:</b> <span style='color:#E5484D'>{message}</span>" if message
+                     else "<b>Poruka kasi:</b> <span style='color:#30A46C'>nema</span>")
+        return "<b>Kamere C (artikal u ruci)</b><br>" + "<br>".join(lines) + "<br><br>"
 
     def why_text(self, guard, now: float) -> str:
         if guard.state == "accepted":

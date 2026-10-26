@@ -46,7 +46,8 @@ class PaymentScreen(QWidget):
         layout.addWidget(self._body(), stretch=1)
         layout.addWidget(self._footer())
 
-    def begin(self) -> None:
+    def begin(self, demo: bool = False) -> None:
+        self.qr_option.setVisible(demo)
         data = self.cart.to_dict()
         self.count_label.setText(f"{item_count_text(data['item_count'])} u korpi")
         self.total_label.setText(f"{format_amount(data['total'])} KM")
@@ -66,9 +67,9 @@ class PaymentScreen(QWidget):
         card.clicked.connect(self.card_selected.emit)
         column.addWidget(card, stretch=1)
 
-        qr = self._option("qrOption", ICON_QR, "QR kod", "Skenirajte kod mobilnom bankarskom aplikacijom", False)
-        qr.clicked.connect(self.qr_selected.emit)
-        column.addWidget(qr, stretch=1)
+        self.qr_option = self._option("qrOption", ICON_QR, "QR kod", "Skenirajte kod mobilnom bankarskom aplikacijom", False)
+        self.qr_option.clicked.connect(self.qr_selected.emit)
+        column.addWidget(self.qr_option, stretch=1)
         return body
 
     def _summary(self) -> QFrame:

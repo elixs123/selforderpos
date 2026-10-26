@@ -26,7 +26,7 @@ if getattr(sys, "frozen", False):
 
 from PySide6.QtCore import QProcess, QStandardPaths
 from PySide6.QtGui import QKeySequence, QShortcut
-from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QStackedWidget
+from PySide6.QtWidgets import QApplication, QInputDialog, QLineEdit, QMainWindow, QMessageBox, QStackedWidget
 
 import gate_api
 from cart import Cart
@@ -42,6 +42,7 @@ from screens.staff import StaffScreen
 from screens.terminal import PaymentWaitScreen
 from screens.welcome import WelcomeScreen
 from settings import Settings, load_settings, save_settings
+from staff_auth import StaffPinMissing, check_admin_pin
 import styles
 from styles import apply_light_theme, px
 
@@ -107,10 +108,29 @@ class MainWindow(QMainWindow):
         shortcut = QShortcut(QKeySequence("Ctrl+Shift+S"), self)
         shortcut.activated.connect(self.show_settings)
         quit_shortcut = QShortcut(QKeySequence("Ctrl+Shift+Q"), self)
-        quit_shortcut.activated.connect(self.close)
+        quit_shortcut.activated.connect(self.request_quit)
         diagnostics_shortcut = QShortcut(QKeySequence("Ctrl+Shift+D"), self)
-        diagnostics_shortcut.activated.connect(self.open_diagnostics)
+        diagnostics_shortcut.activated.connect(self.request_diagnostics)
         self.start_cameras()
+
+    def request_quit(self) -> None:
+        if self.settings.demo_payments:
+            self.close()
+        else:
+            self.show_settings()
+
+    def request_diagnostics(self) -> None:
+        if self.settings.demo_payments or self.admin_confirmed():
+            self.open_diagnostics()
+
+    def admin_confirmed(self) -> bool:
+        pin, ok = QInputDialog.getText(self, "Dijagnostika", "Administratorska šifra:", QLineEdit.EchoMode.Password)
+        if not ok:
+            return False
+        try:
+            return check_admin_pin(pin)
+        except StaffPinMissing:
+            return False
 
     def start_cameras(self) -> None:
         if self.guard is not None:
@@ -192,7 +212,7 @@ class MainWindow(QMainWindow):
                                        or getattr(self.guard, "checking", False)):
             return
         self.screens.setCurrentWidget(self.payment)
-        self.payment.begin()
+        self.payment.begin(self.settings.demo_payments)
 
     def back_to_scan(self) -> None:
         if self.card.locked:

@@ -64,7 +64,7 @@ def test_item_lying_still_next_to_person_stops_counting(monkeypatch):
 
 def test_item_in_hand_is_reported_also_after_another_item_was_accepted(monkeypatch):
     import guard as guard_module
-    from guard import CheckoutGuard, HELD_UNSCANNED_MESSAGE, HOLD_SCAN_SECONDS
+    from guard import CheckoutGuard, HELD_UNSCANNED_MESSAGE, HOLD_SCAN_SECONDS, HOLD_TAKEN_SECONDS
 
     guard = CheckoutGuard.__new__(CheckoutGuard)
     guard.cameras_c, guard.zones, guard.hold_results = ["C2"], {"C2": object()}, {}
@@ -80,6 +80,39 @@ def test_item_in_hand_is_reported_also_after_another_item_was_accepted(monkeypat
     clock[0] += HOLD_SCAN_SECONDS
     guard.hold_once()
     assert guard.held_message == HELD_UNSCANNED_MESSAGE
+    guard.state = "taken"
+    guard.hold_once()
+    assert guard.held_message == "", "artikal uzet iz zone A kupac smije duže držati dok traži barkod"
+    clock[0] += HOLD_TAKEN_SECONDS
+    guard.hold_once()
+    assert guard.held_message == HELD_UNSCANNED_MESSAGE
     guard.state = "waiting_take"
     guard.hold_once()
     assert guard.held_message == ""
+
+
+def test_timer_restarts_after_carrying_a_scanned_item(monkeypatch):
+    import guard as guard_module
+    from guard import CheckoutGuard, HOLD_SCAN_SECONDS
+
+    guard = CheckoutGuard.__new__(CheckoutGuard)
+    guard.cameras_c, guard.zones, guard.hold_results = ["C2"], {"C2": object()}, {}
+    guard.held_message, guard._held_since, guard._held_seen, guard._held_state = "", None, -1000.0, ""
+    guard.latest = lambda name: np.zeros((10, 10, 3), np.uint8)
+    seen = [True]
+    guard.holder = type("Holder", (), {"check": lambda self, name, frame, zone: holding.HoldResult(seen[0])})()
+    guard.log = lambda *args: None
+    clock = [100.0]
+    monkeypatch.setattr(guard_module.time, "monotonic", lambda: clock[0])
+    guard.state = "ready"
+    guard.hold_once()
+    clock[0] += 1.0
+    guard.state, seen[0] = "judging", False
+    guard.hold_once()
+    clock[0] += 1.0
+    guard.state, seen[0] = "accepted", True
+    guard.hold_once()
+    assert guard.held_message == "", "poslije prihvatanja brojanje kreće ispočetka"
+    clock[0] += HOLD_SCAN_SECONDS
+    guard.hold_once()
+    assert guard.held_message != ""

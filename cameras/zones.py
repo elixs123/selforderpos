@@ -14,27 +14,35 @@ OUTSIDE_VALUE = 127
 
 
 class Zone(tuple):
-    """Okvir zone (lijevo, gore, širina, visina) u razmjeru 0-1; polygon je neobavezan slobodno nacrtan oblik unutar okvira."""
+    """Okvir zone (lijevo, gore, širina, visina) u razmjeru 0-1; polygon je neobavezan slobodno nacrtan oblik unutar okvira.
+
+    exclude su dijelovi zone koje kamera ne gleda (npr. ljestve, pločice): popune se neutralnom sivom kao i ono van zone.
+    """
 
     polygon: tuple[tuple[float, float], ...] = ()
+    exclude: tuple[tuple[tuple[float, float], ...], ...] = ()
 
-    def __new__(cls, box, polygon=()):
+    def __new__(cls, box, polygon=(), exclude=()):
         zone = super().__new__(cls, (float(value) for value in box))
         zone.polygon = tuple((float(x), float(y)) for x, y in polygon)
+        zone.exclude = tuple(tuple((float(x), float(y)) for x, y in area) for area in exclude)
         return zone
 
 
 def _decode(value) -> Zone:
     if isinstance(value, dict):
-        return Zone(value["box"], value.get("polygon", ()))
+        return Zone(value["box"], value.get("polygon", ()), value.get("exclude", ()))
     return Zone(value)
 
 
 def _encode(zone: Zone):
-    polygon = getattr(zone, "polygon", ())
-    if not polygon:
+    polygon, exclude = getattr(zone, "polygon", ()), getattr(zone, "exclude", ())
+    if not polygon and not exclude:
         return list(zone)
-    return {"box": list(zone), "polygon": [list(point) for point in polygon]}
+    data = {"box": list(zone), "polygon": [list(point) for point in polygon]}
+    if exclude:
+        data["exclude"] = [[list(point) for point in area] for area in exclude]
+    return data
 
 
 def load_zones() -> dict[str, Zone]:
@@ -90,4 +98,10 @@ def crop(frame: np.ndarray, zone: Zone | None) -> tuple[np.ndarray, tuple[int, i
         outside = _inside_mask(polygon, width, height, x, y, region.shape[1], region.shape[0])
         region = region.copy()
         region[outside] = OUTSIDE_VALUE
+    exclude = getattr(zone, "exclude", ())
+    if exclude and region.size:
+        if not polygon:
+            region = region.copy()
+        areas = [np.array([[round(px * width) - x, round(py * height) - y] for px, py in area], np.int32) for area in exclude]
+        cv2.fillPoly(region, areas, (OUTSIDE_VALUE,) * (region.shape[2] if region.ndim == 3 else 1))
     return region, (x, y)
