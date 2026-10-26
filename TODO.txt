@@ -84,7 +84,7 @@ O3. GOTOVO (kamere ne rade > 10 s -> kasa zaključana, ekran 'Kamere nisu dostup
     zone_a_left = 0 -> plaćanje se otključa. Izvučen kabl = neskenirano oprošteno.
     -> Offline mora zaključati plaćanje.
 
-O4. PIN se može pogađati bez ograničenja; .env.example ima ADMIN_PIN=0000.
+O4. GOTOVO (5 pogrešnih -> zaključano 60 s, svaki put duplo do 15 min; .env.example bez zadanog PIN-a. OSTAJE: promijeniti ADMIN_PIN=0000 u .env na kasama): PIN se može pogađati bez ograničenja; .env.example ima ADMIN_PIN=0000.
     -> Zaključavanje nakon N pogrešnih pokušaja, obavezna promjena default PIN-a.
 
 O5. Nema provjere 18+ (vidi stavku 10).

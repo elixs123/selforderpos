@@ -49,7 +49,7 @@ from screens.staff import StaffScreen
 from screens.terminal import PaymentWaitScreen
 from screens.welcome import WelcomeScreen
 from settings import Settings, load_settings, save_settings
-from staff_auth import StaffPinMissing, check_admin_pin
+from staff_auth import PinError, check_admin_pin
 import styles
 from styles import apply_light_theme, px
 
@@ -199,7 +199,8 @@ class MainWindow(QMainWindow):
             return False
         try:
             return check_admin_pin(pin)
-        except StaffPinMissing:
+        except PinError as error:
+            QMessageBox.warning(self, "Dijagnostika", str(error))
             return False
 
     def start_cameras(self) -> None:

@@ -275,6 +275,8 @@ class PinPad(QWidget):
         try:
             valid = self.checker(self.entered)
         except Exception as error:
+            self.entered = ""
+            self._update()
             self.error.setText(str(error))
             return
         self.entered = ""

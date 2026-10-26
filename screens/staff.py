@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 from cart import Cart
 from formatting import format_amount, item_count_text
 from screens.components import TopBar
-from staff_auth import StaffPinMissing, check_pin
+from staff_auth import PinError, check_pin
 from styles import (
     BACKGROUND,
     BORDER,
@@ -166,7 +166,9 @@ class StaffScreen(QWidget):
     def _submit_pin(self) -> None:
         try:
             valid = check_pin(self.entered)
-        except StaffPinMissing as error:
+        except PinError as error:
+            self.entered = ""
+            self._update_pin_display()
             self.pin_error.setText(str(error))
             return
         self.entered = ""
