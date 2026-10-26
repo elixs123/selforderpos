@@ -24,13 +24,14 @@ from fiscal import FiscalPrinter
 from printec import PrintecClient
 from qr_slip import print_gate_slip
 from screens.components import PinPad, TopBar
+from screens.receipts_view import ReceiptsView
 from settings import Settings
 from staff_auth import check_admin_pin
 from styles import BACKGROUND, BORDER, FONT, GREEN, MUTED_TEXT, TEXT, px
 
 SECTIONS = [
     ("Kasa", ["register_id", "fullscreen", "demo_payments", "receipt_return_seconds"]),
-    ("Artikli i barkodovi (centralni server)", ["article_sync_minutes"]),
+    ("Artikli i barkodovi (centralni server)", ["db_server", "db_port", "db_name", "db_user", "db_password", "article_sync_minutes"]),
     ("Kartični terminal (PrintecECR)", ["terminal_url", "terminal_api_key", "terminal_print_slip", "terminal_slip_copies"]),
     ("Fiskalni printer (Tring)", ["fiscal_enabled", "fiscal_url", "fiscal_unit", "fiscal_tax_label", "fiscal_card_payment", "fiscal_qr_payment"]),
     ("QR slip za vrata (test)", ["qr_slip_enabled", "qr_slip_printer", "qr_slip_ibfm"]),
@@ -43,6 +44,11 @@ LABELS = {
     "demo_payments": "Demo plaćanje (bez terminala)",
     "receipt_return_seconds": "Povratak na početak nakon računa (s)",
     "article_sync_minutes": "Sinhronizacija artikala svakih (min, 0 = isključeno)",
+    "db_server": "Adresa servera (IP ili ime)",
+    "db_port": "Port",
+    "db_name": "Baza",
+    "db_user": "Korisnik",
+    "db_password": "Lozinka",
     "terminal_url": "Adresa servisa",
     "terminal_api_key": "API ključ",
     "terminal_print_slip": "Štampaj slip kartice",
@@ -70,7 +76,7 @@ LABELS = {
 }
 
 CHOICES = {"camera_model": ["dinov2", "dinov2-base", "clip", "mobilenet"]}
-SECRET = {"terminal_api_key"}
+SECRET = {"terminal_api_key", "db_password"}
 
 
 class SettingsScreen(QWidget):
@@ -78,10 +84,10 @@ class SettingsScreen(QWidget):
     saved = Signal(object)
     restart_requested = Signal(object)
     quit_requested = Signal(object)
-    sync_requested = Signal()
+    sync_requested = Signal(object)
     test_finished = Signal(str)
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, store=None) -> None:
         super().__init__()
         self.settings = settings
         self.editors: dict[str, QWidget] = {}
@@ -98,8 +104,11 @@ class SettingsScreen(QWidget):
         self.pin.accepted.connect(self._open_form)
         self.pin.cancelled.connect(self.closed.emit)
         self.form_page = self._form_page()
+        self.receipts_page = ReceiptsView(store)
+        self.receipts_page.closed.connect(lambda: self.pages.setCurrentWidget(self.form_page))
         self.pages.addWidget(self.pin)
         self.pages.addWidget(self.form_page)
+        self.pages.addWidget(self.receipts_page)
         layout.addWidget(self.pages, stretch=1)
 
     def begin(self, settings: Settings) -> None:
@@ -143,6 +152,10 @@ class SettingsScreen(QWidget):
         self.status.setWordWrap(True)
         self.status.setStyleSheet(f"font-size: {px(24)}px; color: {MUTED_TEXT};")
         column.addWidget(self.status)
+
+        receipts = self._button("Pregledaj prethodne račune", primary=False)
+        receipts.clicked.connect(self._show_receipts)
+        column.addWidget(receipts)
 
         tests = QHBoxLayout()
         tests.setSpacing(px(14))
@@ -274,9 +287,13 @@ class SettingsScreen(QWidget):
         self.settings = self.current()
         self.quit_requested.emit(self.settings)
 
+    def _show_receipts(self) -> None:
+        self.receipts_page.begin()
+        self.pages.setCurrentWidget(self.receipts_page)
+
     def _sync_now(self) -> None:
         self.status.setText("Povlačim artikle sa servera...")
-        self.sync_requested.emit()
+        self.sync_requested.emit(self.current())
 
     def _run_test(self, job) -> None:
         self.status.setText("Provjeravam...")

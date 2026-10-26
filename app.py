@@ -30,6 +30,7 @@ from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QApplication, QInputDialog, QLineEdit, QMainWindow, QMessageBox, QStackedWidget
 
 import catalog
+import database
 import gate_api
 from articles import ArticleStore
 from cart import Cart
@@ -58,6 +59,7 @@ class MainWindow(QMainWindow):
         self.settings = load_settings(self.settings_path)
         if not self.settings.fullscreen:
             self.setFixedSize(px(820), px(1360))
+        self.configure_database()
         self.store = ReceiptStore(database_path())
         self.articles = ArticleStore(database_path())
         catalog.use_local_store(self.articles)
@@ -80,7 +82,7 @@ class MainWindow(QMainWindow):
         self.qr = PaymentWaitScreen(self.cart, "qr")
         self.receipt = ReceiptScreen(self.cart)
         self.staff = StaffScreen(self.cart)
-        self.settings_screen = SettingsScreen(self.settings)
+        self.settings_screen = SettingsScreen(self.settings, self.store)
         for screen in (self.welcome, self.scan, self.drop, self.payment, self.card, self.qr,
                        self.receipt, self.staff, self.settings_screen):
             self.screens.addWidget(screen)
@@ -112,7 +114,7 @@ class MainWindow(QMainWindow):
         self.settings_screen.restart_requested.connect(self.restart_app)
         self.settings_screen.quit_requested.connect(self.quit_app)
         self.settings_screen.closed.connect(self.close_settings)
-        self.settings_screen.sync_requested.connect(lambda: self.sync_articles(report=True))
+        self.settings_screen.sync_requested.connect(self.sync_now)
 
         shortcut = QShortcut(QKeySequence("Ctrl+Shift+S"), self)
         shortcut.activated.connect(self.show_settings)
@@ -130,6 +132,14 @@ class MainWindow(QMainWindow):
             self.article_timer.start(minutes * 60 * 1000)
         else:
             self.article_timer.stop()
+
+    def configure_database(self, settings: Settings | None = None) -> None:
+        settings = settings or self.settings
+        database.configure(settings.db_server, settings.db_port, settings.db_name, settings.db_user, settings.db_password)
+
+    def sync_now(self, settings: Settings) -> None:
+        self.configure_database(settings)
+        self.sync_articles(report=True)
 
     def sync_articles(self, report: bool = False) -> None:
         def job() -> None:
@@ -322,6 +332,7 @@ class MainWindow(QMainWindow):
         sync_changed = settings.article_sync_minutes != self.settings.article_sync_minutes
         self.settings = settings
         save_settings(settings, self.settings_path)
+        self.configure_database()
         if sync_changed:
             self.start_article_sync()
         if cameras_changed:
@@ -338,6 +349,7 @@ class MainWindow(QMainWindow):
         self.close()
 
     def close_settings(self) -> None:
+        self.configure_database()
         if self.cart.item_count or self.drop.waiting or self.card.locked:
             self.back_to_scan()
         else:

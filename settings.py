@@ -10,6 +10,15 @@ from locations import env_file
 load_dotenv(env_file())
 
 
+def env_server_part(index: int, default: str = "") -> str:
+    """DB_SERVER iz .env može biti "host,port"; index 0 = host, 1 = port."""
+    parts = os.environ.get("DB_SERVER", "").split(",", 1)
+    value = parts[index].strip() if len(parts) > index else ""
+    if index == 1:
+        return value or os.environ.get("DB_PORT", default)
+    return value
+
+
 def cameras_in_env() -> bool:
     return bool(os.environ.get("CAM_SERVER_URL") or (os.environ.get("CAM_A_HOST") and os.environ.get("CAM_B_HOST")))
 
@@ -45,6 +54,11 @@ class Settings:
     match_threshold: float = 0.0
     receipt_return_seconds: int = 20
     article_sync_minutes: int = 30
+    db_server: str = field(default_factory=lambda: env_server_part(0))
+    db_port: str = field(default_factory=lambda: env_server_part(1, "1433"))
+    db_name: str = field(default_factory=lambda: os.environ.get("DB_NAME", ""))
+    db_user: str = field(default_factory=lambda: os.environ.get("DB_USER", ""))
+    db_password: str = field(default_factory=lambda: os.environ.get("DB_PASSWORD", ""))
 
 
 def load_settings(path: Path) -> Settings:

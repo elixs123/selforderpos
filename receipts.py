@@ -1,6 +1,6 @@
 import sqlite3
 from contextlib import closing
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from cart import Cart
@@ -126,6 +126,14 @@ class ReceiptStore:
                 "UPDATE receipts SET gate_used_at = ? WHERE id = ?", (now.isoformat(timespec="seconds"), row["id"])
             )
         return True, "račun pronađen"
+
+    def receipts_on(self, day: date) -> list[dict]:
+        """Svi računi jednog dana, najnoviji prvi."""
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT * FROM receipts WHERE substr(created_at, 1, 10) = ? ORDER BY id DESC", (day.isoformat(),)
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def unprinted(self) -> list[dict]:
         """Plaćeni računi za koje je štampanje fiskalnog računa pokušano i nije uspjelo."""
