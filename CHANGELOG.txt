@@ -129,3 +129,4 @@ IZMJENE - samouslužna kasa
 - Zona B: male mrlje uz artikal (sjena, odsjaj, manje od 25% artikla) se ne broje kao drugi artikal kad YOLOX vidi samo jedan novi artikal (lažno "Odložili ste više artikala").
 - Fiskalni račun: ako štampanje ne uspije, na ekranu računa je dugme "Pokušaj ponovo". U panelu osoblja je lista plaćenih računa koji nisu fiskalno odštampani, s dugmetom "Štampaj" za svaki.
 - Testovi: model za ruke (MediaPipe) se u testovima ne učitava; njegovo brisanje je znalo zaglaviti pytest.
+- Artikli i barkodovi: kasa povlači sve artikle sa centralnog servera u lokalni SQLite (kasa.db, tabele articles i barcodes) pri pokretanju i svakih 30 min (Postavke > Artikli, 0 = isključeno). Dugme "Sinhronizuj artikle odmah" u postavkama. Sken traži lokalno, server pita samo za artikal kojeg nema lokalno; ako server ne radi, kasa radi s lokalnim artiklima. Neuspjela sinhronizacija ne briše lokalne artikle. Artikli bez cijene se preskaču.

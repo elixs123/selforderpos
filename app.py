@@ -25,11 +25,13 @@ if getattr(sys, "frozen", False):
     os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = str(plugins / "platforms")
     os.environ.setdefault("QT_DEBUG_PLUGINS", "1")
 
-from PySide6.QtCore import QProcess, QStandardPaths
+from PySide6.QtCore import QProcess, QStandardPaths, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QApplication, QInputDialog, QLineEdit, QMainWindow, QMessageBox, QStackedWidget
 
+import catalog
 import gate_api
+from articles import ArticleStore
 from cart import Cart
 from fiscal import FiscalOptions, FiscalPrinter, FiscalResult
 from qr_slip import print_gate_slip
@@ -57,6 +59,10 @@ class MainWindow(QMainWindow):
         if not self.settings.fullscreen:
             self.setFixedSize(px(820), px(1360))
         self.store = ReceiptStore(database_path())
+        self.articles = ArticleStore(database_path())
+        catalog.use_local_store(self.articles)
+        self.article_timer = QTimer(self)
+        self.article_timer.timeout.connect(self.sync_articles)
         self.gate_server = self.start_gate_api()
         self.cart = Cart()
         self.guard = None
@@ -106,6 +112,7 @@ class MainWindow(QMainWindow):
         self.settings_screen.restart_requested.connect(self.restart_app)
         self.settings_screen.quit_requested.connect(self.quit_app)
         self.settings_screen.closed.connect(self.close_settings)
+        self.settings_screen.sync_requested.connect(lambda: self.sync_articles(report=True))
 
         shortcut = QShortcut(QKeySequence("Ctrl+Shift+S"), self)
         shortcut.activated.connect(self.show_settings)
@@ -114,6 +121,26 @@ class MainWindow(QMainWindow):
         diagnostics_shortcut = QShortcut(QKeySequence("Ctrl+Shift+D"), self)
         diagnostics_shortcut.activated.connect(self.request_diagnostics)
         self.start_cameras()
+        self.start_article_sync()
+        QTimer.singleShot(2000, self.sync_articles)
+
+    def start_article_sync(self) -> None:
+        minutes = self.settings.article_sync_minutes
+        if minutes > 0:
+            self.article_timer.start(minutes * 60 * 1000)
+        else:
+            self.article_timer.stop()
+
+    def sync_articles(self, report: bool = False) -> None:
+        def job() -> None:
+            result = self.articles.sync()
+            if report:
+                text = result.message
+                if result.ok:
+                    text += f" {result.article_count} artikala, {result.barcode_count} barkodova."
+                self.settings_screen.test_finished.emit(text)
+
+        threading.Thread(target=job, daemon=True).start()
 
     def request_quit(self) -> None:
         if self.settings.demo_payments:
@@ -292,8 +319,11 @@ class MainWindow(QMainWindow):
             getattr(settings, name) != getattr(self.settings, name)
             for name in ("cameras_enabled", "camera_a_host", "camera_a2_host", "camera_b_host", "camera_b2_host", "camera_c_host", "camera_c2_host", "camera_channel", "camera_model", "match_threshold")
         )
+        sync_changed = settings.article_sync_minutes != self.settings.article_sync_minutes
         self.settings = settings
         save_settings(settings, self.settings_path)
+        if sync_changed:
+            self.start_article_sync()
         if cameras_changed:
             self.start_cameras()
 

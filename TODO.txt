@@ -72,7 +72,7 @@ K4. Cijene su float (cart.py, receipts.py). Zbir može biti 12.299999; iznos za
 
 OZBILJNO
 
-O1. Sken blokira ekran: find_by_barcode otvara novu MSSQL vezu za svaki sken na
+O1. DJELIMIČNO (sken ide iz lokalnog SQLite, server samo za nepoznat barkod): Sken blokira ekran: find_by_barcode otvara novu MSSQL vezu za svaki sken na
     UI niti (timeout 5 s); guard.scan() na remote serveru čeka do 8 s.
     -> Stalna veza ili lokalni keš artikala + upit u posebnoj niti.
 
@@ -103,7 +103,7 @@ Q5. print() u kasa.log bez rotacije -> logging + RotatingFileHandler.
 DODATI (po prioritetu)
 
 D1. GOTOVO: Ponovna fiskalizacija i pregled neuspjelih računa u panelu osoblja (vidi K2).
-D2. Lokalni keš artikala da kasa radi kad MSSQL kratko padne.
+D2. GOTOVO: Lokalni keš artikala da kasa radi kad MSSQL kratko padne (articles.py, svakih 30 min).
 D3. Slanje računa na server (synced) i bekap kasa.db.
 D4. Dnevni izvještaj (Z-izvještaj) i storno uz PIN.
 D5. Timeout neaktivnosti: kupac ode s punom korpom -> "Jeste li još tu?" -> početak.

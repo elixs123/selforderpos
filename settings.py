@@ -44,6 +44,7 @@ class Settings:
     camera_model: str = "clip"
     match_threshold: float = 0.0
     receipt_return_seconds: int = 20
+    article_sync_minutes: int = 30
 
 
 def load_settings(path: Path) -> Settings:

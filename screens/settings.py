@@ -30,6 +30,7 @@ from styles import BACKGROUND, BORDER, FONT, GREEN, MUTED_TEXT, TEXT, px
 
 SECTIONS = [
     ("Kasa", ["register_id", "fullscreen", "demo_payments", "receipt_return_seconds"]),
+    ("Artikli i barkodovi (centralni server)", ["article_sync_minutes"]),
     ("Kartični terminal (PrintecECR)", ["terminal_url", "terminal_api_key", "terminal_print_slip", "terminal_slip_copies"]),
     ("Fiskalni printer (Tring)", ["fiscal_enabled", "fiscal_url", "fiscal_unit", "fiscal_tax_label", "fiscal_card_payment", "fiscal_qr_payment"]),
     ("QR slip za vrata (test)", ["qr_slip_enabled", "qr_slip_printer", "qr_slip_ibfm"]),
@@ -41,6 +42,7 @@ LABELS = {
     "fullscreen": "Cijeli ekran (nakon ponovnog pokretanja)",
     "demo_payments": "Demo plaćanje (bez terminala)",
     "receipt_return_seconds": "Povratak na početak nakon računa (s)",
+    "article_sync_minutes": "Sinhronizacija artikala svakih (min, 0 = isključeno)",
     "terminal_url": "Adresa servisa",
     "terminal_api_key": "API ključ",
     "terminal_print_slip": "Štampaj slip kartice",
@@ -76,6 +78,7 @@ class SettingsScreen(QWidget):
     saved = Signal(object)
     restart_requested = Signal(object)
     quit_requested = Signal(object)
+    sync_requested = Signal()
     test_finished = Signal(str)
 
     def __init__(self, settings: Settings) -> None:
@@ -150,6 +153,9 @@ class SettingsScreen(QWidget):
         printer_test.clicked.connect(self._test_printer)
         tests.addWidget(printer_test)
         column.addLayout(tests)
+        sync_now = self._button("Sinhronizuj artikle odmah", primary=False)
+        sync_now.clicked.connect(self._sync_now)
+        column.addWidget(sync_now)
         slip_test = self._button("Testiraj QR slip", primary=False)
         slip_test.clicked.connect(self._test_qr_slip)
         column.addWidget(slip_test)
@@ -267,6 +273,10 @@ class SettingsScreen(QWidget):
     def _save_and_quit(self) -> None:
         self.settings = self.current()
         self.quit_requested.emit(self.settings)
+
+    def _sync_now(self) -> None:
+        self.status.setText("Povlačim artikle sa servera...")
+        self.sync_requested.emit()
 
     def _run_test(self, job) -> None:
         self.status.setText("Provjeravam...")
