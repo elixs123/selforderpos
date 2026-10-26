@@ -35,7 +35,7 @@ SECTIONS = [
     ("Kartični terminal (PrintecECR)", ["terminal_url", "terminal_api_key", "terminal_print_slip", "terminal_slip_copies"]),
     ("Fiskalni printer (Tring)", ["fiscal_enabled", "fiscal_url", "fiscal_unit", "fiscal_tax_label", "fiscal_card_payment", "fiscal_qr_payment"]),
     ("QR slip za vrata (test)", ["qr_slip_enabled", "qr_slip_printer", "qr_slip_ibfm"]),
-    ("Kamere", ["cameras_enabled", "allow_without_cameras", "vision_server_url", "camera_a_host", "camera_a2_host", "camera_b_host", "camera_b2_host", "camera_c_host", "camera_c2_host", "camera_channel", "camera_model", "match_threshold"]),
+    ("Kamere", ["cameras_enabled", "allow_without_cameras", "yolox_enabled", "vision_server_url", "camera_a_host", "camera_a2_host", "camera_b_host", "camera_b2_host", "camera_c_host", "camera_c2_host", "camera_channel", "camera_model", "match_threshold"]),
 ]
 
 LABELS = {
@@ -64,6 +64,7 @@ LABELS = {
     "qr_slip_printer": "Ime Windows printera za slip (prazno = zadani printer)",
     "qr_slip_ibfm": "IBFM u QR kodu",
     "cameras_enabled": "Kamere uključene",
+    "yolox_enabled": "Brojanje artikala (YOLOX)",
     "allow_without_cameras": "Dozvoli rad kase kad kamere ne rade (bez provjere kamerama)",
     "vision_server_url": "Adresa servera kamera (prazno = kamere na ovom računaru)",
     "camera_a_host": "IP kamere A (korpa)",

@@ -19,6 +19,10 @@ def env_server_part(index: int, default: str = "") -> str:
     return value
 
 
+def counter_in_env() -> bool:
+    return os.environ.get("CAM_COUNTER", "yolox").lower() not in ("", "off", "0", "ne")
+
+
 def cameras_in_env() -> bool:
     return bool(os.environ.get("CAM_SERVER_URL") or (os.environ.get("CAM_A_HOST") and os.environ.get("CAM_B_HOST")))
 
@@ -43,6 +47,7 @@ class Settings:
     qr_slip_ibfm: str = "AM040250"
     cameras_enabled: bool = field(default_factory=cameras_in_env)
     allow_without_cameras: bool = False
+    yolox_enabled: bool = field(default_factory=counter_in_env)
     vision_server_url: str = field(default_factory=lambda: os.environ.get("CAM_SERVER_URL", ""))
     camera_a_host: str = field(default_factory=lambda: os.environ.get("CAM_A_HOST", ""))
     camera_a2_host: str = field(default_factory=lambda: os.environ.get("CAM_A2_HOST", ""))

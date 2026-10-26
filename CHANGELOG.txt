@@ -142,3 +142,4 @@ IZMJENE - samouslužna kasa
 - Testovi: svih 200 prolazi (popravljeni zastarjeli testovi: JPEG tolerancija, zamjena za poređenje slika).
 - Zona A: artikli se uzimaju jedan po jedan. Ako kupac uzme više od jednog artikla, sken se odbija i stoji poruka "Uzeli ste više od jednog artikla iz zone A. Vratite višak u zonu A i uzimajte artikle jedan po jedan." Kad vrati višak, može skenirati.
 - YOLOX je uvijek uključen i služi samo za brojanje artikala (CAM_COUNTER=off više ne postoji); prepoznavanje artikla rade drugi modeli (CAM_MODEL). Ako se YOLOX ne učita ili nijedna kamera ne broji zonu A ili B (CAM_COUNT_CAMERAS), kasa se zaključa: "Kamere nisu dostupne" s razlogom.
+- YOLOX se uključuje/isključuje u Postavke > Kamere > "Brojanje artikala (YOLOX)" (zadano iz CAM_COUNTER u .env, inače uključeno). Uključen a ne radi -> kasa zaključana; isključen -> kasa broji starom metodom bez zaključavanja.

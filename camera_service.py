@@ -55,6 +55,7 @@ def start_remote_guard(settings: Settings):
 
 def start_guard(settings: Settings):
     os.environ["CAM_MODEL"] = settings.camera_model
+    os.environ["CAM_COUNTER"] = "yolox" if settings.yolox_enabled else "off"
     if settings.match_threshold > 0:
         os.environ["CAM_MATCH_THRESHOLD"] = str(settings.match_threshold)
     elif ENV_THRESHOLD:

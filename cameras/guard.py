@@ -218,7 +218,9 @@ class CheckoutGuard:
 
     @property
     def counter_problem(self) -> str:
-        """Zašto YOLOX ne može brojati artikle (prazno = broji)."""
+        """Zašto YOLOX ne može brojati artikle (prazno = broji, ili ga je administrator isključio u postavkama)."""
+        if not counter_module.enabled():
+            return ""
         if counter_module.failed():
             return "Brojač artikala (YOLOX) se nije učitao."
         if not self.a_ledgers:
