@@ -106,4 +106,4 @@ D1. GOTOVO: Ponovna fiskalizacija i pregled neuspjelih računa u panelu osoblja 
 D2. GOTOVO: Lokalni keš artikala da kasa radi kad MSSQL kratko padne (articles.py, svakih 30 min).
 D3. Slanje računa na server (synced) i bekap kasa.db.
 D4. Dnevni izvještaj (Z-izvještaj) i storno uz PIN.
-D5. Timeout neaktivnosti: kupac ode s punom korpom -> "Jeste li još tu?" -> početak.
+D5. GOTOVO (Postavke > Kasa, zadano 120 s + 30 s odbrojavanje): Timeout neaktivnosti: kupac ode s punom korpom -> "Jeste li još tu?" -> početak.

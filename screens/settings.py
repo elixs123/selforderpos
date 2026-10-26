@@ -30,7 +30,7 @@ from staff_auth import check_admin_pin
 from styles import BACKGROUND, BORDER, FONT, GREEN, MUTED_TEXT, TEXT, px
 
 SECTIONS = [
-    ("Kasa", ["register_id", "fullscreen", "demo_payments", "receipt_return_seconds"]),
+    ("Kasa", ["register_id", "fullscreen", "demo_payments", "receipt_return_seconds", "idle_seconds"]),
     ("Artikli i barkodovi (centralni server)", ["db_server", "db_port", "db_name", "db_user", "db_password", "article_sync_minutes"]),
     ("Kartični terminal (PrintecECR)", ["terminal_url", "terminal_api_key", "terminal_print_slip", "terminal_slip_copies"]),
     ("Fiskalni printer (Tring)", ["fiscal_enabled", "fiscal_url", "fiscal_unit", "fiscal_tax_label", "fiscal_card_payment", "fiscal_qr_payment"]),
@@ -43,6 +43,7 @@ LABELS = {
     "fullscreen": "Cijeli ekran (nakon ponovnog pokretanja)",
     "demo_payments": "Demo plaćanje (bez terminala)",
     "receipt_return_seconds": "Povratak na početak nakon računa (s)",
+    "idle_seconds": "Pitaj 'Jeste li još tu?' poslije neaktivnosti (s, 0 = isključeno)",
     "article_sync_minutes": "Sinhronizacija artikala svakih (min, 0 = isključeno)",
     "db_server": "Adresa servera (IP ili ime)",
     "db_port": "Port",

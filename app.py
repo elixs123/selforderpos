@@ -41,6 +41,7 @@ from qr_slip import print_gate_slip
 from receipts import ReceiptStore
 from screens.cameras_down import CamerasDownScreen
 from screens.drop import DropScreen
+from screens.idle import ActivityFilter, IdleOverlay
 from screens.payment import PaymentScreen
 from screens.receipt import ReceiptScreen
 from screens.scan import ScanScreen, payment_allowed
@@ -57,6 +58,7 @@ from styles import apply_light_theme, px
 
 CAMERAS_DOWN_SECONDS = 10
 EXIT_WATCH_SECONDS = 120
+IDLE_COUNTDOWN_SECONDS = 30
 
 
 class MainWindow(QMainWindow):
@@ -131,6 +133,12 @@ class MainWindow(QMainWindow):
         self.camera_timer = QTimer(self)
         self.camera_timer.timeout.connect(self.check_cameras)
         self.camera_timer.timeout.connect(self.check_exit)
+        self.camera_timer.timeout.connect(self.check_idle)
+        self.last_activity = time.monotonic()
+        self.activity_filter = ActivityFilter(self.mark_activity)
+        QApplication.instance().installEventFilter(self.activity_filter)
+        self.idle_overlay = IdleOverlay(self)
+        self.idle_overlay.stay.connect(self.mark_activity)
         self.unpaid.pay_requested.connect(self.pay_for_unpaid)
         self.unpaid.staff_requested.connect(self.show_staff)
         self.camera_timer.start(1000)
@@ -197,6 +205,34 @@ class MainWindow(QMainWindow):
         self.unpaid.show_item(watch["guess"])
         if self.screens.currentWidget() in (self.welcome, self.receipt):
             self.screens.setCurrentWidget(self.unpaid)
+
+    def mark_activity(self) -> None:
+        self.last_activity = time.monotonic()
+
+    def check_idle(self) -> None:
+        """Kupac ode usred kupovine: poslije idle_seconds pitaj 'Jeste li još tu?', poslije odbrojavanja poništi kupovinu."""
+        limit = self.settings.idle_seconds
+        current = self.screens.currentWidget()
+        if limit <= 0 or current not in (self.scan, self.drop, self.payment):
+            self.idle_overlay.hide()
+            return
+        if getattr(self.guard, "busy", False):
+            self.mark_activity()
+        idle = time.monotonic() - self.last_activity
+        if idle < limit:
+            self.idle_overlay.hide()
+            return
+        if not self.cart.item_count and not self.drop.waiting:
+            print("Neaktivnost: prazna korpa, povratak na početak")
+            self.cancel_shopping()
+            return
+        left = round(limit + IDLE_COUNTDOWN_SECONDS - idle)
+        if left <= 0:
+            self.idle_overlay.hide()
+            print(f"Neaktivnost: kupovina poništena ({self.cart.item_count} artikala u korpi)")
+            self.cancel_shopping()
+            return
+        self.idle_overlay.show_countdown(left)
 
     def pay_for_unpaid(self) -> None:
         """Kupac plaća uzeti artikal u novoj kupovini; stari račun ostaje blokiran, vrata otvara novi račun."""

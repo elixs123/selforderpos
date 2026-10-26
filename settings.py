@@ -54,6 +54,7 @@ class Settings:
     camera_model: str = "clip"
     match_threshold: float = 0.0
     receipt_return_seconds: int = 20
+    idle_seconds: int = 120
     article_sync_minutes: int = 30
     db_server: str = field(default_factory=lambda: env_server_part(0))
     db_port: str = field(default_factory=lambda: env_server_part(1, "1433"))
