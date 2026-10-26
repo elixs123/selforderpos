@@ -66,7 +66,7 @@ K3. GOTOVO: Ctrl+Shift+Q gasi kasu bez PIN-a, Ctrl+Shift+D otvara dijagnostiku (
     OSTAJE: dugme "Zatvori aplikaciju (test)" na ekranu skeniranja (screens/scan.py)
     gasi kasu bez PIN-a; namjerno ostavljeno zasad, ukloniti prije prave upotrebe.
 
-K4. Cijene su float (cart.py, receipts.py). Zbir može biti 12.299999; iznos za
+K4. GOTOVO (korpa računa u feninzima, cijena zaokružena na fening kao na fiskalnom): Cijene su float (cart.py, receipts.py). Zbir može biti 12.299999; iznos za
     terminal (amount_minor) i iznos u fiskalnom XML-u mogu se razlikovati za 1 fening.
     -> Sve u feninzima (int) ili Decimal, KM samo za prikaz i XML.
 

@@ -5,7 +5,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLay
 
 from cart import Cart
 from formatting import format_amount
-from printec import APPROVED, DECLINED, FAILED, PENDING, RETRY, UNREACHABLE, PrintecClient, amount_minor
+from printec import APPROVED, DECLINED, FAILED, PENDING, RETRY, UNREACHABLE, PrintecClient
 from screens.components import TopBar
 from styles import (
     BACKGROUND,
@@ -97,7 +97,7 @@ class PaymentWaitScreen(QWidget):
         self.in_progress = True
         self._show_state("Čekam karticu…", "Pratite poruke na terminalu. Za odustajanje pritisnite Cancel na terminalu.", cancel=False, retry=False)
         client = PrintecClient(self.settings.terminal_url, self.settings.terminal_api_key)
-        invoice_id, amount = self.invoice_id, amount_minor(self.cart.total)
+        invoice_id, amount = self.invoice_id, self.cart.total_minor
         print_slip, copies = self.settings.terminal_print_slip, self.settings.terminal_slip_copies
 
         def job() -> None:

@@ -1,5 +1,6 @@
 from contextlib import closing
 from dataclasses import dataclass
+from decimal import ROUND_HALF_UP, Decimal
 
 from database import DatabaseError, connect
 
@@ -10,6 +11,11 @@ class Product:
     barcode: str
     name: str
     price: float
+
+    @property
+    def price_minor(self) -> int:
+        """Cijena u feninzima, zaokružena kao na fiskalnom računu (1,785 -> 179)."""
+        return int((Decimal(str(self.price)) * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
 
 
 QUERY = """

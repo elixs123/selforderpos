@@ -9,8 +9,12 @@ class CartItem:
     quantity: int
 
     @property
+    def amount_minor(self) -> int:
+        return self.product.price_minor * self.quantity
+
+    @property
     def amount(self) -> float:
-        return self.product.price * self.quantity
+        return self.amount_minor / 100
 
 
 class Cart:
@@ -35,8 +39,13 @@ class Cart:
         self._items.pop(code, None)
 
     @property
+    def total_minor(self) -> int:
+        """Ukupno u feninzima; iz ovoga se računaju i iznos za terminal i iznos na fiskalnom računu."""
+        return sum(item.amount_minor for item in self._items.values())
+
+    @property
     def total(self) -> float:
-        return sum(item.amount for item in self._items.values())
+        return self.total_minor / 100
 
     @property
     def item_count(self) -> int:
@@ -52,7 +61,7 @@ class Cart:
                     "code": item.product.code,
                     "barcode": item.product.barcode,
                     "name": item.product.name,
-                    "price": item.product.price,
+                    "price": item.product.price_minor / 100,
                     "quantity": item.quantity,
                     "amount": item.amount,
                 }
