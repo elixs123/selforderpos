@@ -164,7 +164,7 @@ def test_count_loop_flags_extra_item_after_accept(monkeypatch, tmp_path):
     for _ in range(2):
         guard.count_once()
     assert guard.alert
-    assert "Vratite ga u zonu A" in guard.message
+    assert "Vratite višak u zonu A" in guard.message
     guard._takes = []
     guard.trackers["A2"].occupancy = 0.5
     assert guard.scan("1002", None, "Drugi") is False

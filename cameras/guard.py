@@ -30,7 +30,7 @@ HAND_MAX_AGE = 1.5
 CROP_PADDING = 10
 MULTIPLE_PROBLEM = "odloženo je više artikala"
 MULTIPLE_MESSAGE = "Odložili ste više artikala. Višak vratite u zonu A, a u zoni B ostavite samo skenirani artikal."
-UNSCANNED_MESSAGE = "Uzeli ste još jedan artikal iz zone A. Vratite ga u zonu A, pa ga uzmite i skenirajte."
+UNSCANNED_MESSAGE = "Uzeli ste više od jednog artikla iz zone A. Vratite višak u zonu A i uzimajte artikle jedan po jedan."
 NOT_TAKEN_MESSAGE = "Taj artikal nije uzet iz zone A. Ako ste ga već skenirali, ne skenirajte ga ponovo."
 PLACED_UNSCANNED_MESSAGE = "U zonu B je odložen artikal koji nije skeniran. Uklonite ga iz zone B pa ga skenirajte."
 HELD_UNSCANNED_MESSAGE = "Imate artikal u ruci koji nije skeniran. Stavite ga u zonu A, pa ga skenirajte. Do tada ne možete nastaviti."
@@ -761,6 +761,12 @@ class CheckoutGuard:
                 return False
             if not any(self.latest(name) is not None for name in self.cameras_b):
                 self._finish("rejected", "camera_b", "Kamera zone B nema sliku. Pozovite osoblje.")
+                return False
+            if self.unscanned_taken > 1:
+                # Iz zone A se uzima jedan po jedan: dok kupac drži više neskeniranih, ne zna se koji je skenirao.
+                self.log("zona-A", f"sken odbijen: iz zone A je uzeto {self.unscanned_taken} artikala odjednom")
+                self._finish("rejected", "multiple_taken", UNSCANNED_MESSAGE)
+                self._set("taken", UNSCANNED_MESSAGE)
                 return False
             self.scores = "-"
             self._warm_references(product_code)

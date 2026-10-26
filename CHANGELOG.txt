@@ -140,3 +140,4 @@ IZMJENE - samouslužna kasa
 - Zona A/B: uklonjeno "učenje" (artikal bez 3 slike iz zone A se prihvatao ako liči na skenirani). Sad ono što je uzeto iz zone A uvijek mora odgovarati odloženom u zoni B; novi artikal osoblje potvrdi dugmetom "Nauči artikal" (pamti sliku iz zone A i slike iz zone B).
 - Zona A: dugme osoblja "Poništi neskenirana uzimanja" nije radilo za artikle koji ostanu u zoni A (brojač je poslije reseta prvo očitanje shvatao kao praznu zonu i zaboravljao poništavanje).
 - Testovi: svih 200 prolazi (popravljeni zastarjeli testovi: JPEG tolerancija, zamjena za poređenje slika).
+- Zona A: artikli se uzimaju jedan po jedan. Ako kupac uzme više od jednog artikla, sken se odbija i stoji poruka "Uzeli ste više od jednog artikla iz zone A. Vratite višak u zonu A i uzimajte artikle jedan po jedan." Kad vrati višak, može skenirati.

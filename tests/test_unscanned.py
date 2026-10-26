@@ -72,19 +72,20 @@ def test_same_item_seen_by_two_cameras_is_one(monkeypatch, tmp_path):
     assert guard.state == "taken"
 
 
-def test_two_takes_need_two_scans(monkeypatch, tmp_path):
+def test_two_takes_are_refused_until_one_is_put_back(monkeypatch, tmp_path):
     guard = make_guard(monkeypatch, tmp_path)
     take(guard, "A", 100.0)
     take(guard, "A2", 100.3)
     take(guard, "A", 110.0)
     assert guard.unscanned == 2
     assert guard.message == UNSCANNED_MESSAGE
-    assert guard.scan("1001", None, "Test") is True
-    accept(guard, index=0)
-    assert guard.outcome.kind == "accepted"
-    assert guard.unscanned == 1
+    assert guard.scan("1001", None, "Test") is False
+    assert guard.outcome.kind == "rejected" and guard.outcome.verdict == "multiple_taken"
     assert guard.state == "taken" and guard.message == UNSCANNED_MESSAGE
-    assert guard.scan("1002", None, "Test 2") is True
+    assert guard.unscanned == 2
+    guard._on_zone_a_event("A", BasketEvent("added", None, 0.1), 113.0, sync=False)
+    assert guard.unscanned == 1
+    assert guard.scan("1001", None, "Test") is True
     accept(guard, index=0)
     assert guard.unscanned == 0
     assert guard.state == "accepted"
