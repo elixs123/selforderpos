@@ -22,9 +22,7 @@ def test_iou_and_unmatched():
     assert len(counter.unmatched([first, other], [same])) == 1
 
 
-def test_counter_can_be_switched_off(monkeypatch):
-    monkeypatch.setenv("CAM_COUNTER", "off")
-    assert not counter.enabled()
+def test_counting_cameras_come_from_env(monkeypatch):
     monkeypatch.setenv("CAM_COUNT_CAMERAS", "A2, B2")
     assert counter.counting_cameras() == {"A2", "B2"}
 
@@ -305,3 +303,16 @@ def test_product_without_references_is_rejected_when_it_looks_like_another_produ
     verdict, problems, _, _ = guard._judge([placed], 0.1, [placed], [None], "NEW", 1)
     assert verdict == "mismatch"
     assert "liči na drugi artikal (JAMNICA)" in problems
+
+
+def test_guard_reports_when_yolox_cannot_count(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAMPLES_DIR", str(tmp_path))
+    monkeypatch.setenv("CAM_COUNT_CAMERAS", "A2,B2")
+    guard = CheckoutGuard({"A2": ControlledReader(), "B2": ControlledReader()})
+    monkeypatch.setattr(counter, "_failed", False)
+    assert guard.counter_problem == ""
+    monkeypatch.setattr(counter, "_failed", True)
+    assert "YOLOX" in guard.counter_problem
+    monkeypatch.setattr(counter, "_failed", False)
+    monkeypatch.setenv("CAM_COUNT_CAMERAS", "A2")
+    assert "zonu B" in CheckoutGuard({"A2": ControlledReader(), "B2": ControlledReader()}).counter_problem

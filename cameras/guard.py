@@ -16,6 +16,7 @@ from holding import HeldItemDetector, HoldResult
 from reader import CameraReader
 from samples import SampleStore
 from similarity import Signature, compare, match_threshold, method_name, signature
+import counter as counter_module
 from counter import ZoneALedger, ZoneBLedger, counting_cameras, get_counter, unmatched
 from watcher import BasketTracker, ZoneWatcher, looks_like_item, main_box, removed_items, separate_items
 from zones import crop, load_zones, zones_changed_at
@@ -214,6 +215,17 @@ class CheckoutGuard:
     @property
     def zone_b_armed(self) -> bool:
         return any(watcher.armed for watcher in self.watchers.values())
+
+    @property
+    def counter_problem(self) -> str:
+        """Zašto YOLOX ne može brojati artikle (prazno = broji)."""
+        if counter_module.failed():
+            return "Brojač artikala (YOLOX) se nije učitao."
+        if not self.a_ledgers:
+            return "Nijedna kamera ne broji zonu A (CAM_COUNT_CAMERAS)."
+        if not self.b_ledgers:
+            return "Nijedna kamera ne broji zonu B (CAM_COUNT_CAMERAS)."
+        return ""
 
     @property
     def unscanned(self) -> int:

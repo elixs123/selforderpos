@@ -77,3 +77,9 @@ def test_admin_setting_keeps_register_working(monkeypatch):
     app_module.MainWindow.check_cameras(window)
     assert window.screens.currentWidget() is window.welcome
     assert window.scan.allow_without_cameras is True
+
+
+def test_problem_when_yolox_cannot_count():
+    guard = local_guard(A2="uživo", B2="uživo")
+    guard.counter_problem = "Brojač artikala (YOLOX) se nije učitao."
+    assert "YOLOX" in cameras_problem(guard, True)

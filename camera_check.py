@@ -19,4 +19,4 @@ def cameras_problem(guard, cameras_enabled: bool) -> str:
     down = [f"{name} ({status})" for name, status in camera_statuses(guard).items() if status != LIVE]
     if down:
         return "Kamera bez slike: " + ", ".join(down)
-    return ""
+    return getattr(guard, "counter_problem", "")

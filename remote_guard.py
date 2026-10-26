@@ -50,6 +50,7 @@ class RemoteGuard:
         self.online = False
         self.camera_statuses: dict[str, str] = {}
         self.unscanned_guess = ""
+        self.counter_problem = ""
         self._boot: str | None = None
         self._offset = 0
         self._number = 0
@@ -150,6 +151,7 @@ class RemoteGuard:
             self.held_message = str(data.get("held") or "")
             self.checking = bool(data.get("checking"))
             self.unscanned_guess = str(data.get("guess") or "")
+            self.counter_problem = str(data.get("counter_problem") or "")
             if "cameras" in data:
                 self.camera_statuses = {str(name): str((info or {}).get("status", "")) for name, info in (data.get("cameras") or {}).items()}
             raw = data.get("outcome")

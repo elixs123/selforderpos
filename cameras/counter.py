@@ -16,10 +16,6 @@ IGNORED_CLASSES = {0, 56, 57, 58, 59, 60, 61, 62, 63, 66, 68, 69, 70, 71, 72}
 DEFAULT_CAMERAS = "A2,B2"
 
 
-def enabled() -> bool:
-    return os.environ.get("CAM_COUNTER", "yolox").lower() not in ("", "off", "0", "ne")
-
-
 def counting_cameras() -> set[str]:
     return {name.strip() for name in os.environ.get("CAM_COUNT_CAMERAS", DEFAULT_CAMERAS).split(",") if name.strip()}
 
@@ -96,9 +92,15 @@ _counter = None
 _failed = False
 
 
+def failed() -> bool:
+    """YOLOX se nije mogao učitati; bez njega kasa ne smije raditi (brojanje artikala je obavezno)."""
+    return _failed
+
+
 def get_counter() -> ObjectCounter | None:
+    """YOLOX je uvijek uključen i služi samo za brojanje artikala; prepoznavanje rade drugi modeli (similarity)."""
     global _counter, _failed
-    if _counter is None and not _failed and enabled():
+    if _counter is None and not _failed:
         try:
             _counter = ObjectCounter()
         except Exception as error:

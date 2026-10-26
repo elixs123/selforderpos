@@ -141,3 +141,4 @@ IZMJENE - samouslužna kasa
 - Zona A: dugme osoblja "Poništi neskenirana uzimanja" nije radilo za artikle koji ostanu u zoni A (brojač je poslije reseta prvo očitanje shvatao kao praznu zonu i zaboravljao poništavanje).
 - Testovi: svih 200 prolazi (popravljeni zastarjeli testovi: JPEG tolerancija, zamjena za poređenje slika).
 - Zona A: artikli se uzimaju jedan po jedan. Ako kupac uzme više od jednog artikla, sken se odbija i stoji poruka "Uzeli ste više od jednog artikla iz zone A. Vratite višak u zonu A i uzimajte artikle jedan po jedan." Kad vrati višak, može skenirati.
+- YOLOX je uvijek uključen i služi samo za brojanje artikala (CAM_COUNTER=off više ne postoji); prepoznavanje artikla rade drugi modeli (CAM_MODEL). Ako se YOLOX ne učita ili nijedna kamera ne broji zonu A ili B (CAM_COUNT_CAMERAS), kasa se zaključa: "Kamere nisu dostupne" s razlogom.
