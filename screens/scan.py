@@ -45,6 +45,16 @@ from styles import (
 ALERT_SECONDS = 4.0
 
 
+def payment_allowed(guard, allow_without_cameras: bool = False) -> bool:
+    """Plaćanje je zaključano dok kamere vide neskeniran artikal, i dok server kamera ne radi (osim ako je u postavkama dozvoljen rad bez kamera)."""
+    if guard is None:
+        return True
+    if getattr(guard, "state", "") == "offline":
+        return allow_without_cameras
+    return (getattr(guard, "unscanned", 0) == 0 and getattr(guard, "zone_a_left", 0) == 0
+            and not getattr(guard, "checking", False) and not getattr(guard, "held_message", ""))
+
+
 class ScanScreen(QWidget):
     pay_requested = Signal()
     staff_requested = Signal()
@@ -55,6 +65,7 @@ class ScanScreen(QWidget):
         super().__init__()
         self.cart = cart
         self.guard = None
+        self.allow_without_cameras = False
         self.guide_state = ""
         self._alert_until = 0.0
         self.guide_timer = QTimer(self)
@@ -402,8 +413,7 @@ class ScanScreen(QWidget):
         self._show_notice(message, success=False)
 
     def _pay_allowed(self) -> bool:
-        return self.guard is None or (getattr(self.guard, "unscanned", 0) == 0 and getattr(self.guard, "zone_a_left", 0) == 0
-                                      and not getattr(self.guard, "checking", False) and not getattr(self.guard, "held_message", ""))
+        return payment_allowed(self.guard, self.allow_without_cameras)
 
     def _refresh(self) -> None:
         data = self.cart.to_dict()

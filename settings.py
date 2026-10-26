@@ -42,6 +42,7 @@ class Settings:
     qr_slip_printer: str = ""
     qr_slip_ibfm: str = "AM040250"
     cameras_enabled: bool = field(default_factory=cameras_in_env)
+    allow_without_cameras: bool = False
     vision_server_url: str = field(default_factory=lambda: os.environ.get("CAM_SERVER_URL", ""))
     camera_a_host: str = field(default_factory=lambda: os.environ.get("CAM_A_HOST", ""))
     camera_a2_host: str = field(default_factory=lambda: os.environ.get("CAM_A2_HOST", ""))

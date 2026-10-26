@@ -80,7 +80,7 @@ O2. catalog.py upit: "acCode = ? OR acIdent = ?" + fetchone() -> više barkodova
     ili dupli kod daju nasumičan red; nema filtera za neaktivne artikle;
     anSalePrice NULL -> float(None) sruši sken.
 
-O3. Kad server kamera padne, remote_guard.py (~168) postavi unscanned = 0 i
+O3. GOTOVO (kamere ne rade > 10 s -> kasa zaključana, ekran 'Kamere nisu dostupne'; rad bez kamera dozvoljava samo administrator u Postavkama): Kad server kamera padne, remote_guard.py (~168) postavi unscanned = 0 i
     zone_a_left = 0 -> plaćanje se otključa. Izvučen kabl = neskenirano oprošteno.
     -> Offline mora zaključati plaćanje.
 

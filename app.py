@@ -1,6 +1,7 @@
 import os
 import sys
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -33,14 +34,16 @@ import catalog
 import database
 import gate_api
 from articles import ArticleStore
+from camera_check import cameras_problem
 from cart import Cart
 from fiscal import FiscalOptions, FiscalPrinter, FiscalResult
 from qr_slip import print_gate_slip
 from receipts import ReceiptStore
+from screens.cameras_down import CamerasDownScreen
 from screens.drop import DropScreen
 from screens.payment import PaymentScreen
 from screens.receipt import ReceiptScreen
-from screens.scan import ScanScreen
+from screens.scan import ScanScreen, payment_allowed
 from screens.settings import SettingsScreen
 from screens.staff import StaffScreen
 from screens.terminal import PaymentWaitScreen
@@ -49,6 +52,9 @@ from settings import Settings, load_settings, save_settings
 from staff_auth import StaffPinMissing, check_admin_pin
 import styles
 from styles import apply_light_theme, px
+
+
+CAMERAS_DOWN_SECONDS = 10
 
 
 class MainWindow(QMainWindow):
@@ -83,8 +89,9 @@ class MainWindow(QMainWindow):
         self.receipt = ReceiptScreen(self.cart)
         self.staff = StaffScreen(self.cart)
         self.settings_screen = SettingsScreen(self.settings, self.store)
+        self.cameras_down = CamerasDownScreen()
         for screen in (self.welcome, self.scan, self.drop, self.payment, self.card, self.qr,
-                       self.receipt, self.staff, self.settings_screen):
+                       self.receipt, self.staff, self.settings_screen, self.cameras_down):
             self.screens.addWidget(screen)
 
         self.welcome.started.connect(self.start_shopping)
@@ -115,6 +122,11 @@ class MainWindow(QMainWindow):
         self.settings_screen.quit_requested.connect(self.quit_app)
         self.settings_screen.closed.connect(self.close_settings)
         self.settings_screen.sync_requested.connect(self.sync_now)
+        self.cameras_down.settings_requested.connect(self.show_settings)
+        self.cameras_down_since: float | None = None
+        self.camera_timer = QTimer(self)
+        self.camera_timer.timeout.connect(self.check_cameras)
+        self.camera_timer.start(1000)
 
         shortcut = QShortcut(QKeySequence("Ctrl+Shift+S"), self)
         shortcut.activated.connect(self.show_settings)
@@ -125,6 +137,25 @@ class MainWindow(QMainWindow):
         self.start_cameras()
         self.start_article_sync()
         QTimer.singleShot(2000, self.sync_articles)
+
+    def check_cameras(self) -> None:
+        """Kad kamere ne rade duže od CAMERAS_DOWN_SECONDS, kasa se zaključa dok ih administrator ne dozvoli isključiti."""
+        self.scan.allow_without_cameras = self.settings.allow_without_cameras
+        problem = "" if self.settings.allow_without_cameras else cameras_problem(self.guard, self.settings.cameras_enabled)
+        current = self.screens.currentWidget()
+        if not problem:
+            self.cameras_down_since = None
+            if current is self.cameras_down:
+                self.close_settings()
+            return
+        if self.cameras_down_since is None:
+            self.cameras_down_since = time.monotonic()
+        self.cameras_down.show_reason(problem)
+        if time.monotonic() - self.cameras_down_since < CAMERAS_DOWN_SECONDS:
+            return
+        if current in (self.welcome, self.scan, self.drop, self.payment):
+            print(f"Kasa zaključana, kamere ne rade: {problem}")
+            self.screens.setCurrentWidget(self.cameras_down)
 
     def start_article_sync(self) -> None:
         minutes = self.settings.article_sync_minutes
@@ -247,8 +278,7 @@ class MainWindow(QMainWindow):
             self.guard.forgive_unscanned()
 
     def show_payment(self) -> None:
-        if self.guard is not None and (getattr(self.guard, "unscanned", 0) > 0 or getattr(self.guard, "zone_a_left", 0) > 0
-                                       or getattr(self.guard, "checking", False)):
+        if not payment_allowed(self.guard, self.settings.allow_without_cameras):
             return
         self.screens.setCurrentWidget(self.payment)
         self.payment.begin(self.settings.demo_payments)
