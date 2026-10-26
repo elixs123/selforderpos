@@ -47,6 +47,7 @@ from screens.scan import ScanScreen, payment_allowed
 from screens.settings import SettingsScreen
 from screens.staff import StaffScreen
 from screens.terminal import PaymentWaitScreen
+from screens.unpaid import UnpaidScreen
 from screens.welcome import WelcomeScreen
 from settings import Settings, load_settings, save_settings
 from staff_auth import PinError, check_admin_pin
@@ -55,6 +56,7 @@ from styles import apply_light_theme, px
 
 
 CAMERAS_DOWN_SECONDS = 10
+EXIT_WATCH_SECONDS = 120
 
 
 class MainWindow(QMainWindow):
@@ -90,8 +92,10 @@ class MainWindow(QMainWindow):
         self.staff = StaffScreen(self.cart)
         self.settings_screen = SettingsScreen(self.settings, self.store)
         self.cameras_down = CamerasDownScreen()
+        self.unpaid = UnpaidScreen()
+        self.exit_watch: dict | None = None
         for screen in (self.welcome, self.scan, self.drop, self.payment, self.card, self.qr,
-                       self.receipt, self.staff, self.settings_screen, self.cameras_down):
+                       self.receipt, self.staff, self.settings_screen, self.cameras_down, self.unpaid):
             self.screens.addWidget(screen)
 
         self.welcome.started.connect(self.start_shopping)
@@ -126,6 +130,9 @@ class MainWindow(QMainWindow):
         self.cameras_down_since: float | None = None
         self.camera_timer = QTimer(self)
         self.camera_timer.timeout.connect(self.check_cameras)
+        self.camera_timer.timeout.connect(self.check_exit)
+        self.unpaid.pay_requested.connect(self.pay_for_unpaid)
+        self.unpaid.staff_requested.connect(self.show_staff)
         self.camera_timer.start(1000)
 
         shortcut = QShortcut(QKeySequence("Ctrl+Shift+S"), self)
@@ -156,6 +163,45 @@ class MainWindow(QMainWindow):
         if current in (self.welcome, self.scan, self.drop, self.payment):
             print(f"Kasa zaključana, kamere ne rade: {problem}")
             self.screens.setCurrentWidget(self.cameras_down)
+
+    def check_exit(self) -> None:
+        """Poslije plaćanja (dok kupac ne prođe vrata): neskeniran artikal blokira QR za vrata i prikaže 'Niste sve platili'."""
+        watch, guard = self.exit_watch, self.guard
+        if watch is None or guard is None:
+            return
+        unpaid = getattr(guard, "unscanned", 0) > 0
+        guess = getattr(guard, "unscanned_guess", "")
+        if not watch["blocked"]:
+            if time.monotonic() - watch["since"] > EXIT_WATCH_SECONDS or self.store.gate_used(watch["number"]):
+                self.exit_watch = None
+                return
+            if not unpaid:
+                return
+            watch["blocked"], watch["guess"] = True, guess
+            self.store.block_gate(watch["number"], guess)
+            print(f"Račun {watch['number']}: poslije plaćanja uzet neplaćen artikal ({guess or 'nije prepoznat'}), vrata blokirana")
+        elif not unpaid and self.cart.item_count:
+            # artikal je skeniran u novoj kupovini: stari račun ostaje blokiran, vrata otvara tek novi (plaćeni) račun
+            self.exit_watch = None
+            return
+        elif not unpaid:
+            self.store.unblock_gate(watch["number"])
+            print(f"Račun {watch['number']}: neplaćen artikal vraćen ili riješen, vrata otključana")
+            self.exit_watch = None
+            if self.screens.currentWidget() is self.unpaid:
+                self.screens.setCurrentWidget(self.welcome)
+            return
+        elif guess and guess != watch["guess"]:
+            watch["guess"] = guess
+            self.store.block_gate(watch["number"], guess)
+        self.unpaid.show_item(watch["guess"])
+        if self.screens.currentWidget() in (self.welcome, self.receipt):
+            self.screens.setCurrentWidget(self.unpaid)
+
+    def pay_for_unpaid(self) -> None:
+        """Kupac plaća uzeti artikal u novoj kupovini; stari račun ostaje blokiran, vrata otvara novi račun."""
+        self.exit_watch = None
+        self.start_shopping()
 
     def start_article_sync(self) -> None:
         minutes = self.settings.article_sync_minutes
@@ -248,6 +294,8 @@ class MainWindow(QMainWindow):
         self.diagnostics.raise_()
 
     def start_shopping(self) -> None:
+        if self.exit_watch is not None and not self.exit_watch["blocked"]:
+            self.exit_watch = None
         self.sale_id = f"{self.settings.register_id}-{datetime.now():%Y%m%d-%H%M%S}"
         self.screens.setCurrentWidget(self.scan)
         self.scan.begin()
@@ -301,6 +349,7 @@ class MainWindow(QMainWindow):
 
     def show_receipt(self, payment_method: str, payment: dict) -> None:
         number = self.store.save(self.cart, payment_method, payment)
+        self.exit_watch = {"number": number, "since": time.monotonic(), "blocked": False, "guess": ""}
         self.screens.setCurrentWidget(self.receipt)
         self.receipt.begin(payment_method, number, self.fiscal_job(number, payment_method), self.settings.receipt_return_seconds)
 
@@ -397,7 +446,8 @@ class MainWindow(QMainWindow):
 
     def finish_shopping(self) -> None:
         self.cart.clear()
-        self.screens.setCurrentWidget(self.welcome)
+        blocked = self.exit_watch is not None and self.exit_watch["blocked"]
+        self.screens.setCurrentWidget(self.unpaid if blocked else self.welcome)
 
     def closeEvent(self, event) -> None:
         if self.diagnostics is not None:

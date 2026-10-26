@@ -37,6 +37,7 @@ EXTRA_COLUMNS = {
     "fiscal_message": "TEXT",
     "fiscal_number": "TEXT",
     "gate_used_at": "TEXT",
+    "gate_blocked": "TEXT",
 }
 
 GATE_GRACE_SECONDS = 120
@@ -113,11 +114,13 @@ class ReceiptStore:
         now = now or datetime.now()
         with closing(self._connect()) as connection, connection:
             row = connection.execute(
-                "SELECT id, gate_used_at FROM receipts WHERE ltrim(fiscal_number, '0') = ? ORDER BY id DESC LIMIT 1",
+                "SELECT id, gate_used_at, gate_blocked FROM receipts WHERE ltrim(fiscal_number, '0') = ? ORDER BY id DESC LIMIT 1",
                 (wanted,),
             ).fetchone()
             if row is None:
                 return False, "račun nije pronađen"
+            if row["gate_blocked"]:
+                return False, f"niste sve platili ({row['gate_blocked']})"
             if row["gate_used_at"]:
                 if (now - datetime.fromisoformat(row["gate_used_at"])).total_seconds() > GATE_GRACE_SECONDS:
                     return False, f"račun je već iskorišten ({row['gate_used_at']})"
@@ -126,6 +129,20 @@ class ReceiptStore:
                 "UPDATE receipts SET gate_used_at = ? WHERE id = ?", (now.isoformat(timespec="seconds"), row["id"])
             )
         return True, "račun pronađen"
+
+    def block_gate(self, number: str, reason: str) -> None:
+        """Kupac je poslije plaćanja uzeo neplaćen artikal: QR s ovog računa ne otvara vrata dok se to ne riješi."""
+        with closing(self._connect()) as connection, connection:
+            connection.execute("UPDATE receipts SET gate_blocked = ? WHERE number = ?", (reason or "neplaćen artikal", number))
+
+    def gate_used(self, number: str) -> bool:
+        with closing(self._connect()) as connection:
+            row = connection.execute("SELECT gate_used_at FROM receipts WHERE number = ?", (number,)).fetchone()
+        return bool(row and row["gate_used_at"])
+
+    def unblock_gate(self, number: str) -> None:
+        with closing(self._connect()) as connection, connection:
+            connection.execute("UPDATE receipts SET gate_blocked = NULL WHERE number = ?", (number,))
 
     def receipts_on(self, day: date) -> list[dict]:
         """Svi računi jednog dana, najnoviji prvi."""

@@ -34,6 +34,7 @@ UNSCANNED_MESSAGE = "Uzeli ste još jedan artikal iz zone A. Vratite ga u zonu A
 NOT_TAKEN_MESSAGE = "Taj artikal nije uzet iz zone A. Ako ste ga već skenirali, ne skenirajte ga ponovo."
 PLACED_UNSCANNED_MESSAGE = "U zonu B je odložen artikal koji nije skeniran. Uklonite ga iz zone B pa ga skenirajte."
 HELD_UNSCANNED_MESSAGE = "Imate artikal u ruci koji nije skeniran. Stavite ga u zonu A, pa ga skenirajte. Do tada ne možete nastaviti."
+IDENTIFY_REFERENCES = 400
 CARRY_STATES = ("waiting_take", "judging", "learning", "offline")
 HELD_UNPLACED_MESSAGE = "Artikal je skeniran. Odložite ga u zonu B."
 ARRIVED_MIN_CHANGE = 0.2
@@ -99,6 +100,9 @@ class CheckoutGuard:
         self.holder = HeldItemDetector() if self.cameras_c else None
         self.hold_results: dict[str, HoldResult] = {}
         self.held_message = ""
+        self.unscanned_guess = ""
+        self._guessed_take = None
+        self._guessing = False
         self._held_since: float | None = None
         self._held_seen = -1000.0
         self._held_state = ""
@@ -323,6 +327,7 @@ class CheckoutGuard:
             started = time.monotonic()
             try:
                 self.count_once()
+                self._update_guess()
             except Exception as error:
                 print(f"Brojanje artikala: {error}")
             time.sleep(max(0.05, COUNT_SECONDS - (time.monotonic() - started)))
@@ -532,6 +537,7 @@ class CheckoutGuard:
             self.log("osoblje", f"osoblje je poništilo {self.unscanned} neskeniranih artikala"
                                 f"{f', zanemarujem {self.zone_a_count} artikala u zoni A' if self.zone_a_left else ''}")
             self._zone_a_ignored = self.zone_a_count
+            self.unscanned_guess, self._guessed_take = "", None
             self._takes = []
             self._placed_unscanned = {}
             self._check_pending_since = None
@@ -551,6 +557,54 @@ class CheckoutGuard:
             if not any(take is best for take in cluster):
                 rest.extend(cluster)
         return rest
+
+    def identify(self, image: np.ndarray) -> tuple[str, float] | None:
+        """Koji je ovo artikal: najsličnija spremljena slika iz zone B (naziv artikla, sličnost) ili None ako nije dovoljno slično."""
+        query = signature(image, rotations=True)
+        best: dict[str, float] = {}
+        with self._reference_lock:
+            paths = self.store.other_reference_paths(None, limit=IDENTIFY_REFERENCES, since=self.references_since)
+        for _, name, path in paths:
+            with self._reference_lock:
+                if path in self._missing_references:
+                    continue
+                if path not in self._reference_cache:
+                    reference = self.store.load_image(path)
+                    if reference is None:
+                        self._missing_references.add(path)
+                        continue
+                    self._reference_cache[path] = signature(reference, rotations=False)
+                cached = self._reference_cache[path]
+            best[name] = max(best.get(name, 0.0), compare(query, cached))
+        if not best:
+            return None
+        name, score = max(best.items(), key=lambda item: item[1])
+        return (name, score) if score >= match_threshold() else None
+
+    def _update_guess(self) -> None:
+        """Kad postoji neskeniran artikal, u pozadini pokušaj prepoznati koji je (za poruku 'Niste sve platili')."""
+        if not self.unscanned:
+            self.unscanned_guess, self._guessed_take = "", None
+            return
+        takes = [take for take in self._takes if take[0] is not None]
+        if not takes or self._guessing or takes[-1] is self._guessed_take:
+            return
+        take = takes[-1]
+        self._guessed_take, self._guessing = take, True
+
+        def work() -> None:
+            try:
+                found = self.identify(take[0])
+            except Exception as error:
+                found = None
+                self.log("zona-A", f"prepoznavanje neskeniranog artikla nije uspjelo: {error}")
+            finally:
+                self._guessing = False
+            if found is not None and self._guessed_take is take:
+                self.unscanned_guess = found[0]
+                self.log("zona-A", f"neskeniran artikal liči na: {found[0]} ({found[1]:.2f})")
+
+        threading.Thread(target=work, daemon=True).start()
 
     def _return_unscanned(self, takes: list) -> None:
         takes = [take for take in takes if self._item_like(take[0])]

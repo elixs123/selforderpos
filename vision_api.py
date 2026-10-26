@@ -30,6 +30,7 @@ def snapshot(guard, boot: str) -> dict:
         "zone_a_left": int(getattr(guard, "zone_a_left", 0)),
         "alert": bool(getattr(guard, "alert", False)),
         "held": str(getattr(guard, "held_message", "")),
+        "guess": str(getattr(guard, "unscanned_guess", "")),
         "checking": bool(getattr(guard, "checking", False)),
         "zone_a_reason": guard.zone_a_waiting_reason() if hasattr(guard, "zone_a_waiting_reason") else "-",
     }
