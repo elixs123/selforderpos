@@ -50,8 +50,6 @@ TAKE_CLUSTER_SECONDS = 4.0
 COUNT_SECONDS = 0.7
 CHECK_WAIT_SECONDS = 5.0
 LEARNED_MIN = 3
-LEARN_TAKEN_REFERENCES = 3
-LEARN_PRODUCT_SCORE = 0.85
 PRODUCT_MIN_SCORE = float(os.environ.get("CAM_PRODUCT_THRESHOLD", "0.8"))
 RIVAL_MARGIN = float(os.environ.get("CAM_RIVAL_MARGIN", "0.02"))
 PRIMARY_CAMERAS = {name.strip() for name in os.environ.get("CAM_PRIMARY", "A2,B2").split(",") if name.strip()}
@@ -415,7 +413,10 @@ class CheckoutGuard:
                         self.log(f"zona-{name}", f"YOLOX zona A: očekujem {ledger.expected}, vidim {count}, nedostaje {ledger.missing}")
                     else:
                         self.log(f"zona-{name}", f"YOLOX zona B: poznato {ledger.known}, vidim {count}, neskenirano {ledger.extra}")
-            self._zone_a_ignored = min(self._zone_a_ignored, self.zone_a_count)
+            # Zanemareni artikli (osoblje) se smanjuju tek kad brojač ponovo zna broj; poslije reseta je count None,
+            # a to nije "zona A je prazna".
+            if any(ledger.count is not None for ledger in self.a_ledgers.values()):
+                self._zone_a_ignored = min(self._zone_a_ignored, self.zone_a_count)
             if changed:
                 self._after_count_change()
 
@@ -940,14 +941,8 @@ class CheckoutGuard:
             problems.append(MULTIPLE_PROBLEM)
             self._waive_taken = True
         waived = self._waive_taken and placed_count <= 1 and score_product is not None and score_product >= product_threshold
-        learning = (not waived and placed_count <= 1 and len(taken_references) < LEARN_TAKEN_REFERENCES
-                    and score_product is not None and score_product >= max(threshold, LEARN_PRODUCT_SCORE)
-                    and (score_taken is None or score_taken < threshold))
         if waived:
             self.log("poredjenje", "uzeto iz zone A se ne poredi (više artikala uzeto zajedno), artikal liči na skenirani")
-        elif learning:
-            self.log("poredjenje", f"učenje: artikal ima {len(taken_references)} slika iz zone A (treba {LEARN_TAKEN_REFERENCES}), "
-                                   f"prihvatam jer jako liči na skenirani ({score_product:.2f})")
         elif score_taken is None:
             problems.append("nije viđeno šta je uzeto iz zone A")
         elif score_taken < threshold:

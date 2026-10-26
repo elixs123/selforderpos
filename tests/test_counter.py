@@ -282,8 +282,9 @@ def test_staff_verified_item_is_remembered_as_reference(monkeypatch, tmp_path):
     assert guard.state == "mismatch"
     guard.approve(learn=True)
     assert guard.outcome.kind == "accepted" and guard.outcome.verdict == "verified"
-    assert guard.store.load_image(guard.store.taken_reference_paths("P")[0])[0, 0, 0] == 200
-    assert guard.store.load_image(guard.store.reference_paths("P")[0])[0, 0, 0] == 40
+    # slike se spremaju kao JPEG, boja se može pomjeriti za par nijansi
+    assert abs(int(guard.store.load_image(guard.store.taken_reference_paths("P")[0])[0, 0, 0]) - 200) <= 3
+    assert abs(int(guard.store.load_image(guard.store.reference_paths("P")[0])[0, 0, 0]) - 40) <= 3
 
 
 def test_product_without_references_is_rejected_when_it_looks_like_another_product(monkeypatch, tmp_path):
@@ -292,7 +293,8 @@ def test_product_without_references_is_rejected_when_it_looks_like_another_produ
     readers = {"A2": ControlledReader(), "B2": ControlledReader()}
     guard = CheckoutGuard(readers)
     monkeypatch.setattr(guard_module, "signature", lambda image, rotations=False: SimpleNamespace(vectors=None, kind=int(image[0, 0, 0])))
-    monkeypatch.setattr(guard_module, "compare", lambda query, other: 0.9 if other.kind == 9 else 0.3)
+    # isti artikal liči sam na sebe (uzeto iz zone A = odloženo), artikal 9 je poznati JAMNICA
+    monkeypatch.setattr(guard_module, "compare", lambda query, other: 0.9 if other.kind in (9, query.kind) else 0.3)
     monkeypatch.setattr(guard, "_taken_signature", lambda item: SimpleNamespace(vectors=None, kind=int(item[0, 0, 0])))
     monkeypatch.setattr(guard, "_reference_signatures", lambda code: [])
     monkeypatch.setattr(guard, "_taken_reference_signatures", lambda code: [])
