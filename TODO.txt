@@ -55,9 +55,11 @@ K1. GOTOVO: QR plaćanje = besplatna roba. Na QR ekranu (screens/terminal.py) du
     račun i QR za vrata bez plaćanja.
     -> Sakriti QR opciju dok nema pravog API-ja, simulaciju samo uz demo_payments.
 
-K2. Fiskalni račun nije uspio, a novac je skinut: ekran ostane na "Pozovite
+K2. GOTOVO: Fiskalni račun nije uspio, a novac je skinut: ekran ostane na "Pozovite
     osoblje" (screens/receipt.py:73), timer se ne pokreće, nema ponovnog pokušaja.
     -> Dugme "Pokušaj ponovo" + lista računa sa fiscal_printed = 0 u panelu osoblja.
+    PROVJERITI s Tringom: ako printer odštampa, a odgovor ne stigne (timeout), da li
+    ponovni zahtjev s istim BrojZahtjeva štampa duplikat ili ga printer odbije.
 
 K3. GOTOVO: Ctrl+Shift+Q gasi kasu bez PIN-a, Ctrl+Shift+D otvara dijagnostiku (app.py:107-112).
     -> Zaštititi PIN-om ili ugasiti u fullscreen načinu.
@@ -100,7 +102,7 @@ Q5. print() u kasa.log bez rotacije -> logging + RotatingFileHandler.
 
 DODATI (po prioritetu)
 
-D1. Ponovna fiskalizacija i pregled neuspjelih računa u panelu osoblja (vidi K2).
+D1. GOTOVO: Ponovna fiskalizacija i pregled neuspjelih računa u panelu osoblja (vidi K2).
 D2. Lokalni keš artikala da kasa radi kad MSSQL kratko padne.
 D3. Slanje računa na server (synced) i bekap kasa.db.
 D4. Dnevni izvještaj (Z-izvještaj) i storno uz PIN.

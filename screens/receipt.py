@@ -32,6 +32,7 @@ class ReceiptScreen(QWidget):
         self.cart = cart
         self.seconds_left = RETURN_SECONDS
         self.return_seconds = RETURN_SECONDS
+        self.fiscal_job = None
         self.fiscal_done.connect(self._on_fiscal_done)
         self.timer = QTimer(self)
         self.timer.setInterval(1000)
@@ -57,21 +58,30 @@ class ReceiptScreen(QWidget):
         self.return_seconds = max(5, return_seconds)
         self.seconds_left = self.return_seconds
         self._update_countdown()
-        self.printing_text.setStyleSheet(f"font-size: {px(26)}px; font-weight: 600; color: {MUTED_TEXT};")
+        self.fiscal_job = fiscal_job
+        self.retry_button.setVisible(False)
         if fiscal_job is None:
+            self.printing_text.setStyleSheet(f"font-size: {px(26)}px; font-weight: 600; color: {MUTED_TEXT};")
             self.printing_text.setText("Hvala, ponesite artikle sa zone B.")
             self.timer.start()
             return
+        self._print_fiscal()
+
+    def _print_fiscal(self) -> None:
+        job = self.fiscal_job
+        self.retry_button.setVisible(False)
+        self.printing_text.setStyleSheet(f"font-size: {px(26)}px; font-weight: 600; color: {MUTED_TEXT};")
         self.printing_text.setText("Fiskalni račun se štampa...")
-        threading.Thread(target=lambda: self.fiscal_done.emit(fiscal_job()), daemon=True).start()
+        threading.Thread(target=lambda: self.fiscal_done.emit(job()), daemon=True).start()
 
     def _on_fiscal_done(self, result) -> None:
         if result.ok:
             self.printing_text.setText("Račun se štampa ispod ekrana")
             self.timer.start()
         else:
-            self.printing_text.setText("Fiskalni račun nije odštampan. Pozovite osoblje.")
+            self.printing_text.setText("Fiskalni račun nije odštampan. Pokušajte ponovo ili pozovite osoblje.")
             self.printing_text.setStyleSheet(f"font-size: {px(26)}px; font-weight: 800; color: #B8101F;")
+            self.retry_button.setVisible(True)
 
     def _tick(self) -> None:
         self.seconds_left -= 1
@@ -171,6 +181,18 @@ class ReceiptScreen(QWidget):
         column = QVBoxLayout(footer)
         column.setContentsMargins(px(40), px(26), px(40), px(40))
         column.setSpacing(px(16))
+
+        self.retry_button = QPushButton("Pokušaj ponovo")
+        self.retry_button.setFixedHeight(px(112))
+        self.retry_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.retry_button.setStyleSheet(
+            f"QPushButton {{ background: white; color: {TEXT}; border: {px(3)}px solid {LINE}; border-radius: {px(56)}px;"
+            f" font-size: {px(40)}px; font-weight: 800; }}"
+            f"QPushButton:pressed {{ background: {BACKGROUND}; }}"
+        )
+        self.retry_button.clicked.connect(self._print_fiscal)
+        self.retry_button.setVisible(False)
+        column.addWidget(self.retry_button)
 
         finish = QPushButton("Gotovo")
         finish.setFixedHeight(px(112))

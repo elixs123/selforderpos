@@ -127,6 +127,24 @@ class ReceiptStore:
             )
         return True, "račun pronađen"
 
+    def unprinted(self) -> list[dict]:
+        """Plaćeni računi za koje je štampanje fiskalnog računa pokušano i nije uspjelo."""
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT * FROM receipts WHERE fiscal_printed = 0 AND fiscal_message IS NOT NULL ORDER BY id"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def cart_data(self, number: str) -> dict:
+        """Korpa spremljenog računa u istom obliku kao Cart.to_dict(), za ponovno štampanje."""
+        items = [
+            {key: item[key] for key in ("code", "barcode", "name", "price", "quantity", "amount")}
+            for item in self.items(number)
+        ]
+        with closing(self._connect()) as connection:
+            row = connection.execute("SELECT item_count, total FROM receipts WHERE number = ?", (number,)).fetchone()
+        return {"items": items, "item_count": row["item_count"], "total": row["total"]}
+
     def unsynced(self) -> list[dict]:
         with closing(self._connect()) as connection:
             rows = connection.execute("SELECT * FROM receipts WHERE synced = 0 ORDER BY id").fetchall()

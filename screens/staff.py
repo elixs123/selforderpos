@@ -43,12 +43,16 @@ class StaffScreen(QWidget):
     learn_requested = Signal()
     forgive_requested = Signal()
     settings_requested = Signal()
+    reprint_requested = Signal(str)
+    reprint_done = Signal(str, object)
     cleared = Signal()
 
     def __init__(self, cart: Cart) -> None:
         super().__init__()
         self.cart = cart
         self.entered = ""
+        self.unprinted: list[dict] = []
+        self.reprint_done.connect(self._on_reprint_done)
         self.setObjectName("root")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"#root {{ background: {BACKGROUND}; font-family: {FONT}; color: {TEXT}; }}")
@@ -64,7 +68,11 @@ class StaffScreen(QWidget):
         self.pages.addWidget(self.panel_page)
         layout.addWidget(self.pages, stretch=1)
 
-    def begin(self, can_approve: bool = False, unscanned: int = 0, can_learn: bool = False) -> None:
+    def begin(self, can_approve: bool = False, unscanned: int = 0, can_learn: bool = False,
+              unprinted: list[dict] | None = None) -> None:
+        self.unprinted = list(unprinted or [])
+        self.reprint_message.setText("")
+        self._refresh_unprinted()
         self.approve_button.setVisible(can_approve)
         self.learn_button.setVisible(can_learn)
         self.forgive_button.setVisible(unscanned > 0)
@@ -198,6 +206,17 @@ class StaffScreen(QWidget):
         scroll.setWidget(content)
         column.addWidget(scroll, stretch=1)
 
+        self.unprinted_title = QLabel()
+        self.unprinted_title.setStyleSheet(f"font-size: {px(28)}px; font-weight: 800; color: {DARK_RED};")
+        column.addWidget(self.unprinted_title)
+        self.unprinted_rows = QVBoxLayout()
+        self.unprinted_rows.setSpacing(px(10))
+        column.addLayout(self.unprinted_rows)
+        self.reprint_message = QLabel()
+        self.reprint_message.setWordWrap(True)
+        self.reprint_message.setStyleSheet(f"font-size: {px(24)}px; font-weight: 600; color: {MUTED_TEXT};")
+        column.addWidget(self.reprint_message)
+
         extra = QVBoxLayout()
         extra.setSpacing(px(14))
         self.approve_button = QPushButton("Odobri skenirani artikal")
@@ -269,6 +288,56 @@ class StaffScreen(QWidget):
         for position, item in enumerate(data["items"]):
             self.panel_rows.insertWidget(position, self._panel_row(item))
         self.panel_summary.setText(f"{item_count_text(data['item_count'])} · {format_amount(data['total'])} KM")
+
+    def _refresh_unprinted(self) -> None:
+        while self.unprinted_rows.count():
+            widget = self.unprinted_rows.takeAt(0).widget()
+            if widget is not None:
+                widget.deleteLater()
+        self.unprinted_title.setText(f"Fiskalni račun nije odštampan ({len(self.unprinted)})")
+        self.unprinted_title.setVisible(bool(self.unprinted))
+        for receipt in self.unprinted:
+            self.unprinted_rows.addWidget(self._unprinted_row(receipt))
+
+    def _unprinted_row(self, receipt: dict) -> QFrame:
+        row = QFrame()
+        row.setObjectName("row")
+        row.setFixedHeight(px(100))
+        row.setStyleSheet(f"#row {{ background: white; border-radius: {px(30)}px; }}")
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(px(24), 0, px(16), 0)
+        layout.setSpacing(px(14))
+        when = receipt["created_at"].replace("T", " ")[:16]
+        label = QLabel(f"{receipt['number']} · {when} · {format_amount(receipt['total'])} KM")
+        label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        label.setStyleSheet(f"font-size: {px(26)}px; font-weight: 700;")
+        layout.addWidget(label, stretch=1)
+        number = receipt["number"]
+        button = QPushButton("Štampaj")
+        button.setFixedSize(px(180), px(72))
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.setStyleSheet(
+            f"QPushButton {{ background: {GREEN}; color: white; border: none; border-radius: {px(36)}px;"
+            f" font-size: {px(26)}px; font-weight: 800; }}"
+            f"QPushButton:pressed {{ background: #2C5C14; }}"
+            f"QPushButton:disabled {{ background: {BORDER}; }}"
+        )
+        button.clicked.connect(lambda _checked=False: self._on_reprint(number, button))
+        layout.addWidget(button)
+        return row
+
+    def _on_reprint(self, number: str, button: QPushButton) -> None:
+        button.setEnabled(False)
+        self.reprint_message.setText(f"Račun {number} se štampa...")
+        self.reprint_requested.emit(number)
+
+    def _on_reprint_done(self, number: str, result) -> None:
+        if result.ok:
+            self.unprinted = [receipt for receipt in self.unprinted if receipt["number"] != number]
+            self.reprint_message.setText(f"Račun {number} je odštampan.")
+        else:
+            self.reprint_message.setText(f"Račun {number} nije odštampan: {result.message[:200]}")
+        self._refresh_unprinted()
 
     def _panel_row(self, item: dict) -> QFrame:
         row = QFrame()

@@ -104,3 +104,25 @@ def test_old_database_gets_new_columns(tmp_path):
     store = ReceiptStore(path)
     store.save(filled_cart(), "qr")
     assert store.unsynced()[0]["fiscal_printed"] == 0
+
+
+def test_unprinted_lists_only_failed_fiscal(tmp_path):
+    store = ReceiptStore(tmp_path / "kasa.db")
+    failed = store.save(filled_cart(), "card")
+    printed = store.save(filled_cart(), "card")
+    store.save(filled_cart(), "card")
+    store.mark_fiscal(failed, False, "printer nije dostupan")
+    store.mark_fiscal(printed, True, "<RacunOdgovor/>", "84366")
+    assert [row["number"] for row in store.unprinted()] == [failed]
+    store.mark_fiscal(failed, True, "<RacunOdgovor/>", "84367")
+    assert store.unprinted() == []
+
+
+def test_cart_data_matches_cart(tmp_path):
+    store = ReceiptStore(tmp_path / "kasa.db")
+    cart = filled_cart()
+    number = store.save(cart, "card")
+    data = store.cart_data(number)
+    assert data["items"] == cart.to_dict()["items"]
+    assert data["item_count"] == 3
+    assert data["total"] == approx(6.07)

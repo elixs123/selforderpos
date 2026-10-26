@@ -127,3 +127,5 @@ IZMJENE - samouslužna kasa
 - Zone: dijelovi zone se mogu ignorisati (ljestve, pločice...): u zone_setup nacrtaj dio pa pritisni I, C briše ignorisane dijelove. Ignorisano se popuni neutralnom sivom, pa ga kamera ne vidi ni pri učenju pozadine ni pri brojanju.
 - Kamere C: brojač za artikal u ruci se resetuje i kad se artikal ne vidi u trenutku promjene faze (ranije je poslije prihvatanja poruka znala iskočiti odmah). Poruka poslije 5 s (bilo 3), a dok je artikal uzet iz zone A i čeka skeniranje tek poslije 20 s (kupac traži barkod).
 - Zona B: male mrlje uz artikal (sjena, odsjaj, manje od 25% artikla) se ne broje kao drugi artikal kad YOLOX vidi samo jedan novi artikal (lažno "Odložili ste više artikala").
+- Fiskalni račun: ako štampanje ne uspije, na ekranu računa je dugme "Pokušaj ponovo". U panelu osoblja je lista plaćenih računa koji nisu fiskalno odštampani, s dugmetom "Štampaj" za svaki.
+- Testovi: model za ruke (MediaPipe) se u testovima ne učitava; njegovo brisanje je znalo zaglaviti pytest.

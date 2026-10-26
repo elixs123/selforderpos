@@ -1,5 +1,6 @@
 import os
 import sys
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -100,6 +101,7 @@ class MainWindow(QMainWindow):
         self.staff.learn_requested.connect(self.learn_item)
         self.staff.forgive_requested.connect(self.forgive_unscanned)
         self.staff.settings_requested.connect(self.show_settings)
+        self.staff.reprint_requested.connect(self.reprint_fiscal)
         self.settings_screen.saved.connect(self.apply_settings)
         self.settings_screen.restart_requested.connect(self.restart_app)
         self.settings_screen.quit_requested.connect(self.quit_app)
@@ -234,14 +236,14 @@ class MainWindow(QMainWindow):
         self.screens.setCurrentWidget(self.receipt)
         self.receipt.begin(payment_method, number, self.fiscal_job(number, payment_method), self.settings.receipt_return_seconds)
 
-    def fiscal_job(self, number: str, payment_method: str):
+    def fiscal_job(self, number: str, payment_method: str, cart_data: dict | None = None):
         if not self.settings.fiscal_enabled:
             return None
         settings = self.settings
         options = FiscalOptions(settings.fiscal_unit, settings.fiscal_tax_label, settings.fiscal_card_payment, settings.fiscal_qr_payment)
         printer = FiscalPrinter(settings.fiscal_url, options)
         receipt_id = self.store.receipt_id(number)
-        cart_data = self.cart.to_dict()
+        cart_data = cart_data or self.cart.to_dict()
         store = self.store
 
         def job():
@@ -271,7 +273,15 @@ class MainWindow(QMainWindow):
         self.screens.setCurrentWidget(self.staff)
         can_learn = can_approve and guard.state == "mismatch"
         unscanned = getattr(guard, "unscanned", 0) + getattr(guard, "zone_a_left", 0) if guard is not None else 0
-        self.staff.begin(can_approve, unscanned, can_learn)
+        self.staff.begin(can_approve, unscanned, can_learn, self.store.unprinted())
+
+    def reprint_fiscal(self, number: str) -> None:
+        receipt = next((row for row in self.store.unprinted() if row["number"] == number), None)
+        job = self.fiscal_job(number, receipt["payment_method"], self.store.cart_data(number)) if receipt else None
+        if job is None:
+            self.staff.reprint_done.emit(number, FiscalResult(False, "Fiskalni printer je isključen u postavkama."))
+            return
+        threading.Thread(target=lambda: self.staff.reprint_done.emit(number, job()), daemon=True).start()
 
     def show_settings(self) -> None:
         self.screens.setCurrentWidget(self.settings_screen)
