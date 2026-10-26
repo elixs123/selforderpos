@@ -20,6 +20,8 @@ import counter as counter_module
 from counter import ZoneALedger, ZoneBLedger, counting_cameras, get_counter, unmatched
 from watcher import BasketTracker, ZoneWatcher, looks_like_item, main_box, removed_items, separate_items
 from zones import crop, load_zones, zones_changed_at
+from clips import ClipRecorder
+from tamper import TamperCheck
 
 TIMEOUT_SECONDS = 30
 TAKEN_MAX_AGE = 60
@@ -36,6 +38,7 @@ NOT_TAKEN_MESSAGE = "Taj artikal nije uzet iz zone A. Ako ste ga već skenirali,
 PLACED_UNSCANNED_MESSAGE = "U zonu B je odložen artikal koji nije skeniran. Uklonite ga iz zone B pa ga skenirajte."
 HELD_UNSCANNED_MESSAGE = "Imate artikal u ruci koji nije skeniran. Stavite ga u zonu A, pa ga skenirajte. Do tada ne možete nastaviti."
 IDENTIFY_REFERENCES = 400
+TAMPER_SECONDS = 1.0
 CARRY_STATES = ("waiting_take", "judging", "learning", "offline")
 HELD_UNPLACED_MESSAGE = "Artikal je skeniran. Odložite ga u zonu B."
 ARRIVED_MIN_CHANGE = 0.2
@@ -57,6 +60,15 @@ PRIMARY_CAMERAS = {name.strip() for name in os.environ.get("CAM_PRIMARY", "A2,B2
 LEARNED_FACTOR = 1.7
 EXTRA_MARK = "*"
 
+
+
+CLIP_STATES = ("mismatch", "timeout")
+CLIP_MESSAGES = (UNSCANNED_MESSAGE, PLACED_UNSCANNED_MESSAGE)
+
+
+def clips_enabled() -> bool:
+    """Snimci alarma; uključuju se u Postavke > Kamere (upisuje se u CAM_CLIPS pri pokretanju kamera)."""
+    return os.environ.get("CAM_CLIPS", "da").lower() not in ("", "off", "0", "ne")
 
 @dataclass(frozen=True)
 class Outcome:
@@ -100,6 +112,9 @@ class CheckoutGuard:
         self.hold_results: dict[str, HoldResult] = {}
         self.held_message = ""
         self.unscanned_guess = ""
+        self.tamper = TamperCheck(self.store.folder / "camera_reference", zones_changed_at())
+        self.tamper_problems: dict[str, str] = {}
+        self.clips = ClipRecorder(self.store.folder / "clips") if clips_enabled() else None
         self._guessed_take = None
         self._guessing = False
         self._held_since: float | None = None
@@ -386,6 +401,8 @@ class CheckoutGuard:
                 message = HELD_UNSCANNED_MESSAGE
         if message != self.held_message:
             self.log("ruka", message or "artikal više nije u ruci")
+            if message == HELD_UNSCANNED_MESSAGE:
+                self.record_clip("artikal u ruci nije skeniran")
             self.held_message = message
 
     def count_once(self) -> None:
@@ -549,6 +566,7 @@ class CheckoutGuard:
         with self._lock:
             if not self.unscanned and not self.zone_a_left:
                 return
+            self.record_clip("osoblje ponistilo neskenirano")
             self.log("osoblje", f"osoblje je poništilo {self.unscanned} neskeniranih artikala"
                                 f"{f', zanemarujem {self.zone_a_count} artikala u zoni A' if self.zone_a_left else ''}")
             self._zone_a_ignored = self.zone_a_count
@@ -647,6 +665,43 @@ class CheckoutGuard:
             threading.Thread(target=self._count_loop, daemon=True).start()
         if self.holder is not None:
             threading.Thread(target=self._hold_loop, daemon=True).start()
+        threading.Thread(target=self._watch_cameras_loop, daemon=True).start()
+
+    def _watch_cameras_loop(self) -> None:
+        last_tamper = 0.0
+        while self._running:
+            try:
+                frames = {name: self.latest(name) for name in self.readers}
+                if self.clips is not None:
+                    self.clips.add(frames)
+                now = time.monotonic()
+                if now - last_tamper >= TAMPER_SECONDS:
+                    last_tamper = now
+                    self.watch_tamper(frames, now)
+            except Exception as error:
+                print(f"Provjera kamera: {error}")
+            time.sleep(0.25)
+
+    def watch_tamper(self, frames: dict, now: float | None = None) -> None:
+        """Prekrivena, mutna ili pomjerena kamera (samo kamere koje šalju sliku; bez slike javlja camera_check)."""
+        problems = {}
+        for name, frame in frames.items():
+            if self._is_live(name):
+                problem = self.tamper.check(name, frame, now)
+                if problem:
+                    problems[name] = problem
+        for name, problem in problems.items():
+            if self.tamper_problems.get(name) != problem:
+                self.log(f"kamera-{name}", f"PROBLEM: {problem}")
+                self.record_clip(f"kamera {name} {problem}")
+        for name in set(self.tamper_problems) - set(problems):
+            self.log(f"kamera-{name}", "kamera je ponovo ispravna")
+        self.tamper_problems = problems
+
+    def record_clip(self, reason: str) -> None:
+        clips = getattr(self, "clips", None)
+        if clips is not None:
+            clips.record(reason)
 
     def stop(self) -> None:
         self._running = False
@@ -741,6 +796,8 @@ class CheckoutGuard:
     def _set(self, state: str, message: str) -> None:
         if state != self.state or message != self.message:
             self.log(state, message)
+            if state in CLIP_STATES or message in CLIP_MESSAGES:
+                self.record_clip(message or state)
         self.state = state
         self.message = message
 
@@ -815,6 +872,7 @@ class CheckoutGuard:
             self._pending_until = None
             self._job_id += 1
             self._judging = False
+            self.record_clip("osoblje naucilo artikal" if learn else "osoblje odobrilo artikal")
             self._finish("accepted", "verified" if learn else "staff",
                          "Osoblje je potvrdilo artikal, slike su zapamćene." if learn else "Osoblje je odobrilo artikal.")
             self._note_accepted()

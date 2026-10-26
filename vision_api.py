@@ -16,6 +16,23 @@ def outcome_data(outcome) -> dict | None:
     }
 
 
+FRAME_WIDTH = 640
+
+
+def frame_jpeg(guard, name: str) -> bytes | None:
+    """Trenutna slika kamere (smanjena) za ekran prema kupcu na kasi."""
+    import cv2
+
+    frame = guard.latest(name) if hasattr(guard, "latest") else None
+    if frame is None or not frame.size:
+        return None
+    height, width = frame.shape[:2]
+    if width > FRAME_WIDTH:
+        frame = cv2.resize(frame, (FRAME_WIDTH, round(height * FRAME_WIDTH / width)), interpolation=cv2.INTER_AREA)
+    ok, encoded = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
+    return encoded.tobytes() if ok else None
+
+
 def cameras_data(guard) -> dict:
     readers = getattr(guard, "readers", {})
     return {name: {"status": reader.status, "fps": round(reader.fps, 1)} for name, reader in readers.items()}
@@ -32,6 +49,7 @@ def snapshot(guard, boot: str) -> dict:
         "held": str(getattr(guard, "held_message", "")),
         "guess": str(getattr(guard, "unscanned_guess", "")),
         "counter_problem": str(getattr(guard, "counter_problem", "")),
+        "tamper": {str(name): str(problem) for name, problem in dict(getattr(guard, "tamper_problems", {})).items()},
         "checking": bool(getattr(guard, "checking", False)),
         "zone_a_reason": guard.zone_a_waiting_reason() if hasattr(guard, "zone_a_waiting_reason") else "-",
     }
@@ -61,11 +79,24 @@ class VisionHandler(BaseHTTPRequestHandler):
             return {}
         return data if isinstance(data, dict) else {}
 
+    def _send_jpeg(self, data: bytes) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "image/jpeg")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
     def do_GET(self) -> None:
         if not self._authorized():
             self._send(401, {"error": "token"})
         elif self.path == "/state":
             self._send(200, snapshot(self.server.guard, self.server.boot))
+        elif self.path.startswith("/frame/"):
+            data = frame_jpeg(self.server.guard, self.path[len("/frame/"):])
+            if data is None:
+                self._send(404, {"error": "kamera nema sliku"})
+            else:
+                self._send_jpeg(data)
         else:
             self._send(404, {"error": "nepoznata adresa"})
 
@@ -93,6 +124,10 @@ class VisionHandler(BaseHTTPRequestHandler):
             elif self.path == "/forgive":
                 guard.forgive_unscanned()
                 self._send(200, {**snapshot(guard, self.server.boot), "ok": True})
+            elif self.path == "/clip":
+                if hasattr(guard, "record_clip"):
+                    guard.record_clip(str(self._body().get("reason") or "alarm"))
+                self._send(200, {"ok": True})
             else:
                 self._send(404, {"error": "nepoznata adresa"})
         except Exception as error:

@@ -51,6 +51,7 @@ class RemoteGuard:
         self.camera_statuses: dict[str, str] = {}
         self.unscanned_guess = ""
         self.counter_problem = ""
+        self.tamper_problems: dict[str, str] = {}
         self._boot: str | None = None
         self._offset = 0
         self._number = 0
@@ -107,6 +108,28 @@ class RemoteGuard:
         except RemoteError as error:
             self._fail(error)
 
+    def record_clip(self, reason: str) -> None:
+        def send() -> None:
+            try:
+                self._request("POST", "/clip", {"reason": reason}, ACTION_TIMEOUT)
+            except RemoteError:
+                pass
+
+        threading.Thread(target=send, daemon=True).start()
+
+    def latest(self, name: str):
+        """Trenutna slika kamere sa servera (za ekran prema kupcu); None ako je nema."""
+        import cv2
+        import numpy as np
+
+        request = urllib.request.Request(self.url + f"/frame/{name}", headers={"X-Token": self.token})
+        try:
+            with urllib.request.urlopen(request, timeout=POLL_TIMEOUT) as response:
+                data = response.read()
+        except (urllib.error.URLError, OSError, ValueError):
+            return None
+        return cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+
     def _send_quietly(self, path: str) -> None:
         try:
             self._apply(self._request("POST", path, {}, ACTION_TIMEOUT))
@@ -152,6 +175,7 @@ class RemoteGuard:
             self.checking = bool(data.get("checking"))
             self.unscanned_guess = str(data.get("guess") or "")
             self.counter_problem = str(data.get("counter_problem") or "")
+            self.tamper_problems = {str(name): str(problem) for name, problem in (data.get("tamper") or {}).items()}
             if "cameras" in data:
                 self.camera_statuses = {str(name): str((info or {}).get("status", "")) for name, info in (data.get("cameras") or {}).items()}
             raw = data.get("outcome")

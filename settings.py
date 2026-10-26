@@ -48,6 +48,9 @@ class Settings:
     cameras_enabled: bool = field(default_factory=cameras_in_env)
     allow_without_cameras: bool = False
     yolox_enabled: bool = field(default_factory=counter_in_env)
+    alarm_clips: bool = True
+    customer_monitor: bool = True
+    customer_monitor_camera: str = "C"
     vision_server_url: str = field(default_factory=lambda: os.environ.get("CAM_SERVER_URL", ""))
     camera_a_host: str = field(default_factory=lambda: os.environ.get("CAM_A_HOST", ""))
     camera_a2_host: str = field(default_factory=lambda: os.environ.get("CAM_A2_HOST", ""))

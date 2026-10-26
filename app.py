@@ -40,6 +40,7 @@ from fiscal import FiscalOptions, FiscalPrinter, FiscalResult
 from qr_slip import print_gate_slip
 from receipts import ReceiptStore
 from screens.cameras_down import CamerasDownScreen
+from screens.customer_monitor import CustomerMonitor
 from screens.drop import DropScreen
 from screens.idle import ActivityFilter, IdleOverlay
 from screens.payment import PaymentScreen
@@ -149,6 +150,7 @@ class MainWindow(QMainWindow):
         quit_shortcut.activated.connect(self.request_quit)
         diagnostics_shortcut = QShortcut(QKeySequence("Ctrl+Shift+D"), self)
         diagnostics_shortcut.activated.connect(self.request_diagnostics)
+        self.customer_monitor = None
         self.start_cameras()
         self.start_article_sync()
         QTimer.singleShot(2000, self.sync_articles)
@@ -188,6 +190,8 @@ class MainWindow(QMainWindow):
             watch["blocked"], watch["guess"] = True, guess
             self.store.block_gate(watch["number"], guess)
             print(f"Račun {watch['number']}: poslije plaćanja uzet neplaćen artikal ({guess or 'nije prepoznat'}), vrata blokirana")
+            if hasattr(guard, "record_clip"):
+                guard.record_clip("Niste sve platili")
         elif not unpaid and self.cart.item_count:
             # artikal je skeniran u novoj kupovini: stari račun ostaje blokiran, vrata otvara tek novi (plaćeni) račun
             self.exit_watch = None
@@ -304,6 +308,21 @@ class MainWindow(QMainWindow):
             except Exception as error:
                 print(f"Kamere nisu pokrenute: {error}")
         self.scan.guard = self.guard
+        self.start_customer_monitor()
+
+    def start_customer_monitor(self) -> None:
+        if self.customer_monitor is not None:
+            self.customer_monitor.stop()
+            self.customer_monitor.deleteLater()
+            self.customer_monitor = None
+        if self.guard is None or not self.settings.customer_monitor or not hasattr(self.guard, "latest"):
+            return
+        monitor = CustomerMonitor(self.guard.latest, self.settings.customer_monitor_camera)
+        if monitor.start(allow_main_screen=not self.settings.fullscreen):
+            self.customer_monitor = monitor
+        else:
+            print("Ekran 'Snimate se': drugi monitor nije priključen")
+            monitor.deleteLater()
 
     def start_gate_api(self):
         try:
@@ -443,14 +462,18 @@ class MainWindow(QMainWindow):
     def apply_settings(self, settings: Settings) -> None:
         cameras_changed = any(
             getattr(settings, name) != getattr(self.settings, name)
-            for name in ("cameras_enabled", "yolox_enabled", "camera_a_host", "camera_a2_host", "camera_b_host", "camera_b2_host", "camera_c_host", "camera_c2_host", "camera_channel", "camera_model", "match_threshold")
+            for name in ("cameras_enabled", "yolox_enabled", "alarm_clips", "camera_a_host", "camera_a2_host", "camera_b_host", "camera_b2_host", "camera_c_host", "camera_c2_host", "camera_channel", "camera_model", "match_threshold")
         )
         sync_changed = settings.article_sync_minutes != self.settings.article_sync_minutes
+        monitor_changed = (settings.customer_monitor, settings.customer_monitor_camera) != (
+            self.settings.customer_monitor, self.settings.customer_monitor_camera)
         self.settings = settings
         save_settings(settings, self.settings_path)
         self.configure_database()
         if sync_changed:
             self.start_article_sync()
+        if monitor_changed and not cameras_changed:
+            self.start_customer_monitor()
         if cameras_changed:
             self.start_cameras()
 
@@ -486,6 +509,8 @@ class MainWindow(QMainWindow):
         self.screens.setCurrentWidget(self.unpaid if blocked else self.welcome)
 
     def closeEvent(self, event) -> None:
+        if self.customer_monitor is not None:
+            self.customer_monitor.stop()
         if self.diagnostics is not None:
             self.diagnostics.close()
         if self.guard is not None:

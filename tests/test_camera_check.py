@@ -83,3 +83,29 @@ def test_problem_when_yolox_cannot_count():
     guard = local_guard(A2="uživo", B2="uživo")
     guard.counter_problem = "Brojač artikala (YOLOX) se nije učitao."
     assert "YOLOX" in cameras_problem(guard, True)
+
+
+def test_problem_when_camera_is_covered_or_moved():
+    guard = local_guard(A2="uživo", B2="uživo")
+    guard.tamper_problems = {"B2": "kamera je pomjerena"}
+    assert "B2 (kamera je pomjerena)" in cameras_problem(guard, True)
+
+
+def test_customer_monitor_shows_mirrored_camera():
+    import numpy as np
+
+    from screens.customer_monitor import CustomerMonitor
+
+    frame = np.zeros((90, 160, 3), np.uint8)
+    frame[:, :80] = (0, 0, 255)
+    asked = []
+    monitor = CustomerMonitor(lambda name: asked.append(name) or frame, "C")
+    monitor.resize(400, 300)
+    monitor._frame = frame
+    monitor._paint()
+    image = monitor.video.pixmap().toImage()
+    assert image.pixelColor(image.width() - 5, image.height() // 2).red() > 200
+    assert image.pixelColor(5, image.height() // 2).red() < 50
+    assert monitor.start(allow_main_screen=True)
+    monitor.stop()
+    assert "C" in asked or asked == []

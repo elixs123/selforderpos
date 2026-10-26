@@ -182,3 +182,26 @@ def test_ping_lists_cameras_and_zone_a(monkeypatch):
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_tamper_and_frame_reach_the_register(monkeypatch):
+    import numpy as np
+
+    monkeypatch.setattr(remote_guard, "POLL_SECONDS", 0.02)
+    guard = FakeGuard()
+    guard.tamper_problems = {"A2": "kamera je pomjerena"}
+    guard.latest = lambda name: np.full((480, 1280, 3), 200, np.uint8) if name == "C" else None
+    clips = []
+    guard.record_clip = clips.append
+    server = start_server(guard)
+    client = connect(server)
+    try:
+        assert wait_for(lambda: client.tamper_problems == {"A2": "kamera je pomjerena"})
+        frame = client.latest("C")
+        assert frame is not None and frame.shape[1] == 640
+        assert client.latest("X") is None
+        client.record_clip("Niste sve platili")
+        assert wait_for(lambda: clips == ["Niste sve platili"])
+    finally:
+        client.stop()
+        server.shutdown()
