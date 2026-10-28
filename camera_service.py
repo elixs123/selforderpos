@@ -18,8 +18,8 @@ class CameraSetupError(Exception):
 
 
 ENV_CAMERA_KEYS = {
-    "camera_a_host": "CAM_A_HOST", "camera_a2_host": "CAM_A2_HOST", "camera_b_host": "CAM_B_HOST",
-    "camera_b2_host": "CAM_B2_HOST", "camera_c_host": "CAM_C_HOST", "camera_c2_host": "CAM_C2_HOST",
+    "camera_a_host": "CAM_A_HOST", "camera_a2_host": "CAM_A2_HOST", "camera_a3_host": "CAM_A3_HOST", "camera_b_host": "CAM_B_HOST",
+    "camera_b2_host": "CAM_B2_HOST", "camera_b3_host": "CAM_B3_HOST", "camera_c_host": "CAM_C_HOST", "camera_c2_host": "CAM_C2_HOST",
     "camera_channel": "CAM_CHANNEL",
 }
 
@@ -74,7 +74,8 @@ def start_guard(settings: Settings):
     if not settings.camera_a_host or not settings.camera_b_host:
         raise CameraSetupError("Upišite IP adrese kamera A i B u postavkama.")
     hosts = {
-        "A": settings.camera_a_host, "A2": settings.camera_a2_host, "B": settings.camera_b_host, "B2": settings.camera_b2_host,
+        "A": settings.camera_a_host, "A2": settings.camera_a2_host, "A3": settings.camera_a3_host,
+        "B": settings.camera_b_host, "B2": settings.camera_b2_host, "B3": settings.camera_b3_host,
         "C": settings.camera_c_host, "C2": settings.camera_c2_host,
     }
     hosts = {name: host for name, host in hosts.items() if host}

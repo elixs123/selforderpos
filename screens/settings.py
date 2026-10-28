@@ -35,7 +35,7 @@ SECTIONS = [
     ("Kartični terminal (PrintecECR)", ["terminal_url", "terminal_api_key", "terminal_print_slip", "terminal_slip_copies"]),
     ("Fiskalni printer (Tring)", ["fiscal_enabled", "fiscal_url", "fiscal_unit", "fiscal_tax_label", "fiscal_card_payment", "fiscal_qr_payment"]),
     ("QR slip za vrata (test)", ["qr_slip_enabled", "qr_slip_printer", "qr_slip_ibfm"]),
-    ("Kamere", ["cameras_enabled", "allow_without_cameras", "yolox_enabled", "alarm_clips", "customer_monitor", "customer_monitor_camera", "vision_server_url", "camera_a_host", "camera_a2_host", "camera_b_host", "camera_b2_host", "camera_c_host", "camera_c2_host", "camera_channel", "camera_model", "match_threshold"]),
+    ("Kamere", ["cameras_enabled", "allow_without_cameras", "yolox_enabled", "alarm_clips", "customer_monitor", "customer_monitor_camera", "vision_server_url", "camera_a_host", "camera_a2_host", "camera_a3_host", "camera_b_host", "camera_b2_host", "camera_b3_host", "camera_c_host", "camera_c2_host", "camera_channel", "camera_model", "match_threshold"]),
 ]
 
 LABELS = {
@@ -72,8 +72,10 @@ LABELS = {
     "vision_server_url": "Adresa servera kamera (prazno = kamere na ovom računaru)",
     "camera_a_host": "IP kamere A (korpa)",
     "camera_a2_host": "IP druge kamere A (prazno = nema)",
+    "camera_a3_host": "IP bočne kamere A (prazno = nema)",
     "camera_b_host": "IP kamere B (odlaganje)",
     "camera_b2_host": "IP druge kamere B (prazno = nema)",
+    "camera_b3_host": "IP bočne kamere B (prazno = nema)",
     "camera_c_host": "IP kamere C (praćenje kupca, prazno = nema)",
     "camera_c2_host": "IP druge kamere C (prazno = nema)",
     "camera_channel": "Kanal (101 ili 102)",
@@ -81,7 +83,7 @@ LABELS = {
     "match_threshold": "Prag sličnosti (0 = iz .env ili zadano)",
 }
 
-CHOICES = {"camera_model": ["dinov2", "dinov2-base", "clip", "mobilenet"], "customer_monitor_camera": ["C", "C2", "A", "A2", "B", "B2"]}
+CHOICES = {"camera_model": ["dinov2", "dinov2-base", "clip", "mobilenet"], "customer_monitor_camera": ["C", "C2", "A", "A2", "A3", "B", "B2", "B3"]}
 SECRET = {"terminal_api_key", "db_password"}
 
 

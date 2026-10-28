@@ -58,7 +58,8 @@ def main() -> None:
         settings = replace(settings, camera_model=model)
     print(f"AI model: {settings.camera_model}")
     print(f"Adrese kamera su iz {'.env' if env_defines_cameras() else 'postavki (settings.json)'}:")
-    for name, host in (("A", settings.camera_a_host), ("A2", settings.camera_a2_host), ("B", settings.camera_b_host), ("B2", settings.camera_b2_host),
+    for name, host in (("A", settings.camera_a_host), ("A2", settings.camera_a2_host), ("A3", settings.camera_a3_host),
+                      ("B", settings.camera_b_host), ("B2", settings.camera_b2_host), ("B3", settings.camera_b3_host),
                       ("C", settings.camera_c_host), ("C2", settings.camera_c2_host)):
         if host:
             print(f"  {name}: {host}")

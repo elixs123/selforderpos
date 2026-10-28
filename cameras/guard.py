@@ -57,6 +57,8 @@ LEARNED_MIN = 3
 PRODUCT_MIN_SCORE = float(os.environ.get("CAM_PRODUCT_THRESHOLD", "0.8"))
 RIVAL_MARGIN = float(os.environ.get("CAM_RIVAL_MARGIN", "0.02"))
 PRIMARY_CAMERAS = {name.strip() for name in os.environ.get("CAM_PRIMARY", "A2,B2").split(",") if name.strip()}
+# Bočne kamere daju drugi ugao za prepoznavanje; ne broje artikle (iz ugla se artikli preklapaju).
+SIDE_CAMERAS = {name.strip() for name in os.environ.get("CAM_SIDE_CAMERAS", "A3,B3").split(",") if name.strip()}
 LEARNED_FACTOR = 1.7
 EXTRA_MARK = "*"
 
@@ -480,6 +482,7 @@ class CheckoutGuard:
             return
         cameras = [name for name, tracker in self.trackers.items()
                    if self._is_live(name) and tracker.ready and name in self._a_baseline]
+        cameras = [name for name in cameras if name not in SIDE_CAMERAS] or cameras
         if not cameras:
             self._check_pending_since = None
             self._scanned_since_baseline = 0
@@ -1342,6 +1345,7 @@ class CheckoutGuard:
             watcher.disarm()
         crops = [item for _, item, _ in items]
         counts = {name: len(self.watchers[name].items) for name, _, _ in items}
+        counts = {name: count for name, count in counts.items() if name not in SIDE_CAMERAS} or counts
         self._placed_blobs = {name: list(self.watchers[name].items) for name, _, _ in items}
         placed_count = max(counts.values(), default=1)
         for name, count in counts.items():

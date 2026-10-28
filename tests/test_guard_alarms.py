@@ -63,3 +63,21 @@ def test_covered_camera_is_reported_and_recorded(monkeypatch, tmp_path):
     assert reasons == [f"kamera B2 {tamper.COVERED}"]
     guard.watch_tamper(frames, 30.0)
     assert guard.tamper_problems == {}
+
+
+def test_side_cameras_join_zones_but_do_not_count_placed_items(monkeypatch, tmp_path):
+    monkeypatch.setenv("SAMPLES_DIR", str(tmp_path))
+    readers = {name: StillReader() for name in ("A2", "A3", "B2", "B3")}
+    guard = CheckoutGuard(readers)
+    assert guard.cameras_a == ["A2", "A3"] and guard.cameras_b == ["B2", "B3"]
+    jobs = []
+    guard._judge_job = lambda *args: jobs.append(args)
+    monkeypatch.setattr("guard.threading.Thread", lambda target, args, daemon: SimpleNamespace(start=lambda: target(*args)))
+    guard.watchers["B2"].items = [(500, (0, 0, 10, 10))]
+    guard.watchers["B3"].items = [(300, (0, 0, 10, 10)), (200, (20, 0, 10, 10))]
+    frame = readers["B2"].latest()
+    placement = SimpleNamespace(change_ratio=0.1, box=(10, 10, 40, 40))
+    guard._on_placed({"B2": placement, "B3": placement}, {"B2": (frame, (0, 0)), "B3": (frame, (0, 0))}, 0.0)
+    _, items, crops, *_, placed_count = jobs[0]
+    assert [name for name, _, _ in items] == ["B2", "B3"] and len(crops) == 2
+    assert placed_count == 1

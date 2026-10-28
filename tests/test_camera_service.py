@@ -21,3 +21,12 @@ def test_saved_settings_kept_without_env_hosts(monkeypatch):
     monkeypatch.delenv("CAM_B_HOST", raising=False)
     saved = Settings(camera_a_host="1.1.1.1", camera_b_host="1.1.1.2")
     assert hosts_from_env(saved) == saved
+
+
+def test_side_camera_hosts_come_from_env(monkeypatch):
+    monkeypatch.setenv("CAM_A_HOST", "10.0.0.1")
+    monkeypatch.setenv("CAM_B_HOST", "10.0.0.2")
+    monkeypatch.setenv("CAM_A3_HOST", "10.0.0.3")
+    monkeypatch.setenv("CAM_B3_HOST", "10.0.0.4")
+    result = hosts_from_env(Settings())
+    assert (result.camera_a3_host, result.camera_b3_host) == ("10.0.0.3", "10.0.0.4")

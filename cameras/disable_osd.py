@@ -64,7 +64,7 @@ def process(host: str, user: str, password: str) -> None:
 
 
 def main() -> None:
-    hosts = [os.environ.get(f"CAM_{name}_HOST", "") for name in ("A", "A2", "B", "B2", "C", "C2")]
+    hosts = [os.environ.get(f"CAM_{name}_HOST", "") for name in ("A", "A2", "A3", "B", "B2", "B3", "C", "C2")]
     hosts = [host for host in hosts if host]
     if not hosts:
         print("Upiši CAM_A_HOST i CAM_B_HOST u .env.")
