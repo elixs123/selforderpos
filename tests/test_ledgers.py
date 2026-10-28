@@ -6,9 +6,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "cameras"))
 from counter import ZoneALedger, ZoneBLedger
 
 
-def seen(ledger, count):
-    ledger.observe(count)
-    ledger.observe(count)
+def seen(ledger, count, now=None):
+    if now is None:
+        ledger.observe(count)
+        ledger.observe(count)
+    else:
+        ledger.observe(count, now)
+        ledger.observe(count, now)
 
 
 def test_zone_a_normal_sale():
@@ -66,5 +70,20 @@ def test_zone_b_item_put_without_scan_and_packing():
     assert ledger.extra == 1
     seen(ledger, 1)
     assert ledger.extra == 0
-    seen(ledger, 0)
+    seen(ledger, 0, now=100.0)
+    assert ledger.known == 1
+    seen(ledger, 0, now=110.0)
     assert ledger.known == 0
+
+
+def test_zone_b_count_flicker_is_not_an_unscanned_item():
+    ledger = ZoneBLedger()
+    seen(ledger, 0)
+    ledger.accepted(2)
+    for second in range(0, 30, 3):
+        seen(ledger, 1, now=float(second))
+        assert ledger.known == 2 and ledger.extra == 0
+        seen(ledger, 2, now=second + 1.5)
+        assert ledger.extra == 0
+    seen(ledger, 3, now=40.0)
+    assert ledger.extra == 1

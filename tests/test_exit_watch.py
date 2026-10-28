@@ -42,6 +42,13 @@ def check(window):
     app_module.MainWindow.check_exit(window)
 
 
+def check_unpaid(window, clock):
+    """Neplaćen artikal se računa tek kad traje EXIT_CONFIRM_SECONDS."""
+    check(window)
+    clock[0] += app_module.EXIT_CONFIRM_SECONDS
+    check(window)
+
+
 def test_unpaid_item_after_payment_blocks_gate_and_shows_item(tmp_path, monkeypatch):
     clock = [100.0]
     monkeypatch.setattr(app_module.time, "monotonic", lambda: clock[0])
@@ -50,7 +57,7 @@ def test_unpaid_item_after_payment_blocks_gate_and_shows_item(tmp_path, monkeypa
     assert window.screens.currentWidget() is window.receipt
 
     window.guard.unscanned, window.guard.unscanned_guess = 1, "Jamnica 1,5 l"
-    check(window)
+    check_unpaid(window, clock)
     assert window.screens.currentWidget() is window.unpaid
     assert "Jamnica" in window.unpaid.item_label.text()
     allowed, reason = window.store.claim_for_gate("84366")
@@ -62,7 +69,7 @@ def test_returning_the_item_unblocks_gate(tmp_path, monkeypatch):
     monkeypatch.setattr(app_module.time, "monotonic", lambda: clock[0])
     window, number = fake_window(tmp_path, clock)
     window.guard.unscanned = 1
-    check(window)
+    check_unpaid(window, clock)
     assert window.unpaid.item_label.text() == "Uzeli ste artikal koji nije plaćen."
     window.guard.unscanned = 0
     check(window)
@@ -76,12 +83,27 @@ def test_item_scanned_in_new_sale_keeps_old_receipt_blocked(tmp_path, monkeypatc
     monkeypatch.setattr(app_module.time, "monotonic", lambda: clock[0])
     window, number = fake_window(tmp_path, clock)
     window.guard.unscanned = 1
-    check(window)
+    check_unpaid(window, clock)
     window.cart.add(Product("J1", "2002", "Jamnica 1,5 l", 1.20))
     window.guard.unscanned = 0
     check(window)
     assert window.exit_watch is None
     assert not window.store.claim_for_gate("84366")[0]
+
+
+def test_short_count_blip_does_not_block_gate(tmp_path, monkeypatch):
+    clock = [100.0]
+    monkeypatch.setattr(app_module.time, "monotonic", lambda: clock[0])
+    window, number = fake_window(tmp_path, clock)
+    for _ in range(5):
+        window.guard.unscanned = 1
+        check(window)
+        clock[0] += 1.5
+        window.guard.unscanned = 0
+        check(window)
+        clock[0] += 1.5
+    assert not window.exit_watch["blocked"]
+    assert window.store.claim_for_gate("84366")[0]
 
 
 def test_watch_ends_after_gate_or_timeout(tmp_path, monkeypatch):

@@ -1,5 +1,6 @@
 import os
 import threading
+import time
 import urllib.request
 from pathlib import Path
 
@@ -14,6 +15,8 @@ MIN_CONFIDENCE = 0.5
 MATCH_IOU = 0.3
 IGNORED_CLASSES = {0, 56, 57, 58, 59, 60, 61, 62, 63, 66, 68, 69, 70, 71, 72}
 DEFAULT_CAMERAS = "A2,B2"
+# YOLOX zna "izgubiti" artikal koji se preklapa sa drugim; manji broj u zoni B vrijedi tek kad je toliko stabilan.
+B_DROP_SECONDS = 8.0
 
 
 def enabled() -> bool:
@@ -171,17 +174,25 @@ class ZoneBLedger:
         self.known: int | None = None
         self.pending: int | None = None
         self.extra = 0
+        self._lower_since: float | None = None
 
-    def observe(self, count: int) -> bool:
+    def observe(self, count: int, now: float | None = None) -> bool:
+        now = time.monotonic() if now is None else now
         if count != self.pending:
             self.pending = count
             return False
         before = self.extra
-        if self.known is None or count <= self.known:
+        if self.known is None:
             self.known = count
-            self.extra = 0
+        elif count < self.known:
+            # Artikal uzet iz zone B (pakovanje) ili ga YOLOX samo trenutno ne vidi: known se smanji tek poslije B_DROP_SECONDS.
+            if self._lower_since is None:
+                self._lower_since = now
+            if now - self._lower_since >= B_DROP_SECONDS:
+                self.known, self._lower_since = count, None
         else:
-            self.extra = count - self.known
+            self._lower_since = None
+        self.extra = max(0, count - self.known)
         return before != self.extra
 
     def accepted(self, count: int | None) -> None:
@@ -189,3 +200,4 @@ class ZoneBLedger:
             self.known = count
         self.pending = None
         self.extra = 0
+        self._lower_since = None

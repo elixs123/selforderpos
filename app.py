@@ -59,6 +59,8 @@ from styles import apply_light_theme, px
 
 CAMERAS_DOWN_SECONDS = 10
 EXIT_WATCH_SECONDS = 120
+# Neplaćen artikal mora trajati ovoliko da se vrata blokiraju (brojač zna trepnuti na sekundu-dvije).
+EXIT_CONFIRM_SECONDS = 3.0
 IDLE_COUNTDOWN_SECONDS = 30
 
 
@@ -186,6 +188,10 @@ class MainWindow(QMainWindow):
                 self.exit_watch = None
                 return
             if not unpaid:
+                watch["unpaid_since"] = None
+                return
+            watch["unpaid_since"] = watch.get("unpaid_since") or time.monotonic()
+            if time.monotonic() - watch["unpaid_since"] < EXIT_CONFIRM_SECONDS:
                 return
             watch["blocked"], watch["guess"] = True, guess
             self.store.block_gate(watch["number"], guess)
