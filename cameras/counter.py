@@ -210,7 +210,8 @@ class ZoneBLedger:
 
     def accepted(self, count: int | None) -> None:
         if count is not None:
-            self.known = count
+            # Prihvaćen artikal je u zoni B: bar jedan više nego prije, i kad ga YOLOX u tom trenutku ne vidi (zaklonjen).
+            self.known = count if self.known is None else max(count, self.known + 1)
         self.pending = None
         self.extra = 0
         self._lower_since = None

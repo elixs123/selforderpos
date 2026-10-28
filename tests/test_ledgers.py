@@ -93,6 +93,15 @@ def test_zone_b_item_put_without_scan_and_packing():
     assert ledger.known == 0
 
 
+def test_accepted_item_counts_even_when_yolox_missed_it():
+    ledger = ZoneBLedger()
+    seen(ledger, 3)
+    ledger.accepted(3)
+    assert ledger.known == 4
+    seen(ledger, 4)
+    assert ledger.extra == 0
+
+
 def test_zone_b_count_flicker_is_not_an_unscanned_item():
     ledger = ZoneBLedger()
     seen(ledger, 0)
