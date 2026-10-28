@@ -1,6 +1,7 @@
 IZMJENE - samouslužna kasa
 
 2026-10-28
+- Početni ekran: dugme 'Dodirnite za početak' je na sredini na svakoj veličini ekrana, kartice 'Kako funkcioniše' su centrirane i ne razvlače se, a podnaslov se više ne odsijeca ('čekanja').
 - Vrata: QR s računa otvara vrata tačno jednom; ponovni sken istog QR koda (i u prve 2 minute) se odbija.
 - Zapis događaja kamera u data/logs je isključen; uključuje se u Postavke > Kamere > 'Zapisuj događaje kamera u data/logs' (CAM_EVENT_LOG).
 - 'Više liči na drugi artikal' se provjerava kamera prema istoj kameri gdje skenirani artikal ima svoje slike (slika odozgo ne poredi se sa skeniranim artiklom sa strane, a sa drugim odozgo).

@@ -21,6 +21,10 @@ from styles import (
 )
 
 
+BUTTON_WIDTH = 820 - 128
+CONTENT_WIDTH = 1000
+
+
 class WelcomeScreen(QWidget):
     started = Signal()
 
@@ -33,10 +37,13 @@ class WelcomeScreen(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        layout.addWidget(self._red_section())
+        self.red = self._red_section()
+        layout.addWidget(self.red)
         layout.addSpacing(px(128))
-        layout.addLayout(self._steps())
-        layout.addStretch()
+        layout.addStretch(1)
+        self.steps = self._steps()
+        layout.addLayout(self.steps)
+        layout.addStretch(2)
         layout.addLayout(self._footer())
 
         self.start_button = QPushButton("Dodirnite za početak  ", self)
@@ -44,7 +51,7 @@ class WelcomeScreen(QWidget):
         self.start_button.setIconSize(QSize(px(48), px(48)))
         self.start_button.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         self.start_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.start_button.setGeometry(px(64), px(700 - 72), px(820 - 128), px(144))
+
         self.start_button.setStyleSheet(
             f"QPushButton {{ background: {GREEN}; color: white; border: none;"
             f" border-radius: {px(72)}px; font-size: {px(44)}px; font-weight: 800; }}"
@@ -52,6 +59,19 @@ class WelcomeScreen(QWidget):
         )
         self.start_button.clicked.connect(self.started.emit)
         self.start_button.raise_()
+        self._place()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._place()
+
+    def _place(self) -> None:
+        """Dugme na sredini, preko donjeg ruba crvenog dijela; kartice ne šire od CONTENT_WIDTH (veliki ekran)."""
+        margin = px(64)
+        width = min(self.width() - 2 * margin, px(BUTTON_WIDTH))
+        self.start_button.setGeometry((self.width() - width) // 2, px(700 - 72), width, px(144))
+        side = max(margin, (self.width() - px(CONTENT_WIDTH)) // 2)
+        self.steps.setContentsMargins(side, 0, side, 0)
 
     def _red_section(self) -> QFrame:
         frame = QFrame()
@@ -84,11 +104,10 @@ class WelcomeScreen(QWidget):
 
         subtitle = QLabel("Skenirajte artikle, odložite ih i platite. Bez čekanja u redu.")
         subtitle.setWordWrap(True)
-        subtitle.setMaximumWidth(px(660))
-        subtitle.setMinimumHeight(px(100))
         subtitle.setStyleSheet(f"background: transparent; color: white; font-size: {px(32)}px; font-weight: 500;")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(subtitle, alignment=Qt.AlignmentFlag.AlignHCenter)
+        # Bez alignment u layoutu: Qt tada računa visinu prelomljenog teksta (inače se zadnji red odsiječe, "čekanja" -> "čekania").
+        layout.addWidget(subtitle)
         layout.addStretch()
         return frame
 
