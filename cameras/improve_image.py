@@ -117,15 +117,15 @@ def process(host: str, user: str, password: str, channel: str) -> None:
 
 
 def main() -> None:
-    hosts = [os.environ.get(f"CAM_{name}_HOST", "") for name in ("A", "A2", "A3", "B", "B2", "B3")]
-    hosts = [host for host in hosts if host]
+    hosts = [os.environ.get(f"CAM_{name}_HOST", "") for name in ("A", "A2", "A3", "B", "B2", "B3", "C", "C2")]
+    hosts = [host.strip() for host in hosts if host.strip()]
     if not hosts:
         print("Upiši CAM_A_HOST i CAM_B_HOST u .env.")
         return
     channel = os.environ.get("CAM_CHANNEL", "102")
     print(f"Kamere: {', '.join(hosts)}   tok slike: {channel}")
-    user = input("Admin korisnik kamere [admin]: ").strip() or "admin"
-    password = getpass.getpass("Lozinka (ne prikazuje se): ")
+    user = os.environ.get("CAM_USER") or input("Admin korisnik kamere [admin]: ").strip() or "admin"
+    password = os.environ.get("CAM_PASSWORD") or getpass.getpass("Lozinka (ne prikazuje se): ")
     for host in hosts:
         process(host, user, password, channel)
     print("\nGotovo. Restartuj kasu da preuzme novu sliku.")
