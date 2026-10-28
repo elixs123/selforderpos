@@ -462,7 +462,7 @@ class MainWindow(QMainWindow):
     def apply_settings(self, settings: Settings) -> None:
         cameras_changed = any(
             getattr(settings, name) != getattr(self.settings, name)
-            for name in ("cameras_enabled", "yolox_enabled", "alarm_clips", "camera_a_host", "camera_a2_host", "camera_a3_host", "camera_b_host", "camera_b2_host", "camera_b3_host", "camera_c_host", "camera_c2_host", "camera_channel", "camera_model", "match_threshold", "reference_min_percent")
+            for name in ("cameras_enabled", "yolox_enabled", "alarm_clips", "camera_a_host", "camera_a2_host", "camera_a3_host", "camera_b_host", "camera_b2_host", "camera_b3_host", "camera_c_host", "camera_c2_host", "camera_channel", "camera_model", "match_threshold", "reference_min_percent", "label_reading")
         )
         sync_changed = settings.article_sync_minutes != self.settings.article_sync_minutes
         monitor_changed = (settings.customer_monitor, settings.customer_monitor_camera) != (

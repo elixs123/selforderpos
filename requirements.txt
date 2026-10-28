@@ -6,4 +6,5 @@ opencv-python
 numpy
 onnxruntime
 mediapipe
+rapidocr-onnxruntime
 segno

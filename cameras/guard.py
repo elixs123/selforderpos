@@ -17,6 +17,7 @@ from reader import CameraReader
 from samples import SampleStore
 from similarity import Signature, compare, match_threshold, method_name, signature
 import counter as counter_module
+import labels
 from counter import ZoneALedger, ZoneBLedger, counting_cameras, get_counter, unmatched
 from watcher import BasketTracker, ZoneWatcher, looks_like_item, main_box, removed_items, separate_items
 from zones import crop, load_zones, zones_changed_at
@@ -69,6 +70,9 @@ CLIP_MESSAGES = (UNSCANNED_MESSAGE, PLACED_UNSCANNED_MESSAGE)
 
 
 PERSON_CLASS = 0
+# Problemi po izgledu; kad etiketa potvrdi skenirani artikal, oni ne odlučuju (npr. dvije slične zelene boce).
+TAKEN_PROBLEM = "nije isto što je uzeto iz zone A"
+APPEARANCE_PROBLEMS = ("ne liči na skenirani", "više liči na drugi", "liči na drugi")
 BAD_REFERENCE = "bad_reference"
 
 
@@ -196,6 +200,7 @@ class CheckoutGuard:
         self._hand_cache: dict[str, tuple[np.ndarray, list[np.ndarray], float]] = {}
         self._hand_lock = threading.Lock()
         self._hands_run_lock = threading.Lock()
+        self._label_reader = ThreadPoolExecutor(max_workers=1)
         self.crop_scores: list[float | None] = []
         self._placed_problems: list[str] = []
 
@@ -1047,7 +1052,7 @@ class CheckoutGuard:
         elif score_taken is None:
             problems.append("nije viđeno šta je uzeto iz zone A")
         elif score_taken < threshold:
-            problems.append("nije isto što je uzeto iz zone A")
+            problems.append(TAKEN_PROBLEM)
         if score_product is not None and score_product < product_threshold:
             problems.append("ne liči na skenirani artikal")
         if rival is not None:
@@ -1065,6 +1070,56 @@ class CheckoutGuard:
         if score_product is None:
             return "learned", [], score_taken, score_product
         return "ok", [], score_taken, score_product
+
+    def _apply_label(
+        self, verdict: str, problems: list[str], score_product: float | None, reads: list[set[str]], product_code: str | None,
+        taken_items: list | None = None,
+    ) -> tuple[str, list[str], list[bool]]:
+        """Tekst sa etikete: potvrdi skenirani artikal (izgled tada ne odlučuje) ili otkrij drugi artikal."""
+        hits = [False] * len(reads)
+        read = set().union(*reads)
+        if not read:
+            return verdict, problems, hits
+        known = self.store.product_labels(self.references_since)
+        products = {code: labels.name_words(name) | words for code, (name, words) in known.items()}
+        scanned = product_code or ""
+        products[scanned] = products.get(scanned, set()) | labels.name_words(self.product_name)
+        status, word, other = labels.check(read, scanned, products)
+        hits = [labels.check(words, scanned, products)[0] == "match" for words in reads]
+        self.log("etiketa", f"pročitano: {', '.join(sorted(read))} -> " + {
+            "match": f"piše {word}, to je skenirani artikal",
+            "other": f"piše {word}, to je drugi artikal ({known.get(other, ('', set()))[0] or other})",
+        }.get(status, "ne pomaže"))
+        if status == "match":
+            problems = [problem for problem in problems if not problem.startswith(APPEARANCE_PROBLEMS)]
+            if TAKEN_PROBLEM in problems and taken_items and all(
+                    self._reference_problem(item).startswith(("ruka", "osoba", "nema")) for item in taken_items):
+                # Iz zone A se vidjela samo ruka/osoba, pa poređenje sa uzetim ne vrijedi; etiketa potvrđuje artikal.
+                self.log("etiketa", "uzeto iz zone A je samo ruka/osoba na slici, ne poredim sa uzetim")
+                problems = [problem for problem in problems if problem != TAKEN_PROBLEM]
+        elif status == "other":
+            problems = problems + [f"na etiketi piše {word} ({known.get(other, ('', set()))[0] or other})"]
+        self.last_problems = problems
+        if problems:
+            return "mismatch", problems, hits
+        if verdict == "mismatch":
+            verdict = "learned" if score_product is None else "ok"
+        return verdict, problems, hits
+
+    def _label_crop_scores(self, crops: list[np.ndarray], scores: list[float | None], hits: list[bool]) -> list[float | None]:
+        """Slika na kojoj se pročitao skenirani artikal je dobra; ostale moraju ličiti na nju."""
+        if not any(hits):
+            return scores
+        confirmed = [signature(crop, rotations=False) for crop, hit in zip(crops, hits) if hit]
+        result = []
+        for index, crop in enumerate(crops):
+            if hits[index]:
+                result.append(1.0)
+                continue
+            query = signature(crop, rotations=False)
+            best = max(compare(query, other) for other in confirmed)
+            result.append(max(best, scores[index] or 0.0))
+        return result
 
     def _reference_problem(self, image: np.ndarray | None, score: float | None = 1.0) -> str:
         """Zašto slika nije dobra za učenje (prazno = dobra): ruka ili osoba na slici, ili slabo liči na artikal."""
@@ -1438,6 +1493,7 @@ class CheckoutGuard:
                 self.log("zona-B", f"male promjene uz artikal ne računam kao drugi artikal (YOLOX vidi {yolo_new} novi)")
                 placed_count = large
         placed_count = max(placed_count, yolo_new or 0)
+        reading = self._label_reader.submit(labels.read_crops, [item for _, item, _ in items]) if placed_count <= 1 else None
         try:
             verdict, problems, score_taken, score_product = self._judge(
                 crops, change_ratio, taken_items, taken_befores, product_code, placed_count, [name for name, _, _ in items],
@@ -1445,7 +1501,9 @@ class CheckoutGuard:
         except Exception as error:
             print(f"Poređenje: {error}")
             verdict, problems, score_taken, score_product = "mismatch", [f"greška u poređenju ({error})"], None, None
-        scores = list(self.crop_scores) + [None] * len(items)
+        reads = reading.result() if reading is not None else [set() for _ in items]
+        verdict, problems, hits = self._apply_label(verdict, problems, score_product, reads, product_code, taken_items)
+        scores = self._label_crop_scores([item for _, item, _ in items], list(self.crop_scores) + [None] * len(items), hits)
         crop_problems = [self._reference_problem(item, scores[index]) for index, (_, item, _) in enumerate(items)]
         self.judge_ms = (time.monotonic() - started) * 1000
         with self._lock:
@@ -1454,7 +1512,7 @@ class CheckoutGuard:
             self._judging = False
             self._placed_sample_ids = []
             self._placed_problems = crop_problems
-            for (name, item, ratio), problem in zip(items, crop_problems):
+            for (name, item, ratio), problem, read in zip(items, crop_problems, reads):
                 saved_verdict = verdict
                 if problem and verdict != "mismatch":
                     saved_verdict = BAD_REFERENCE
@@ -1463,6 +1521,7 @@ class CheckoutGuard:
                     "placed", self.barcode, self.product_code, self.product_name, name,
                     crop_image=item, full_image=frames[name][0], change_ratio=ratio,
                     verdict=saved_verdict, score_taken=score_taken, score_product=score_product,
+                    label_text=" ".join(sorted(read)) or None,
                 )
                 self._placed_sample_ids.append(sample_id)
             self._dump(f"placed-{verdict}", {

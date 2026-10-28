@@ -26,12 +26,12 @@ CREATE TABLE IF NOT EXISTS samples (
 )
 """
 
-EXTRA_COLUMNS = {"verdict": "TEXT", "score_taken": "REAL", "score_product": "REAL"}
+EXTRA_COLUMNS = {"verdict": "TEXT", "score_taken": "REAL", "score_product": "REAL", "label_text": "TEXT"}
 
 INSERT = """
 INSERT INTO samples (created_at, event, barcode, product_code, product_name, camera, crop_path, full_path,
-                     change_ratio, verdict, score_taken, score_product)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     change_ratio, verdict, score_taken, score_product, label_text)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 REFERENCES = """
@@ -52,6 +52,11 @@ SELECT product_code, product_name, crop_path FROM samples
 WHERE product_code IS NOT NULL AND product_code != ? AND event = 'placed' AND verdict IN ('learned', 'ok', 'verified')
 AND crop_path IS NOT NULL AND created_at >= ?
 ORDER BY verdict = 'verified' DESC, id DESC LIMIT ?
+"""
+
+PRODUCT_LABELS = """
+SELECT product_code, product_name, label_text FROM samples
+WHERE product_code IS NOT NULL AND event = 'placed' AND verdict IN ('learned', 'ok', 'verified') AND created_at >= ?
 """
 
 OLD_REFERENCES = """
@@ -95,6 +100,7 @@ class SampleStore:
         verdict: str | None = None,
         score_taken: float | None = None,
         score_product: float | None = None,
+        label_text: str | None = None,
     ) -> int:
         now = datetime.now()
         stamp = now.strftime("%Y%m%d-%H%M%S-%f")
@@ -105,7 +111,7 @@ class SampleStore:
             cursor = connection.execute(
                 INSERT,
                 (now.isoformat(timespec="seconds"), event, barcode, product_code, product_name, camera, crop_path,
-                 full_path, change_ratio, verdict, score_taken, score_product),
+                 full_path, change_ratio, verdict, score_taken, score_product, label_text),
             )
             return cursor.lastrowid
 
@@ -139,6 +145,15 @@ class SampleStore:
             return
         with closing(sqlite3.connect(self.database)) as connection, connection:
             connection.executemany("UPDATE samples SET verdict = 'verified' WHERE id = ?", [(sample_id,) for sample_id in ids])
+
+    def product_labels(self, since: str = "") -> dict[str, tuple[str, set[str]]]:
+        """Šifra -> (naziv, riječi pročitane sa etikete na slikama koje kasa koristi za prepoznavanje)."""
+        result: dict[str, tuple[str, set[str]]] = {}
+        with closing(sqlite3.connect(self.database)) as connection:
+            for code, name, text in connection.execute(PRODUCT_LABELS, (since,)).fetchall():
+                _, words = result.setdefault(code, (name or "", set()))
+                words.update((text or "").split())
+        return result
 
     def old_reference_count(self, product_code: str | None, since: str) -> int:
         if not product_code or not since:
