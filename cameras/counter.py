@@ -21,6 +21,13 @@ def enabled() -> bool:
     return os.environ.get("CAM_COUNTER", "yolox").lower() not in ("", "off", "0", "ne")
 
 
+def providers(available: list[str]) -> list:
+    """Na Macu YOLOX ide kroz CoreML (izmjereno ~3x brže od procesora); CPU ostaje kao rezerva."""
+    if "CoreMLExecutionProvider" in available and os.environ.get("CAM_COREML", "1") != "0":
+        return [("CoreMLExecutionProvider", {"MLComputeUnits": "ALL"}), "CPUExecutionProvider"]
+    return ["CPUExecutionProvider"]
+
+
 def counting_cameras() -> set[str]:
     return {name.strip() for name in os.environ.get("CAM_COUNT_CAMERAS", DEFAULT_CAMERAS).split(",") if name.strip()}
 
@@ -42,7 +49,10 @@ class ObjectCounter:
         import onnxruntime
 
         path = path or self._download()
-        self.session = onnxruntime.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+        try:
+            self.session = onnxruntime.InferenceSession(str(path), providers=providers(onnxruntime.get_available_providers()))
+        except Exception:
+            self.session = onnxruntime.InferenceSession(str(path), providers=["CPUExecutionProvider"])
         self.input_name = self.session.get_inputs()[0].name
         grids, strides = [], []
         for stride in (8, 16, 32):

@@ -1,5 +1,8 @@
 IZMJENE - samouslužna kasa
 
+2026-10-28
+- YOLOX (brojanje) na Macu radi kroz CoreML umjesto samo procesora: 45 ms -> 19 ms po slici, isti broj artikala na snimljenim slikama. Ako CoreML ne uspije, ide na procesor; CAM_COREML=0 ga isključuje. CLIP/DINO ostaju na procesoru (CoreML za njih nije brži, DINO je čak 4x sporiji).
+
 2026-10-21
 - Vrata s QR kodom: nakon štampe fiskalnog računa kasa iz odgovora Tring printera čita broj fiskalnog računa (BrojFiskalnogRacuna = BF) i sprema ga u kasa.db (kolona fiscal_number). Kasa ima servis za vrata (gate_api.py, port 8770, GATE_API_TOKEN u .env): vrata pošalju BF sa skeniranog QR koda, a kasa odgovori smije li se otvoriti. Račun otvara vrata samo jednom (kolona gate_used_at); ponovni sken u roku od 2 minute se još prihvata. Servis se pokreće samo kad je GATE_API_TOKEN upisan.
 
