@@ -10,9 +10,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from disable_osd import opener
 
-MAX_WIDTH = 1280
-FRAME_RATE = "1500"
-BITRATE = "2048"
+# Puna rezolucija: izrez artikla mora biti veći od 224 px koliko gledaju CLIP/DINO (na 1280 px bio bi ~100 px).
+MIN_FRAME_RATE = 2500
+BITRATE = "8192"
 
 
 class CameraError(Exception):
@@ -47,7 +47,7 @@ def options(xml: str, name: str) -> list[int]:
 
 def best_resolution(capabilities: str) -> tuple[int, int] | None:
     widths, heights = options(capabilities, "videoResolutionWidth"), options(capabilities, "videoResolutionHeight")
-    pairs = [(w, h) for w, h in zip(widths, heights) if w <= MAX_WIDTH]
+    pairs = list(zip(widths, heights))
     return max(pairs, key=lambda pair: pair[0] * pair[1]) if pairs else None
 
 
@@ -71,8 +71,10 @@ def improve_stream(client, host: str, channel: str) -> None:
         changed = set_tag(changed, "videoResolutionHeight", str(resolution[1]))
     else:
         print("  Kamera ne javlja moguće rezolucije, rezolucija ostaje ista.")
-    for name, value in (("videoCodecType", "H.264"), ("maxFrameRate", FRAME_RATE),
-                        ("videoQualityControlType", "VBR"), ("vbrUpperCap", BITRATE), ("constantBitRate", BITRATE)):
+    if int(tag(changed, "maxFrameRate") or 0) < MIN_FRAME_RATE:
+        changed = set_tag(changed, "maxFrameRate", str(MIN_FRAME_RATE))
+    for name, value in (("videoCodecType", "H.264"), ("videoQualityControlType", "VBR"),
+                        ("vbrUpperCap", BITRATE), ("constantBitRate", BITRATE)):
         changed = set_tag(changed, name, value)
     if changed == current:
         print("  Tok slike je već podešen.")

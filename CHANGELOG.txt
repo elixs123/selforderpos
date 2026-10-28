@@ -1,6 +1,7 @@
 IZMJENE - samouslužna kasa
 
 2026-10-28
+- cameras/improve_image.py više ne smanjuje sliku: najveća rezolucija kamere, najmanje 25 FPS (veći FPS ostaje), H.264, VBR do 8 Mbit/s, WDR i BLC isključeni. Izrez artikla na 2560 px je ~200 px, na 1280 px bio bi ~100 px (manje od 224 px koliko gledaju CLIP/DINO).
 - Bočne kamere A3 (zona A) i B3 (zona B): IP u Postavke > Kamere ili CAM_A3_HOST / CAM_B3_HOST u .env. Koriste se za prepoznavanje (uzeti artikal se poredi sa odloženim iz svih uglova), monitor, snimke alarma i zone (python cameras/zone_setup.py A3). Ne broje artikle (CAM_SIDE_CAMERAS), jer se iz ugla artikli preklapaju.
 - YOLOX (brojanje) na Macu radi kroz CoreML umjesto samo procesora: 45 ms -> 19 ms po slici, isti broj artikala na snimljenim slikama. Ako CoreML ne uspije, ide na procesor; CAM_COREML=0 ga isključuje. CLIP/DINO ostaju na procesoru (CoreML za njih nije brži, DINO je čak 4x sporiji).
 
