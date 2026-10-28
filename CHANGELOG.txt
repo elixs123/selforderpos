@@ -1,6 +1,7 @@
 IZMJENE - samouslužna kasa
 
 2026-10-28
+- 'Više liči na drugi artikal' se provjerava kamera prema istoj kameri gdje skenirani artikal ima svoje slike (slika odozgo ne poredi se sa skeniranim artiklom sa strane, a sa drugim odozgo).
 - Zona B: prihvaćen artikal se uvijek računa (bar jedan artikal više nego prije), i kad ga YOLOX u trenutku provjere ne vidi. Ranije se kasnije pojavio kao 'neskeniran' i poslije računa blokirao vrata ('Niste sve platili').
 - Nova kupovina počinje od praznih zona: kad kupac dodirne početni ekran, kamere zaborave neskenirane artikle i brojanje od prošle kupovine (POST /new_sale na serveru kamera). Izuzetak: račun prethodnog kupca blokiran sa 'Niste sve platili'.
 - Zona A: provjera u trenutku skeniranja više ne može 'vratiti' artikal u zonu A (ruka koja izlazi iz zone izgledala je kao vraćen artikal i brisala dobre slike uzetog artikla, pa je zona B stalno javljala 'nije isto što je uzeto').

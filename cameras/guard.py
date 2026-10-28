@@ -76,6 +76,12 @@ APPEARANCE_PROBLEMS = ("ne liči na skenirani", "više liči na drugi", "liči n
 BAD_REFERENCE = "bad_reference"
 
 
+def camera_of(path: str) -> str:
+    """Kamera iz imena slike (…-B2-placed-crop.jpg)."""
+    parts = Path(path).name.split("-")
+    return parts[-3] if len(parts) >= 3 else ""
+
+
 def references_per_camera() -> int:
     """Koliko najboljih slika artikla kasa čuva po kameri (Postavke > Kamere, CAM_REFERENCES)."""
     try:
@@ -1064,6 +1070,12 @@ class CheckoutGuard:
                     main = queries
             closest = max(((compare(query, other), name) for query in main for name, other in others),
                           key=lambda pair: pair[0], default=None)
+            same_view = self._same_view_rival(queries, cameras or [], product_code)
+            if same_view is not None:
+                # Poredi istu kameru s istom kamerom: slika odozgo (B2) liči na drugi artikal odozgo više nego na
+                # skenirani artikal sa strane, pa bi poređenje sa svim slikama lažno javljalo "više liči na drugi".
+                scanned_same, closest = same_view
+                score_product = max(score_product or 0.0, scanned_same) if score_product is not None else None
             if score_product is None:
                 lookalike = closest if closest is not None and closest[0] >= product_threshold else None
             elif closest is not None:
@@ -1194,6 +1206,34 @@ class CheckoutGuard:
                     self._reference_cache[path] = signature(image, rotations=False)
                 result.append(self._reference_cache[path])
             return result
+
+    def _same_view_rival(self, queries: list, cameras: list[str], product_code: str | None):
+        """(najbolje poklapanje sa skeniranim, najbliži drugi artikal) samo na kamerama gdje skenirani artikal ima svoje slike."""
+        mine: dict[str, list[Signature]] = {}
+        for path in self.store.reference_paths(product_code, limit=20, since=self.references_since):
+            signature_ = self._cached_signature(path)
+            if signature_ is not None:
+                mine.setdefault(camera_of(path), []).append(signature_)
+        views = [(query, camera) for query, camera in zip(queries, cameras) if camera in mine]
+        if not views:
+            return None
+        scanned = max(compare(query, reference) for query, camera in views for reference in mine[camera])
+        rivals = [(compare(query, self._cached_signature(path)), name)
+                  for _, name, path in self.store.other_reference_paths(product_code, since=self.references_since)
+                  for query, camera in views if camera_of(path) == camera and self._cached_signature(path) is not None]
+        return scanned, max(rivals, key=lambda pair: pair[0], default=None)
+
+    def _cached_signature(self, path: str) -> Signature | None:
+        with self._reference_lock:
+            if path in self._missing_references:
+                return None
+            if path not in self._reference_cache:
+                image = self.store.load_image(path)
+                if image is None:
+                    self._missing_references.add(path)
+                    return None
+                self._reference_cache[path] = signature(image, rotations=False)
+            return self._reference_cache[path]
 
     def _other_signatures(self, product_code: str | None) -> list[tuple[str, Signature]]:
         with self._reference_lock:
