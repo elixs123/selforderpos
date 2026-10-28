@@ -63,6 +63,7 @@ class Settings:
     camera_channel: str = field(default_factory=lambda: os.environ.get("CAM_CHANNEL", "102"))
     camera_model: str = "clip"
     match_threshold: float = 0.0
+    reference_min_percent: int = field(default_factory=lambda: int(os.environ.get("CAM_REFERENCE_MIN", "75") or 75))
     receipt_return_seconds: int = 20
     idle_seconds: int = 120
     article_sync_minutes: int = 30

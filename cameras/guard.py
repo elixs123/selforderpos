@@ -68,6 +68,18 @@ CLIP_STATES = ("mismatch", "timeout")
 CLIP_MESSAGES = (UNSCANNED_MESSAGE, PLACED_UNSCANNED_MESSAGE)
 
 
+PERSON_CLASS = 0
+BAD_REFERENCE = "bad_reference"
+
+
+def reference_min_score() -> float:
+    """Koliko slika iz zone B mora ličiti na artikal (ili na uzeto iz zone A) da bi se spremila za učenje (Postavke > Kamere)."""
+    try:
+        return float(os.environ.get("CAM_REFERENCE_MIN", "75")) / 100
+    except ValueError:
+        return 0.75
+
+
 def clips_enabled() -> bool:
     """Snimci alarma; uključuju se u Postavke > Kamere (upisuje se u CAM_CLIPS pri pokretanju kamera)."""
     return os.environ.get("CAM_CLIPS", "da").lower() not in ("", "off", "0", "ne")
@@ -183,6 +195,9 @@ class CheckoutGuard:
         self._frames_b: dict[str, tuple[np.ndarray, tuple[int, int]]] = {}
         self._hand_cache: dict[str, tuple[np.ndarray, list[np.ndarray], float]] = {}
         self._hand_lock = threading.Lock()
+        self._hands_run_lock = threading.Lock()
+        self.crop_scores: list[float | None] = []
+        self._placed_problems: list[str] = []
 
     def log(self, kind: str, text: str) -> None:
         self.event_number += 1
@@ -731,7 +746,8 @@ class CheckoutGuard:
                     continue
                 roi, offset = crop(frame, self.zones.get(name))
                 try:
-                    mask, hulls = self.hands.mask(roi)
+                    with self._hands_run_lock:
+                        mask, hulls = self.hands.mask(roi)
                 except Exception as error:
                     print(f"Ruke: {error}")
                     continue
@@ -883,9 +899,13 @@ class CheckoutGuard:
             self._scan_takes = []
 
     def _learn_verified(self) -> None:
-        ids = [] if MULTIPLE_PROBLEM in self.last_problems else list(self._placed_sample_ids)
+        ids = [] if MULTIPLE_PROBLEM in self.last_problems else [
+            sample_id for sample_id, problem in zip(self._placed_sample_ids, self._placed_problems + [""] * len(self._placed_sample_ids))
+            if not problem.startswith(("ruka", "osoba"))]
         if not self._waive_taken:
-            ids.append(self._taken_sample_ids.get(self.last_taken_index))
+            taken = self._taken_items[self.last_taken_index] if self.last_taken_index < len(self._taken_items) else None
+            if not self._reference_problem(taken):
+                ids.append(self._taken_sample_ids.get(self.last_taken_index))
         self.store.mark_verified(ids)
         self.log("poredjenje", f"osoblje potvrdilo artikal {self.product_name or self.barcode}: {len([i for i in ids if i is not None])} slika zapamćeno kao tačno")
 
@@ -1036,6 +1056,8 @@ class CheckoutGuard:
         if lookalike is not None:
             self.log("poredjenje", f"artikal bez slika liči na drugi poznati artikal: {lookalike[1]} ({lookalike[0]:.2f})")
             problems.append(f"liči na drugi artikal ({lookalike[1]})")
+        basis = references or [other for _, other in taken]
+        self.crop_scores = [max((compare(query, other) for other in basis), default=None) for query in queries]
         self.last_problems = problems
         self.log("poredjenje", self.scores + ("   PROBLEM: " + ", ".join(problems) if problems else "   OK"))
         if problems:
@@ -1043,6 +1065,30 @@ class CheckoutGuard:
         if score_product is None:
             return "learned", [], score_taken, score_product
         return "ok", [], score_taken, score_product
+
+    def _reference_problem(self, image: np.ndarray | None, score: float | None = 1.0) -> str:
+        """Zašto slika nije dobra za učenje (prazno = dobra): ruka ili osoba na slici, ili slabo liči na artikal."""
+        if image is None or not image.size:
+            return "nema slike"
+        if self.hands is not None:
+            try:
+                with self._hands_run_lock:
+                    if self.hands.find(image):
+                        return "ruka na slici"
+            except Exception as error:
+                print(f"Ruke: {error}")
+        counter = get_counter()
+        if counter is not None:
+            try:
+                if any(kind == PERSON_CLASS for kind, _, _ in counter.detections(image)):
+                    return "osoba na slici"
+            except Exception as error:
+                print(f"YOLOX: {error}")
+        minimum = reference_min_score()
+        if score is None or score < minimum:
+            shown = "-" if score is None else f"{score:.0%}"
+            return f"slabo liči na artikal ({shown}, treba {minimum:.0%})"
+        return ""
 
     def _reference_signatures(self, product_code: str | None) -> list[Signature]:
         with self._reference_lock:
@@ -1399,17 +1445,24 @@ class CheckoutGuard:
         except Exception as error:
             print(f"Poređenje: {error}")
             verdict, problems, score_taken, score_product = "mismatch", [f"greška u poređenju ({error})"], None, None
+        scores = list(self.crop_scores) + [None] * len(items)
+        crop_problems = [self._reference_problem(item, scores[index]) for index, (_, item, _) in enumerate(items)]
         self.judge_ms = (time.monotonic() - started) * 1000
         with self._lock:
             if job != self._job_id:
                 return
             self._judging = False
             self._placed_sample_ids = []
-            for name, item, ratio in items:
+            self._placed_problems = crop_problems
+            for (name, item, ratio), problem in zip(items, crop_problems):
+                saved_verdict = verdict
+                if problem and verdict != "mismatch":
+                    saved_verdict = BAD_REFERENCE
+                    self.log(f"zona-{name}", f"slika se ne pamti za učenje: {problem}")
                 sample_id = self.store.save(
                     "placed", self.barcode, self.product_code, self.product_name, name,
                     crop_image=item, full_image=frames[name][0], change_ratio=ratio,
-                    verdict=verdict, score_taken=score_taken, score_product=score_product,
+                    verdict=saved_verdict, score_taken=score_taken, score_product=score_product,
                 )
                 self._placed_sample_ids.append(sample_id)
             self._dump(f"placed-{verdict}", {
@@ -1427,9 +1480,11 @@ class CheckoutGuard:
                     self._set("mismatch", "Artikal ne odgovara: " + ", ".join(problems) + ". Uklonite ga i odložite skenirani artikal.")
                 return
             message = "Artikal prvi put viđen, naučen." if verdict == "learned" else "Artikal odgovara."
+            if verdict == "learned" and all(crop_problems):
+                message = "Artikal prihvaćen; slike nisu dovoljno dobre za učenje, naučiće ga sljedeći put."
             if not self._waive_taken:
                 index = self._reference_take_index()
-                if index is not None:
+                if index is not None and not self._reference_problem(self._taken_items[index]):
                     self.store.mark_taken_reference(self._taken_sample_ids.get(index))
             self._finish("accepted", verdict, message)
             self._note_accepted()

@@ -81,3 +81,47 @@ def test_side_cameras_join_zones_but_do_not_count_placed_items(monkeypatch, tmp_
     _, items, crops, *_, placed_count = jobs[0]
     assert [name for name, _, _ in items] == ["B2", "B3"] and len(crops) == 2
     assert placed_count == 1
+
+
+class FakeHands:
+    def __init__(self, found):
+        self.found = found
+
+    def find(self, image):
+        return self.found
+
+
+class FakeCounter:
+    def __init__(self, classes):
+        self.classes = classes
+
+    def detections(self, image):
+        return [(kind, 0.9, np.zeros(4)) for kind in self.classes]
+
+
+def test_reference_needs_clean_image_that_looks_like_the_item(monkeypatch, tmp_path):
+    guard, readers = make_guard(monkeypatch, tmp_path)
+    image = readers["A2"].latest()
+    monkeypatch.setattr("guard.get_counter", lambda: FakeCounter([]))
+    monkeypatch.setenv("CAM_REFERENCE_MIN", "75")
+    assert guard._reference_problem(image, 0.80) == ""
+    assert guard._reference_problem(image, 0.70).startswith("slabo liči")
+    assert guard._reference_problem(image, None).startswith("slabo liči")
+    guard.hands = FakeHands([np.zeros((3, 1, 2), np.int32)])
+    assert guard._reference_problem(image, 0.95) == "ruka na slici"
+    guard.hands = None
+    monkeypatch.setattr("guard.get_counter", lambda: FakeCounter([0]))
+    assert guard._reference_problem(image, 0.95) == "osoba na slici"
+
+
+def test_staff_learning_skips_images_with_hands_or_people(monkeypatch, tmp_path):
+    guard, readers = make_guard(monkeypatch, tmp_path)
+    monkeypatch.setattr("guard.get_counter", lambda: None)
+    marked = []
+    guard.store.mark_verified = marked.extend
+    guard.last_problems = ["ne liči na skenirani artikal"]
+    guard._placed_sample_ids = [1, 2, 3]
+    guard._placed_problems = ["", "ruka na slici", "slabo liči na artikal (40%, treba 75%)"]
+    guard._waive_taken = True
+    guard._learn_verified()
+    assert marked == [1, 3]
