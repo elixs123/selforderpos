@@ -143,6 +143,7 @@ class CountingCounter:
 
 def test_count_loop_flags_extra_item_after_accept(monkeypatch, tmp_path):
     monkeypatch.setenv("SAMPLES_DIR", str(tmp_path))
+    monkeypatch.setattr("counter.A_CONFIRM_SECONDS", 0.0)
     fake = CountingCounter()
     monkeypatch.setattr(guard_module, "get_counter", lambda: fake)
     readers = {"A2": ControlledReader(), "B2": ControlledReader()}

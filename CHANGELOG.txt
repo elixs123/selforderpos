@@ -1,6 +1,7 @@
 IZMJENE - samouslužna kasa
 
 2026-10-28
+- Zona A: kad YOLOX trepne (vidi 0 ili 1 umjesto 3), 'Uzeli ste više od jednog artikla' vrijedi tek kad je manjak od 2 i više stabilan 3 s (A_CONFIRM_SECONDS). Jedan uzet artikal se računa odmah.
 - Snimci alarma: isti alarm (npr. ista pomjerena kamera ili isti neskeniran artikal u zoni B) snima se najviše jednom u minuti.
 - Manje slika u data/samples: kasa čuva samo najbolje slike artikla po kameri (zadano 3, Postavke > Kamere > 'Broj najboljih slika artikla po kameri', CAM_REFERENCES); osoblje potvrđene imaju prednost, pa najsličnije (kolona quality). Cijela slika kamere se sprema samo kad artikal nije prošao. Slike koje se ne koriste za prepoznavanje brišu se poslije 30 dana. Višak se počisti i pri pokretanju kamera.
 - Zona B: kad YOLOX trepne (dvije boce se preklapaju pa vidi 1 umjesto 2), manji broj artikala vrijedi tek kad je stabilan 8 s (B_DROP_SECONDS). Ranije je povratak na 2 izgledao kao neskeniran artikal i blokirao vrata poslije plaćanja. Vrata se blokiraju tek kad neplaćen artikal traje bar 3 s (EXIT_CONFIRM_SECONDS).

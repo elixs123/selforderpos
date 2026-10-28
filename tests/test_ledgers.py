@@ -28,21 +28,38 @@ def test_zone_a_normal_sale():
 
 def test_zone_a_two_taken_one_scanned():
     ledger = ZoneALedger()
-    seen(ledger, 3)
-    seen(ledger, 1)
+    seen(ledger, 3, now=0.0)
+    seen(ledger, 1, now=1.0)
+    seen(ledger, 1, now=5.0)
     ledger.accepted()
-    seen(ledger, 1)
+    seen(ledger, 1, now=6.0)
     assert ledger.missing == 1 and ledger.extra_after_accept
 
 
 def test_zone_a_item_returned_clears():
     ledger = ZoneALedger()
-    seen(ledger, 3)
-    seen(ledger, 1)
+    seen(ledger, 3, now=0.0)
+    seen(ledger, 1, now=1.0)
+    seen(ledger, 1, now=5.0)
     ledger.accepted()
     seen(ledger, 1)
     seen(ledger, 2)
     assert ledger.missing == 0 and not ledger.extra_after_accept
+
+
+def test_zone_a_count_flicker_is_not_taking_several_items():
+    ledger = ZoneALedger()
+    seen(ledger, 3, now=0.0)
+    for second in range(1, 20, 2):
+        seen(ledger, 0, now=float(second))
+        assert ledger.missing == 0
+        seen(ledger, 3, now=second + 1.0)
+    seen(ledger, 2, now=30.0)
+    assert ledger.missing == 1
+    seen(ledger, 0, now=31.0)
+    assert ledger.missing == 1
+    seen(ledger, 0, now=34.5)
+    assert ledger.missing == 3
 
 
 def test_zone_a_single_flicker_is_ignored():

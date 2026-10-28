@@ -17,6 +17,8 @@ IGNORED_CLASSES = {0, 56, 57, 58, 59, 60, 61, 62, 63, 66, 68, 69, 70, 71, 72}
 DEFAULT_CAMERAS = "A2,B2"
 # YOLOX zna "izgubiti" artikal koji se preklapa sa drugim; manji broj u zoni B vrijedi tek kad je toliko stabilan.
 B_DROP_SECONDS = 8.0
+# Isto u zoni A: "uzeto više artikala" vrijedi tek kad YOLOX toliko dugo vidi manjak od 2 i više.
+A_CONFIRM_SECONDS = 3.0
 
 
 def enabled() -> bool:
@@ -140,8 +142,10 @@ class ZoneALedger:
         self.missing = 0
         self.extra_after_accept = False
         self.post_accept = False
+        self._more_since: float | None = None
 
-    def observe(self, count: int) -> bool:
+    def observe(self, count: int, now: float | None = None) -> bool:
+        now = time.monotonic() if now is None else now
         if count != self.pending:
             self.pending = count
             return False
@@ -151,8 +155,16 @@ class ZoneALedger:
             self.expected = count
             self.missing = 0
             self.extra_after_accept = False
+            self._more_since = None
         else:
-            self.missing = self.expected - count
+            missing = self.expected - count
+            if missing >= 2 and missing > self.missing:
+                if self._more_since is None:
+                    self._more_since = now
+                if now - self._more_since < A_CONFIRM_SECONDS:
+                    return before != (self.missing, self.extra_after_accept, self.count)
+            self._more_since = None
+            self.missing = missing
         if self.post_accept:
             self.extra_after_accept = self.missing >= 1
             self.post_accept = False
@@ -164,6 +176,7 @@ class ZoneALedger:
         self.missing = max(0, self.missing - 1)
         self.pending = None
         self.post_accept = True
+        self._more_since = None
 
 
 class ZoneBLedger:
