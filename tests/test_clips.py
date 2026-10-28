@@ -51,3 +51,14 @@ def test_old_clips_are_deleted(tmp_path):
 
 def test_safe_name():
     assert safe_name("Liči na drugi artikal (Jamnica)") == "Lici-na-drugi-artikal-Jamnica"
+
+
+def test_same_alarm_is_recorded_once_per_minute(tmp_path):
+    from clips import REPEAT_SECONDS, ClipRecorder
+
+    recorder = ClipRecorder(tmp_path)
+    recorder.record("kamera C2 pomjerena", now=0.0)
+    recorder.record("kamera C2 pomjerena", now=20.0)
+    recorder.record("Niste sve platili", now=30.0)
+    recorder.record("kamera C2 pomjerena", now=REPEAT_SECONDS + 1)
+    assert [reason for _, _, reason in recorder._pending] == ["kamera C2 pomjerena", "Niste sve platili", "kamera C2 pomjerena"]

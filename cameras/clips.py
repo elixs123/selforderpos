@@ -14,6 +14,7 @@ BEFORE_SECONDS = 8.0
 AFTER_SECONDS = 5.0
 TILE = (480, 270)
 KEEP_DAYS = 30
+REPEAT_SECONDS = 60.0
 
 
 def mosaic(frames: dict[str, np.ndarray | None], when: datetime | None = None) -> np.ndarray:
@@ -47,6 +48,7 @@ class ClipRecorder:
         self._pending: list[tuple[float, float, str]] = []
         self._lock = threading.Lock()
         self._last_add = 0.0
+        self._recorded: dict[str, float] = {}
         self.saved: list[Path] = []
 
     def add(self, frames: dict[str, np.ndarray | None], now: float | None = None) -> None:
@@ -65,11 +67,15 @@ class ClipRecorder:
             threading.Thread(target=self._write, args=(started, reason), daemon=True).start()
 
     def record(self, reason: str, now: float | None = None) -> None:
-        """Zapamti alarm; video se zapiše kad prođe AFTER_SECONDS. Novi alarm unutar postojećeg snimka se ne duplira."""
+        """Zapamti alarm; video se zapiše kad prođe AFTER_SECONDS. Novi alarm unutar postojećeg snimka se ne duplira,
+        a isti alarm (npr. ista pomjerena kamera) snima se najviše jednom u REPEAT_SECONDS."""
         now = time.monotonic() if now is None else now
         with self._lock:
             if any(started <= now <= until for started, until, _ in self._pending):
                 return
+            if now - self._recorded.get(reason, -REPEAT_SECONDS) < REPEAT_SECONDS:
+                return
+            self._recorded[reason] = now
             self._pending.append((now, now + AFTER_SECONDS, reason))
 
     def _write(self, started: float, reason: str) -> None:
