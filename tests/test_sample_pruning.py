@@ -39,3 +39,4 @@ def test_old_unused_images_are_cleaned_but_references_stay(tmp_path):
     later = datetime.now() + timedelta(days=31)
     assert store.cleanup(later) == 1
     assert store.count() == 1
+    assert len(paths(store)) == 1

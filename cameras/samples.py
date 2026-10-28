@@ -199,7 +199,13 @@ class SampleStore:
             rows = connection.execute(
                 "SELECT id, crop_path, full_path FROM samples WHERE created_at < ? AND (verdict IS NULL OR verdict NOT IN (?, ?, ?))",
                 (limit, *REFERENCE_VERDICTS)).fetchall()
-            return self._delete(connection, rows)
+            removed = self._delete(connection, rows)
+            # Za prepoznavanje treba samo izrez artikla; cijela slika kamere (veliki fajl) ne treba.
+            for sample_id, path in connection.execute(
+                    "SELECT id, full_path FROM samples WHERE full_path IS NOT NULL AND verdict IN (?, ?, ?)", REFERENCE_VERDICTS).fetchall():
+                (self.folder / path).unlink(missing_ok=True)
+                connection.execute("UPDATE samples SET full_path = NULL WHERE id = ?", (sample_id,))
+            return removed
 
     def old_reference_count(self, product_code: str | None, since: str) -> int:
         if not product_code or not since:
