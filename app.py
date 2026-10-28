@@ -95,7 +95,7 @@ class MainWindow(QMainWindow):
         self.qr = PaymentWaitScreen(self.cart, "qr")
         self.receipt = ReceiptScreen(self.cart)
         self.staff = StaffScreen(self.cart)
-        self.settings_screen = SettingsScreen(self.settings, self.store)
+        self.settings_screen = SettingsScreen(self.settings, self.store, lambda: self.guard)
         self.cameras_down = CamerasDownScreen()
         self.unpaid = UnpaidScreen()
         self.exit_watch: dict | None = None
@@ -195,6 +195,8 @@ class MainWindow(QMainWindow):
                 return
             watch["blocked"], watch["guess"] = True, guess
             self.store.block_gate(watch["number"], guess)
+            if hasattr(guard, "record_event"):
+                guard.record_event("unpaid")
             print(f"Račun {watch['number']}: poslije plaćanja uzet neplaćen artikal ({guess or 'nije prepoznat'}), vrata blokirana")
             if hasattr(guard, "record_clip"):
                 guard.record_clip("Niste sve platili")
@@ -307,6 +309,7 @@ class MainWindow(QMainWindow):
                     self.guard = start_remote_guard(self.settings)
                 else:
                     self.guard = start_guard(self.settings)
+                    self.guard.catalog = self.articles
                 if "--debug" in sys.argv and not self.settings.vision_server_url:
                     from locations import app_folder
 
@@ -450,6 +453,8 @@ class MainWindow(QMainWindow):
 
     def show_staff(self) -> None:
         guard = self.guard
+        if guard is not None and hasattr(guard, "record_event"):
+            guard.record_event("staff_call")
         can_approve = guard is not None and self.drop.waiting and (guard.busy or guard.state in ("mismatch", "timeout", "offline"))
         self.screens.setCurrentWidget(self.staff)
         can_learn = can_approve and guard.state == "mismatch"

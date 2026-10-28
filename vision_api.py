@@ -2,6 +2,7 @@ import hmac
 import json
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import unquote
 
 DEFAULT_PORT = 8765
 MAX_BODY = 4096
@@ -91,6 +92,22 @@ class VisionHandler(BaseHTTPRequestHandler):
             self._send(401, {"error": "token"})
         elif self.path == "/state":
             self._send(200, snapshot(self.server.guard, self.server.boot))
+        elif self.path == "/references":
+            self._send(200, {"products": self.server.guard.reference_products()})
+        elif self.path.startswith("/references/"):
+            code = unquote(self.path[len("/references/"):])
+            self._send(200, {"images": self.server.guard.reference_images(code)})
+        elif self.path.startswith("/sample/"):
+            try:
+                data = self.server.guard.reference_crop(int(self.path[len("/sample/"):]))
+            except ValueError:
+                data = None
+            if data is None:
+                self._send(404, {"error": "nema slike"})
+            else:
+                self._send_jpeg(data)
+        elif self.path.startswith("/report/"):
+            self._send(200, {"events": self.server.guard.report(self.path[len("/report/"):])})
         elif self.path.startswith("/frame/"):
             data = frame_jpeg(self.server.guard, self.path[len("/frame/"):])
             if data is None:
@@ -127,6 +144,15 @@ class VisionHandler(BaseHTTPRequestHandler):
             elif self.path == "/forgive":
                 guard.forgive_unscanned()
                 self._send(200, {**snapshot(guard, self.server.boot), "ok": True})
+            elif self.path == "/references/delete":
+                try:
+                    deleted = guard.delete_reference(int(self._body().get("id")))
+                except (TypeError, ValueError):
+                    deleted = False
+                self._send(200, {"ok": deleted})
+            elif self.path == "/event":
+                guard.record_event(str(self._body().get("kind") or "dogadjaj"))
+                self._send(200, {"ok": True})
             elif self.path == "/clip":
                 if hasattr(guard, "record_clip"):
                     guard.record_clip(str(self._body().get("reason") or "alarm"))

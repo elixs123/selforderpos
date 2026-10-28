@@ -26,6 +26,15 @@ CREATE TABLE IF NOT EXISTS samples (
 )
 """
 
+EVENTS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS events (
+    day TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, kind)
+)
+"""
+
 EXTRA_COLUMNS = {"verdict": "TEXT", "score_taken": "REAL", "score_product": "REAL", "label_text": "TEXT", "quality": "REAL"}
 
 INSERT = """
@@ -82,6 +91,7 @@ class SampleStore:
         self.database = self.folder / "samples.db"
         with closing(sqlite3.connect(self.database)) as connection, connection:
             connection.execute(SCHEMA)
+            connection.execute(EVENTS_SCHEMA)
             existing = {row[1] for row in connection.execute("PRAGMA table_info(samples)")}
             for name, kind in EXTRA_COLUMNS.items():
                 if name not in existing:
@@ -172,6 +182,52 @@ class SampleStore:
                     (self.folder / path).unlink(missing_ok=True)
         connection.executemany("DELETE FROM samples WHERE id = ?", [(row[0],) for row in rows])
         return len(rows)
+
+    def count_event(self, kind: str, day: str | None = None) -> None:
+        """Za dnevni izvještaj: koliko puta se nešto desilo (prihvaćen artikal, odbijen, alarm, poziv osoblja...)."""
+        day = day or datetime.now().strftime("%Y-%m-%d")
+        with closing(sqlite3.connect(self.database)) as connection, connection:
+            connection.execute(
+                "INSERT INTO events (day, kind, count) VALUES (?, ?, 1) ON CONFLICT(day, kind) DO UPDATE SET count = count + 1",
+                (day, kind))
+
+    def events_on(self, day: str) -> dict[str, int]:
+        with closing(sqlite3.connect(self.database)) as connection:
+            return dict(connection.execute("SELECT kind, count FROM events WHERE day = ?", (day,)).fetchall())
+
+    def reference_products(self, since: str = "") -> list[dict]:
+        """Artikli koje kasa prepoznaje po slikama: šifra, naziv, broj slika."""
+        with closing(sqlite3.connect(self.database)) as connection:
+            rows = connection.execute(
+                "SELECT product_code, MAX(product_name), COUNT(*) FROM samples WHERE product_code IS NOT NULL"
+                " AND event = 'placed' AND verdict IN (?, ?, ?) AND crop_path IS NOT NULL AND created_at >= ?"
+                " GROUP BY product_code ORDER BY MAX(product_name)", (*REFERENCE_VERDICTS, since)).fetchall()
+        return [{"code": code, "name": name or code, "count": count} for code, name, count in rows]
+
+    def reference_images(self, product_code: str, since: str = "") -> list[dict]:
+        with closing(sqlite3.connect(self.database)) as connection:
+            rows = connection.execute(
+                "SELECT id, created_at, camera, verdict, quality, label_text FROM samples WHERE product_code = ?"
+                " AND event = 'placed' AND verdict IN (?, ?, ?) AND crop_path IS NOT NULL AND created_at >= ?"
+                " ORDER BY camera, id DESC", (product_code, *REFERENCE_VERDICTS, since)).fetchall()
+        return [{"id": row[0], "created_at": row[1], "camera": row[2], "verdict": row[3], "quality": row[4], "label": row[5] or ""}
+                for row in rows]
+
+    def crop_bytes(self, sample_id: int) -> bytes | None:
+        with closing(sqlite3.connect(self.database)) as connection:
+            row = connection.execute("SELECT crop_path FROM samples WHERE id = ?", (sample_id,)).fetchone()
+        if row is None or not row[0]:
+            return None
+        try:
+            return (self.folder / row[0]).read_bytes()
+        except OSError:
+            return None
+
+    def delete_sample(self, sample_id: int) -> bool:
+        """Osoblje briše pogrešnu sliku artikla (ruka, glava, drugi artikal)."""
+        with closing(sqlite3.connect(self.database)) as connection, connection:
+            rows = connection.execute("SELECT id, crop_path, full_path FROM samples WHERE id = ?", (sample_id,)).fetchall()
+            return self._delete(connection, rows) > 0
 
     def prune(self, product_code: str | None, keep: int) -> int:
         """Za artikal ostavi samo keep najboljih slika po kameri (osoblje potvrđene prve, pa najsličnije); ostale obriši."""

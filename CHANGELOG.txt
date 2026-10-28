@@ -1,6 +1,9 @@
 IZMJENE - samouslužna kasa
 
 2026-10-28
+- Postavke > 'Slike artikala': lista artikala koje kamere prepoznaju i njihove slike (kamera, kako je naučena, sličnost); osoblje briše pogrešnu sliku (dva dodira). Radi i kad su kamere na serveru (GET /references, /sample, POST /references/delete).
+- Postavke > 'Izvještaj za dan': računi i događaji kamera po danu (prihvaćeno, naučeno, odbijeno u zoni B, sken odbijen, osoblje odobrilo/naučilo/poništilo, poziv osoblja, 'Niste sve platili', alarmi) i udio odbijanja sa savjetom kad je previsok (tabela events u samples.db, GET /report, POST /event).
+- Novi artikal (bez slika) i dalje uči sam kad je odloženo isto što je uzeto, ali ako etiketa pripada drugom artiklu iz kataloga (Pantheon), odbija se ('na etiketi piše …'). Server kamera čuva svoju kopiju artikala (data/articles.db, sinhronizacija svakih 30 min). Riječi koje su u više od 3 artikla se ne računaju.
 - Početni ekran: dugme 'Dodirnite za početak' je na sredini na svakoj veličini ekrana, kartice 'Kako funkcioniše' su centrirane i ne razvlače se, a podnaslov se više ne odsijeca ('čekanja').
 - Vrata: QR s računa otvara vrata tačno jednom; ponovni sken istog QR koda (i u prve 2 minute) se odbija.
 - Zapis događaja kamera u data/logs je isključen; uključuje se u Postavke > Kamere > 'Zapisuj događaje kamera u data/logs' (CAM_EVENT_LOG).

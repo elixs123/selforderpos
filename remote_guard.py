@@ -4,6 +4,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from urllib.parse import quote
 
 POLL_SECONDS = 0.15
 POLL_TIMEOUT = 1.5
@@ -132,6 +133,35 @@ class RemoteGuard:
         except (urllib.error.URLError, OSError, ValueError):
             return None
         return cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+
+    def record_event(self, kind: str) -> None:
+        def send() -> None:
+            try:
+                self._request("POST", "/event", {"kind": kind}, ACTION_TIMEOUT)
+            except RemoteError:
+                pass
+
+        threading.Thread(target=send, daemon=True).start()
+
+    def report(self, day: str) -> dict[str, int]:
+        return dict(self._request("GET", f"/report/{day}", None, ACTION_TIMEOUT).get("events") or {})
+
+    def reference_products(self) -> list[dict]:
+        return list(self._request("GET", "/references", None, ACTION_TIMEOUT).get("products") or [])
+
+    def reference_images(self, product_code: str) -> list[dict]:
+        return list(self._request("GET", f"/references/{quote(product_code, safe='')}", None, ACTION_TIMEOUT).get("images") or [])
+
+    def reference_crop(self, sample_id: int) -> bytes | None:
+        request = urllib.request.Request(self.url + f"/sample/{int(sample_id)}", headers={"X-Token": self.token})
+        try:
+            with urllib.request.urlopen(request, timeout=ACTION_TIMEOUT) as response:
+                return response.read()
+        except (urllib.error.URLError, OSError, ValueError):
+            return None
+
+    def delete_reference(self, sample_id: int) -> bool:
+        return bool(self._request("POST", "/references/delete", {"id": int(sample_id)}, ACTION_TIMEOUT).get("ok"))
 
     def _send_quietly(self, path: str) -> None:
         try:

@@ -72,6 +72,11 @@ class ArticleStore:
             return None
         return Product(row["code"], row["barcode"], row["name"], row["price"])
 
+    def names(self) -> list[tuple[str, str]]:
+        """(šifra, naziv) svih artikala; kamere njima provjeravaju šta piše na etiketi."""
+        with closing(self._connect()) as connection:
+            return [(row["code"], row["name"]) for row in connection.execute("SELECT code, name FROM articles")]
+
     def article_count(self) -> int:
         with closing(self._connect()) as connection:
             return connection.execute("SELECT COUNT(*) FROM articles").fetchone()[0]

@@ -223,6 +223,9 @@ class CheckoutGuard:
         self._label_reader = ThreadPoolExecutor(max_workers=1)
         self.crop_scores: list[float | None] = []
         self._placed_problems: list[str] = []
+        # Katalog artikala (Pantheon, objekat sa names() -> [(šifra, naziv)]); kasa ili server kamera ga postave.
+        self.catalog = None
+        self._catalog_index: labels.CatalogIndex | None = None
 
     def log(self, kind: str, text: str) -> None:
         self.event_number += 1
@@ -612,6 +615,7 @@ class CheckoutGuard:
             if not self.unscanned and not self.zone_a_left:
                 return
             self.record_clip("osoblje ponistilo neskenirano")
+            self.count_event("forgive")
             self.log("osoblje", f"osoblje je poništilo {self.unscanned} neskeniranih artikala"
                                 f"{f', zanemarujem {self.zone_a_count} artikala u zoni A' if self.zone_a_left else ''}")
             self._zone_a_ignored = self.zone_a_count
@@ -761,6 +765,8 @@ class CheckoutGuard:
         self.tamper_problems = problems
 
     def record_clip(self, reason: str) -> None:
+        if not reason.startswith("osoblje"):
+            self.count_event("alarm")
         clips = getattr(self, "clips", None)
         if clips is not None:
             clips.record(reason)
@@ -867,6 +873,7 @@ class CheckoutGuard:
     def _finish(self, kind: str, verdict: str, message: str) -> None:
         self._outcome_number += 1
         self.outcome = Outcome(self._outcome_number, kind, verdict, self.barcode, self.product_code, message)
+        self.count_event(f"{kind}:{verdict}")
         self._set(kind, message)
         self._dump(f"{kind}-{verdict}")
 
@@ -1125,6 +1132,47 @@ class CheckoutGuard:
         except Exception as error:
             print(f"Čišćenje slika: {error}")
 
+    def _catalog_other(self, read: set[str]) -> tuple[str, str] | None:
+        catalog = self.catalog
+        if catalog is None:
+            return None
+        try:
+            names = catalog.names()
+        except Exception as error:
+            print(f"Katalog artikala: {error}")
+            return None
+        if self._catalog_index is None or self._catalog_index.size != len(names):
+            self._catalog_index = labels.CatalogIndex(names)
+        return self._catalog_index.other_product(read, self.product_name)
+
+    def count_event(self, kind: str) -> None:
+        try:
+            self.store.count_event(kind)
+        except Exception as error:
+            print(f"Izvještaj: {error}")
+
+    def record_event(self, kind: str) -> None:
+        """Događaj sa kase (poziv osoblja, 'Niste sve platili') za dnevni izvještaj."""
+        self.count_event(kind)
+
+    def report(self, day: str) -> dict[str, int]:
+        return self.store.events_on(day)
+
+    def reference_products(self) -> list[dict]:
+        return self.store.reference_products(self.references_since)
+
+    def reference_images(self, product_code: str) -> list[dict]:
+        return self.store.reference_images(product_code, self.references_since)
+
+    def reference_crop(self, sample_id: int) -> bytes | None:
+        return self.store.crop_bytes(sample_id)
+
+    def delete_reference(self, sample_id: int) -> bool:
+        deleted = self.store.delete_sample(sample_id)
+        if deleted:
+            self.log("osoblje", f"osoblje je obrisalo sliku artikla {sample_id}")
+        return deleted
+
     def _apply_label(
         self, verdict: str, problems: list[str], score_product: float | None, reads: list[set[str]], product_code: str | None,
         taken_items: list | None = None,
@@ -1144,6 +1192,14 @@ class CheckoutGuard:
             "match": f"piše {word}, to je skenirani artikal",
             "other": f"piše {word}, to je drugi artikal ({known.get(other, ('', set()))[0] or other})",
         }.get(status, "ne pomaže"))
+        if status == "unknown" and score_product is None:
+            # Novi artikal (kasa ga još ne zna): etiketa se poredi i sa svim artiklima iz kataloga, da se ne nauči
+            # pogrešan artikal (skeniran Sensation, a odložena Jamnica).
+            other_name = self._catalog_other(read)
+            if other_name is not None:
+                status, word = "catalog", other_name[0]
+                self.log("etiketa", f"novi artikal: piše {word}, to je drugi artikal iz kataloga ({other_name[1]})")
+                problems = problems + [f"na etiketi piše {word} ({other_name[1]})"]
         if status == "match":
             problems = [problem for problem in problems if not problem.startswith(APPEARANCE_PROBLEMS)]
             if TAKEN_PROBLEM in problems and taken_items and all(
@@ -1620,6 +1676,7 @@ class CheckoutGuard:
                 for watcher in self.watchers.values():
                     watcher.rearm()
                 self._armed_at = time.monotonic()
+                self.count_event("mismatch")
                 if MULTIPLE_PROBLEM in problems:
                     self._set("mismatch", MULTIPLE_MESSAGE)
                 else:

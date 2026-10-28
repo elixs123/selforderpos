@@ -25,6 +25,8 @@ from printec import PrintecClient
 from qr_slip import print_gate_slip
 from screens.components import PinPad, TopBar
 from screens.receipts_view import ReceiptsView
+from screens.references_view import ReferencesView
+from screens.report_view import ReportView
 from settings import Settings
 from staff_auth import check_admin_pin
 from styles import BACKGROUND, BORDER, FONT, GREEN, MUTED_TEXT, TEXT, px
@@ -100,7 +102,7 @@ class SettingsScreen(QWidget):
     sync_requested = Signal(object)
     test_finished = Signal(str)
 
-    def __init__(self, settings: Settings, store=None) -> None:
+    def __init__(self, settings: Settings, store=None, guard_provider=None) -> None:
         super().__init__()
         self.settings = settings
         self.editors: dict[str, QWidget] = {}
@@ -119,9 +121,15 @@ class SettingsScreen(QWidget):
         self.form_page = self._form_page()
         self.receipts_page = ReceiptsView(store)
         self.receipts_page.closed.connect(lambda: self.pages.setCurrentWidget(self.form_page))
+        self.references_page = ReferencesView(guard_provider)
+        self.references_page.closed.connect(lambda: self.pages.setCurrentWidget(self.form_page))
+        self.report_page = ReportView(store, guard_provider)
+        self.report_page.closed.connect(lambda: self.pages.setCurrentWidget(self.form_page))
         self.pages.addWidget(self.pin)
         self.pages.addWidget(self.form_page)
         self.pages.addWidget(self.receipts_page)
+        self.pages.addWidget(self.references_page)
+        self.pages.addWidget(self.report_page)
         layout.addWidget(self.pages, stretch=1)
 
     def begin(self, settings: Settings) -> None:
@@ -169,6 +177,15 @@ class SettingsScreen(QWidget):
         receipts = self._button("Pregledaj prethodne račune", primary=False)
         receipts.clicked.connect(self._show_receipts)
         column.addWidget(receipts)
+        views = QHBoxLayout()
+        views.setSpacing(px(14))
+        report = self._button("Izvještaj za dan", primary=False)
+        report.clicked.connect(lambda: self._show_page(self.report_page))
+        views.addWidget(report)
+        references = self._button("Slike artikala", primary=False)
+        references.clicked.connect(lambda: self._show_page(self.references_page))
+        views.addWidget(references)
+        column.addLayout(views)
 
         tests = QHBoxLayout()
         tests.setSpacing(px(14))
@@ -299,6 +316,10 @@ class SettingsScreen(QWidget):
     def _save_and_quit(self) -> None:
         self.settings = self.current()
         self.quit_requested.emit(self.settings)
+
+    def _show_page(self, page) -> None:
+        page.begin()
+        self.pages.setCurrentWidget(page)
 
     def _show_receipts(self) -> None:
         self.receipts_page.begin()

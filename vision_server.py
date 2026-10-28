@@ -10,10 +10,13 @@ from pathlib import Path
 from PySide6.QtCore import QCoreApplication, QStandardPaths
 from PySide6.QtWidgets import QApplication
 
+from articles import ArticleStore
 from camera_service import CameraSetupError, env_defines_cameras, hosts_from_env, port_reason, start_guard
 from locations import app_folder
 from settings import load_settings
 from vision_api import DEFAULT_PORT, make_server
+
+ARTICLE_SYNC_SECONDS = 30 * 60
 
 
 def settings_path() -> Path:
@@ -34,6 +37,13 @@ def report_cameras(guard) -> None:
             return
         print(f"Zona A još nije spremna: {guard.zone_a_waiting_reason()}")
         time.sleep(5)
+
+
+def sync_articles(articles: ArticleStore) -> None:
+    """Server kamera čuva svoju kopiju artikala (nazivi za provjeru etikete); osvježava je kao i kasa."""
+    while True:
+        articles.sync()
+        time.sleep(ARTICLE_SYNC_SECONDS)
 
 
 def main() -> None:
@@ -69,6 +79,9 @@ def main() -> None:
         sys.exit(str(error))
     if arguments.debug:
         guard.enable_debug(app_folder() / "data" / "debug" / datetime.now().strftime("%Y%m%d-%H%M%S"))
+    articles = ArticleStore(app_folder() / "data" / "articles.db")
+    guard.catalog = articles
+    threading.Thread(target=sync_articles, args=(articles,), daemon=True).start()
     threading.Thread(target=report_cameras, args=(guard,), daemon=True).start()
     server = make_server(guard, token, arguments.host, arguments.port)
     threading.Thread(target=server.serve_forever, daemon=True).start()

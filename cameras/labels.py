@@ -117,3 +117,36 @@ def check(read: set[str], scanned_code: str | None, products: dict[str, set[str]
             if code != scanned_code and any(similar(word, other) for other in known):
                 return "other", word, code
     return "unknown", "", None
+
+
+class CatalogIndex:
+    """Riječi iz naziva svih artikala (Pantheon): koja riječ pripada kojim artiklima. Gradi se jednom, ponovo kad se katalog promijeni."""
+
+    MAX_PRODUCTS = 3
+    MIN_LENGTH = 5
+    MATCH = 0.85
+
+    def __init__(self, names: list[tuple[str, str]]) -> None:
+        self.size = len(names)
+        self.names = dict(names)
+        self.words: dict[str, set[str]] = {}
+        for code, name in names:
+            for word in name_words(name):
+                self.words.setdefault(word, set()).add(code)
+        # Riječ koja je u mnogo artikala (npr. JAMNICA, SARAJEVSKI) ne govori koji je artikal.
+        self.rare = {word: codes for word, codes in self.words.items()
+                     if len(codes) <= self.MAX_PRODUCTS and len(word) >= self.MIN_LENGTH}
+
+    def other_product(self, read: set[str], scanned_name: str | None) -> tuple[str, str] | None:
+        """(pročitana riječ, naziv drugog artikla) kad etiketa jasno pripada drugom artiklu iz kataloga."""
+        mine = name_words(scanned_name)
+        for word in sorted(read):
+            if len(word) < self.MIN_LENGTH or any(similar(word, own) for own in mine):
+                continue
+            for known, codes in self.rare.items():
+                if abs(len(known) - len(word)) > 2:
+                    continue
+                if known == word or SequenceMatcher(None, word, known).ratio() >= self.MATCH:
+                    code = sorted(codes)[0]
+                    return word, self.names.get(code, code)
+        return None

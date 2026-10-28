@@ -205,3 +205,27 @@ def test_tamper_and_frame_reach_the_register(monkeypatch):
     finally:
         client.stop()
         server.shutdown()
+
+
+def test_register_reads_report_and_manages_item_images():
+    guard = FakeGuard()
+    guard.events, guard.deleted = [], []
+    guard.record_event = guard.events.append
+    guard.report = lambda day: {"accepted:ok": 5, "mismatch": 1} if day == "2026-10-28" else {}
+    guard.reference_products = lambda: [{"code": "090822", "name": "Kiseljak", "count": 2}]
+    guard.reference_images = lambda code: [{"id": 7, "camera": "B3", "verdict": "ok", "quality": 0.9, "created_at": "x", "label": ""}] if code == "090822" else []
+    guard.reference_crop = lambda sample_id: b"JPEGDATA" if sample_id == 7 else None
+    guard.delete_reference = lambda sample_id: guard.deleted.append(sample_id) or True
+    server = start_server(guard)
+    client = connect(server)
+    try:
+        assert client.report("2026-10-28") == {"accepted:ok": 5, "mismatch": 1}
+        assert client.reference_products()[0]["name"] == "Kiseljak"
+        assert client.reference_images("090822")[0]["id"] == 7
+        assert client.reference_crop(7) == b"JPEGDATA" and client.reference_crop(8) is None
+        assert client.delete_reference(7) and guard.deleted == [7]
+        client.record_event("staff_call")
+        assert wait_for(lambda: guard.events == ["staff_call"])
+    finally:
+        client.stop()
+        server.shutdown()
