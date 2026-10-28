@@ -79,10 +79,9 @@ def test_receipt_opens_gate_only_once(tmp_path):
     store.mark_fiscal(number, True, "", "84366")
     now = datetime(2026, 10, 21, 10, 10)
     assert store.claim_for_gate("084366", now) == (True, "račun pronađen")
-    assert store.claim_for_gate("084366", now + timedelta(seconds=60)) == (True, "ponovljeno skeniranje")
-    allowed, reason = store.claim_for_gate("084366", now + timedelta(minutes=5))
-    assert not allowed
-    assert "već iskorišten" in reason
+    for later in (timedelta(0), timedelta(seconds=5), timedelta(minutes=5)):
+        allowed, reason = store.claim_for_gate("084366", now + later)
+        assert not allowed and "već iskorišten" in reason
 
 
 def test_unknown_receipt_does_not_open_gate(tmp_path):

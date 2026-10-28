@@ -40,7 +40,6 @@ EXTRA_COLUMNS = {
     "gate_blocked": "TEXT",
 }
 
-GATE_GRACE_SECONDS = 120
 
 INSERT_RECEIPT = """
 INSERT INTO receipts (created_at, payment_method, item_count, total, payment_reference, approval_code, rrn, bank_id, card_number)
@@ -107,7 +106,7 @@ class ReceiptStore:
             )
 
     def claim_for_gate(self, fiscal_number: str, now: datetime | None = None) -> tuple[bool, str]:
-        """Račun (BF) otvara vrata samo jednom; ponovni sken u roku od GATE_GRACE_SECONDS se još prihvata."""
+        """Račun (BF) otvara vrata samo jednom; svaki sljedeći sken istog QR koda se odbija."""
         wanted = fiscal_number.strip().lstrip("0")
         if not wanted:
             return False, "nema broja računa"
@@ -122,9 +121,7 @@ class ReceiptStore:
             if row["gate_blocked"]:
                 return False, f"niste sve platili ({row['gate_blocked']})"
             if row["gate_used_at"]:
-                if (now - datetime.fromisoformat(row["gate_used_at"])).total_seconds() > GATE_GRACE_SECONDS:
-                    return False, f"račun je već iskorišten ({row['gate_used_at']})"
-                return True, "ponovljeno skeniranje"
+                return False, f"račun je već iskorišten ({row['gate_used_at']})"
             connection.execute(
                 "UPDATE receipts SET gate_used_at = ? WHERE id = ?", (now.isoformat(timespec="seconds"), row["id"])
             )
