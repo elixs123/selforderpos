@@ -35,7 +35,7 @@ SECTIONS = [
     ("Kartični terminal (PrintecECR)", ["terminal_url", "terminal_api_key", "terminal_print_slip", "terminal_slip_copies"]),
     ("Fiskalni printer (Tring)", ["fiscal_enabled", "fiscal_url", "fiscal_unit", "fiscal_tax_label", "fiscal_card_payment", "fiscal_qr_payment"]),
     ("QR slip za vrata (test)", ["qr_slip_enabled", "qr_slip_printer", "qr_slip_ibfm"]),
-    ("Kamere", ["cameras_enabled", "allow_without_cameras", "lock_on_moved_camera", "yolox_enabled", "alarm_clips", "customer_monitor", "customer_monitor_camera", "vision_server_url", "camera_a_host", "camera_a2_host", "camera_a3_host", "camera_b_host", "camera_b2_host", "camera_b3_host", "camera_c_host", "camera_c2_host", "camera_channel", "camera_model", "match_threshold", "reference_min_percent", "references_per_camera", "label_reading"]),
+    ("Kamere", ["cameras_enabled", "allow_without_cameras", "lock_on_moved_camera", "yolox_enabled", "alarm_clips", "event_log", "customer_monitor", "customer_monitor_camera", "vision_server_url", "camera_a_host", "camera_a2_host", "camera_a3_host", "camera_b_host", "camera_b2_host", "camera_b3_host", "camera_c_host", "camera_c2_host", "camera_channel", "camera_model", "match_threshold", "reference_min_percent", "references_per_camera", "label_reading"]),
 ]
 
 LABELS = {
@@ -66,6 +66,7 @@ LABELS = {
     "cameras_enabled": "Kamere uključene",
     "yolox_enabled": "Brojanje artikala (YOLOX)",
     "lock_on_moved_camera": "Zaključaj kasu kad se kamera pomjeri",
+    "event_log": "Zapisuj događaje kamera u data/logs (za traženje grešaka)",
     "alarm_clips": "Snimci kod alarma (8 s prije i 5 s poslije, čuvaju se 30 dana)",
     "customer_monitor": "Ekran 'Snimate se' prema kupcu (drugi monitor)",
     "customer_monitor_camera": "Kamera za ekran prema kupcu",

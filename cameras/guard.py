@@ -98,6 +98,11 @@ def reference_min_score() -> float:
         return 0.75
 
 
+def event_log_enabled() -> bool:
+    """Zapis događaja u data/logs; uključuje se u Postavke > Kamere (CAM_EVENT_LOG). Monitor ih prikazuje i bez toga."""
+    return os.environ.get("CAM_EVENT_LOG", "ne").lower() not in ("", "off", "0", "ne")
+
+
 def clips_enabled() -> bool:
     """Snimci alarma; uključuju se u Postavke > Kamere (upisuje se u CAM_CLIPS pri pokretanju kamera)."""
     return os.environ.get("CAM_CLIPS", "da").lower() not in ("", "off", "0", "ne")
@@ -223,6 +228,8 @@ class CheckoutGuard:
         self.event_number += 1
         moment = datetime.now()
         self.events.append((self.event_number, moment.strftime("%H:%M:%S"), kind, text))
+        if not event_log_enabled():
+            return
         try:
             folder = self.store.folder.parent / "logs"
             folder.mkdir(parents=True, exist_ok=True)
