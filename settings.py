@@ -65,6 +65,7 @@ class Settings:
     camera_model: str = "clip"
     match_threshold: float = 0.0
     label_reading: bool = field(default_factory=lambda: os.environ.get("CAM_OCR", "da").lower() not in ("", "off", "0", "ne"))
+    references_per_camera: int = field(default_factory=lambda: int(os.environ.get("CAM_REFERENCES", "3") or 3))
     reference_min_percent: int = field(default_factory=lambda: int(os.environ.get("CAM_REFERENCE_MIN", "75") or 75))
     receipt_return_seconds: int = 20
     idle_seconds: int = 120

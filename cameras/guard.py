@@ -76,6 +76,14 @@ APPEARANCE_PROBLEMS = ("ne liči na skenirani", "više liči na drugi", "liči n
 BAD_REFERENCE = "bad_reference"
 
 
+def references_per_camera() -> int:
+    """Koliko najboljih slika artikla kasa čuva po kameri (Postavke > Kamere, CAM_REFERENCES)."""
+    try:
+        return max(1, int(os.environ.get("CAM_REFERENCES", "3")))
+    except ValueError:
+        return 3
+
+
 def reference_min_score() -> float:
     """Koliko slika iz zone B mora ličiti na artikal (ili na uzeto iz zone A) da bi se spremila za učenje (Postavke > Kamere)."""
     try:
@@ -123,6 +131,7 @@ class CheckoutGuard:
         self._placed_unscanned: dict[str, int] = {}
         self._b_active_at = -1000.0
         self.store = SampleStore()
+        threading.Thread(target=self._tidy_samples, daemon=True).start()
         self._load_backgrounds()
         self.hands = load_hand_detector()
         self.hand_shapes: dict[str, list[np.ndarray]] = {name: [] for name in readers}
@@ -912,6 +921,7 @@ class CheckoutGuard:
             if not self._reference_problem(taken):
                 ids.append(self._taken_sample_ids.get(self.last_taken_index))
         self.store.mark_verified(ids)
+        self.store.prune(self.product_code, references_per_camera())
         self.log("poredjenje", f"osoblje potvrdilo artikal {self.product_name or self.barcode}: {len([i for i in ids if i is not None])} slika zapamćeno kao tačno")
 
     def _wait_for_zone_b(self, takes: list) -> None:
@@ -1070,6 +1080,14 @@ class CheckoutGuard:
         if score_product is None:
             return "learned", [], score_taken, score_product
         return "ok", [], score_taken, score_product
+
+    def _tidy_samples(self) -> None:
+        try:
+            removed = self.store.prune_all(references_per_camera()) + self.store.cleanup()
+            if removed:
+                self.log("slike", f"obrisano {removed} viška slika (čuva se {references_per_camera()} najboljih po artiklu i kameri)")
+        except Exception as error:
+            print(f"Čišćenje slika: {error}")
 
     def _apply_label(
         self, verdict: str, problems: list[str], score_product: float | None, reads: list[set[str]], product_code: str | None,
@@ -1512,16 +1530,17 @@ class CheckoutGuard:
             self._judging = False
             self._placed_sample_ids = []
             self._placed_problems = crop_problems
-            for (name, item, ratio), problem, read in zip(items, crop_problems, reads):
+            for index, ((name, item, ratio), problem, read) in enumerate(zip(items, crop_problems, reads)):
                 saved_verdict = verdict
                 if problem and verdict != "mismatch":
                     saved_verdict = BAD_REFERENCE
                     self.log(f"zona-{name}", f"slika se ne pamti za učenje: {problem}")
+                # Cijela slika kamere samo kad artikal nije prošao (za osoblje); za prepoznavanje treba samo izrez.
                 sample_id = self.store.save(
                     "placed", self.barcode, self.product_code, self.product_name, name,
-                    crop_image=item, full_image=frames[name][0], change_ratio=ratio,
+                    crop_image=item, full_image=frames[name][0] if verdict == "mismatch" else None, change_ratio=ratio,
                     verdict=saved_verdict, score_taken=score_taken, score_product=score_product,
-                    label_text=" ".join(sorted(read)) or None,
+                    label_text=" ".join(sorted(read)) or None, quality=scores[index],
                 )
                 self._placed_sample_ids.append(sample_id)
             self._dump(f"placed-{verdict}", {
@@ -1545,6 +1564,7 @@ class CheckoutGuard:
                 index = self._reference_take_index()
                 if index is not None and not self._reference_problem(self._taken_items[index]):
                     self.store.mark_taken_reference(self._taken_sample_ids.get(index))
+            self.store.prune(self.product_code, references_per_camera())
             self._finish("accepted", verdict, message)
             self._note_accepted()
             self._return_unscanned(self._leftover_takes(self._scan_takes, self.last_taken_index))

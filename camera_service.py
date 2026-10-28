@@ -58,6 +58,7 @@ def start_guard(settings: Settings):
     os.environ["CAM_COUNTER"] = "yolox" if settings.yolox_enabled else "off"
     os.environ["CAM_CLIPS"] = "da" if settings.alarm_clips else "ne"
     os.environ["CAM_OCR"] = "da" if settings.label_reading else "ne"
+    os.environ["CAM_REFERENCES"] = str(settings.references_per_camera)
     os.environ["CAM_REFERENCE_MIN"] = str(settings.reference_min_percent)
     if settings.match_threshold > 0:
         os.environ["CAM_MATCH_THRESHOLD"] = str(settings.match_threshold)

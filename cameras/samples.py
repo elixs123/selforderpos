@@ -1,7 +1,7 @@
 import os
 import sqlite3
 from contextlib import closing
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import cv2
@@ -26,12 +26,12 @@ CREATE TABLE IF NOT EXISTS samples (
 )
 """
 
-EXTRA_COLUMNS = {"verdict": "TEXT", "score_taken": "REAL", "score_product": "REAL", "label_text": "TEXT"}
+EXTRA_COLUMNS = {"verdict": "TEXT", "score_taken": "REAL", "score_product": "REAL", "label_text": "TEXT", "quality": "REAL"}
 
 INSERT = """
 INSERT INTO samples (created_at, event, barcode, product_code, product_name, camera, crop_path, full_path,
-                     change_ratio, verdict, score_taken, score_product, label_text)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     change_ratio, verdict, score_taken, score_product, label_text, quality)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 REFERENCES = """
@@ -57,6 +57,15 @@ ORDER BY verdict = 'verified' DESC, id DESC LIMIT ?
 PRODUCT_LABELS = """
 SELECT product_code, product_name, label_text FROM samples
 WHERE product_code IS NOT NULL AND event = 'placed' AND verdict IN ('learned', 'ok', 'verified') AND created_at >= ?
+"""
+
+REFERENCE_VERDICTS = ("learned", "ok", "verified")
+KEEP_DAYS = 30
+
+PRUNE_CANDIDATES = """
+SELECT id, crop_path, full_path FROM samples
+WHERE product_code = ? AND camera = ? AND event = ? AND verdict IN ('learned', 'ok', 'verified')
+ORDER BY verdict = 'verified' DESC, quality IS NULL, quality DESC, id DESC
 """
 
 OLD_REFERENCES = """
@@ -101,6 +110,7 @@ class SampleStore:
         score_taken: float | None = None,
         score_product: float | None = None,
         label_text: str | None = None,
+        quality: float | None = None,
     ) -> int:
         now = datetime.now()
         stamp = now.strftime("%Y%m%d-%H%M%S-%f")
@@ -111,7 +121,7 @@ class SampleStore:
             cursor = connection.execute(
                 INSERT,
                 (now.isoformat(timespec="seconds"), event, barcode, product_code, product_name, camera, crop_path,
-                 full_path, change_ratio, verdict, score_taken, score_product, label_text),
+                 full_path, change_ratio, verdict, score_taken, score_product, label_text, quality),
             )
             return cursor.lastrowid
 
@@ -154,6 +164,42 @@ class SampleStore:
                 _, words = result.setdefault(code, (name or "", set()))
                 words.update((text or "").split())
         return result
+
+    def _delete(self, connection: sqlite3.Connection, rows: list[tuple[int, str | None, str | None]]) -> int:
+        for _, *paths in rows:
+            for path in paths:
+                if path:
+                    (self.folder / path).unlink(missing_ok=True)
+        connection.executemany("DELETE FROM samples WHERE id = ?", [(row[0],) for row in rows])
+        return len(rows)
+
+    def prune(self, product_code: str | None, keep: int) -> int:
+        """Za artikal ostavi samo keep najboljih slika po kameri (osoblje potvrđene prve, pa najsličnije); ostale obriši."""
+        if not product_code or keep <= 0:
+            return 0
+        removed = 0
+        with closing(sqlite3.connect(self.database)) as connection, connection:
+            for event in ("placed", "taken"):
+                cameras = [row[0] for row in connection.execute(
+                    "SELECT DISTINCT camera FROM samples WHERE product_code = ? AND event = ?", (product_code, event))]
+                for camera in cameras:
+                    rows = connection.execute(PRUNE_CANDIDATES, (product_code, camera, event)).fetchall()
+                    removed += self._delete(connection, rows[keep:])
+        return removed
+
+    def prune_all(self, keep: int) -> int:
+        with closing(sqlite3.connect(self.database)) as connection:
+            codes = [row[0] for row in connection.execute("SELECT DISTINCT product_code FROM samples WHERE product_code IS NOT NULL")]
+        return sum(self.prune(code, keep) for code in codes)
+
+    def cleanup(self, now: datetime | None = None) -> int:
+        """Slike koje kasa ne koristi za prepoznavanje (odbijeni artikli, isteklo vrijeme, loše slike) brišu se poslije KEEP_DAYS."""
+        limit = ((now or datetime.now()) - timedelta(days=KEEP_DAYS)).isoformat(timespec="seconds")
+        with closing(sqlite3.connect(self.database)) as connection, connection:
+            rows = connection.execute(
+                "SELECT id, crop_path, full_path FROM samples WHERE created_at < ? AND (verdict IS NULL OR verdict NOT IN (?, ?, ?))",
+                (limit, *REFERENCE_VERDICTS)).fetchall()
+            return self._delete(connection, rows)
 
     def old_reference_count(self, product_code: str | None, since: str) -> int:
         if not product_code or not since:
