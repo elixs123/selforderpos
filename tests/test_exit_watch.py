@@ -120,3 +120,24 @@ def test_watch_ends_after_gate_or_timeout(tmp_path, monkeypatch):
     check(window)
     assert window.exit_watch is None
     assert window.screens.currentWidget() is window.receipt
+
+
+def start(window):
+    window.settings = SimpleNamespace(register_id="K1")
+    window.scan = SimpleNamespace(begin=lambda: None)
+    calls = []
+    window.guard.new_sale = lambda: calls.append(True)
+    app_module.MainWindow.start_shopping(window)
+    return calls
+
+
+def test_new_customer_starts_with_clean_zones(tmp_path):
+    window, _ = fake_window(tmp_path, [100.0])
+    assert start(window) == [True]
+    assert window.exit_watch is None
+
+
+def test_unpaid_item_of_previous_customer_is_not_forgotten(tmp_path):
+    window, _ = fake_window(tmp_path, [100.0])
+    window.exit_watch["blocked"] = True
+    assert start(window) == []

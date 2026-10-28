@@ -136,3 +136,13 @@ def test_scan_check_cannot_undo_a_take(monkeypatch, tmp_path):
     guard.trackers["A2"] = SimpleNamespace(moved=True, motion_ratio=0.0, motion_max=1.0, evaluate_now=lambda roi, hands: added)
     guard._force_takes(1.0, reason="skeniranje")
     assert guard._takes == [take]
+
+
+def test_new_sale_forgets_previous_unscanned_items(monkeypatch, tmp_path):
+    guard, readers = make_guard(monkeypatch, tmp_path)
+    guard._takes = [(readers["A2"].latest()[:50, :50].copy(), None, 0.0, "A2")]
+    guard._placed_unscanned = {"B2": 1}
+    guard._zone_a_ignored = 2
+    guard.new_sale()
+    assert guard._takes == [] and guard._placed_unscanned == {} and guard._zone_a_ignored == 0
+    assert guard.unscanned == 0 and guard.state == "ready"

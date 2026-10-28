@@ -613,6 +613,23 @@ class CheckoutGuard:
             if not self.busy:
                 self._set("ready", "Uzmite artikal i skenirajte ga.")
 
+    def new_sale(self) -> None:
+        """Novi kupac: zaboravi neskenirane artikle i brojanje od prošle kupovine (zone se ponovo prebroje)."""
+        with self._lock:
+            if self.busy:
+                return
+            self.log("kupovina", "nova kupovina: stanje zona od prošle kupovine je obrisano")
+            self._zone_a_ignored = 0
+            self.unscanned_guess, self._guessed_take = "", None
+            self._takes = []
+            self._placed_unscanned = {}
+            self._check_pending_since = None
+            self._scanned_since_baseline = 0
+            self._a_baseline = {}
+            for ledger in list(self.a_ledgers.values()) + list(self.b_ledgers.values()):
+                ledger.reset()
+            self._set("ready", "Uzmite artikal i skenirajte ga.")
+
     def _leftover_takes(self, takes: list, index: int) -> list:
         if not takes:
             return []

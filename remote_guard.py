@@ -93,6 +93,9 @@ class RemoteGuard:
     def cancel(self) -> None:
         threading.Thread(target=self._send_quietly, args=("/cancel",), daemon=True).start()
 
+    def new_sale(self) -> None:
+        threading.Thread(target=self._send_quietly, args=("/new_sale",), daemon=True).start()
+
     def approve(self, learn: bool = False) -> None:
         try:
             self._apply(self._request("POST", "/approve", {"learn": learn}, ACTION_TIMEOUT))

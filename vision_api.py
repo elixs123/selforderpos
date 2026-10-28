@@ -121,6 +121,9 @@ class VisionHandler(BaseHTTPRequestHandler):
             elif self.path == "/approve":
                 guard.approve(learn=bool(self._body().get("learn")))
                 self._send(200, {**snapshot(guard, self.server.boot), "ok": True})
+            elif self.path == "/new_sale":
+                guard.new_sale()
+                self._send(200, {**snapshot(guard, self.server.boot), "ok": True})
             elif self.path == "/forgive":
                 guard.forgive_unscanned()
                 self._send(200, {**snapshot(guard, self.server.boot), "ok": True})

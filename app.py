@@ -357,6 +357,9 @@ class MainWindow(QMainWindow):
     def start_shopping(self) -> None:
         if self.exit_watch is not None and not self.exit_watch["blocked"]:
             self.exit_watch = None
+        if self.exit_watch is None and self.guard is not None and hasattr(self.guard, "new_sale"):
+            # Novi kupac počinje od praznih zona; neplaćen artikal prethodnog kupca (blokiran račun) se ne briše.
+            self.guard.new_sale()
         self.sale_id = f"{self.settings.register_id}-{datetime.now():%Y%m%d-%H%M%S}"
         self.screens.setCurrentWidget(self.scan)
         self.scan.begin()

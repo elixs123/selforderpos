@@ -1,6 +1,7 @@
 IZMJENE - samouslužna kasa
 
 2026-10-28
+- Nova kupovina počinje od praznih zona: kad kupac dodirne početni ekran, kamere zaborave neskenirane artikle i brojanje od prošle kupovine (POST /new_sale na serveru kamera). Izuzetak: račun prethodnog kupca blokiran sa 'Niste sve platili'.
 - Zona A: provjera u trenutku skeniranja više ne može 'vratiti' artikal u zonu A (ruka koja izlazi iz zone izgledala je kao vraćen artikal i brisala dobre slike uzetog artikla, pa je zona B stalno javljala 'nije isto što je uzeto').
 - Zona A: kad YOLOX trepne (vidi 0 ili 1 umjesto 3), 'Uzeli ste više od jednog artikla' vrijedi tek kad je manjak od 2 i više stabilan 3 s (A_CONFIRM_SECONDS). Jedan uzet artikal se računa odmah.
 - Snimci alarma: isti alarm (npr. ista pomjerena kamera ili isti neskeniran artikal u zoni B) snima se najviše jednom u minuti.
