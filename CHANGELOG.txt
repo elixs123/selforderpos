@@ -1,6 +1,7 @@
 IZMJENE - samouslužna kasa
 
 2026-10-28
+- Zona A: provjera u trenutku skeniranja više ne može 'vratiti' artikal u zonu A (ruka koja izlazi iz zone izgledala je kao vraćen artikal i brisala dobre slike uzetog artikla, pa je zona B stalno javljala 'nije isto što je uzeto').
 - Zona A: kad YOLOX trepne (vidi 0 ili 1 umjesto 3), 'Uzeli ste više od jednog artikla' vrijedi tek kad je manjak od 2 i više stabilan 3 s (A_CONFIRM_SECONDS). Jedan uzet artikal se računa odmah.
 - Snimci alarma: isti alarm (npr. ista pomjerena kamera ili isti neskeniran artikal u zoni B) snima se najviše jednom u minuti.
 - Manje slika u data/samples: kasa čuva samo najbolje slike artikla po kameri (zadano 3, Postavke > Kamere > 'Broj najboljih slika artikla po kameri', CAM_REFERENCES); osoblje potvrđene imaju prednost, pa najsličnije (kolona quality). Cijela slika kamere se sprema samo kad artikal nije prošao. Slike koje se ne koriste za prepoznavanje brišu se poslije 30 dana. Višak se počisti i pri pokretanju kamera.

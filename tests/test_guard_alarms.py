@@ -125,3 +125,14 @@ def test_staff_learning_skips_images_with_hands_or_people(monkeypatch, tmp_path)
     guard._waive_taken = True
     guard._learn_verified()
     assert marked == [1, 3]
+
+
+def test_scan_check_cannot_undo_a_take(monkeypatch, tmp_path):
+    guard, readers = make_guard(monkeypatch, tmp_path)
+    image = readers["A2"].latest()
+    take = (image[:50, :50].copy(), None, 0.0, "A")
+    guard._takes = [take]
+    added = SimpleNamespace(kind="added", item=None)
+    guard.trackers["A2"] = SimpleNamespace(moved=True, motion_ratio=0.0, motion_max=1.0, evaluate_now=lambda roi, hands: added)
+    guard._force_takes(1.0, reason="skeniranje")
+    assert guard._takes == [take]

@@ -1305,6 +1305,10 @@ class CheckoutGuard:
             event = tracker.evaluate_now(roi, hands)
             if event is not None:
                 self.log(f"zona-{name}", f"provjera na zahtjev ({reason}): {event.kind}")
+                if event.kind != "taken":
+                    # Provjera na zahtjev traži propušteno uzimanje; "vraćeno" u tom trenutku je obično ruka koja izlazi
+                    # iz zone, a brisalo bi dobre slike uzetog artikla s drugih kamera.
+                    continue
                 self._on_zone_a_event(name, event, now, sync=False)
 
     def _on_zone_a_event(self, camera: str, event, now: float, sync: bool = True) -> None:
