@@ -47,6 +47,7 @@ class Settings:
     qr_slip_ibfm: str = "AM040250"
     cameras_enabled: bool = field(default_factory=cameras_in_env)
     allow_without_cameras: bool = False
+    lock_on_moved_camera: bool = False
     yolox_enabled: bool = field(default_factory=counter_in_env)
     alarm_clips: bool = True
     customer_monitor: bool = True

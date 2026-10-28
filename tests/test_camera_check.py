@@ -85,10 +85,25 @@ def test_problem_when_yolox_cannot_count():
     assert "YOLOX" in cameras_problem(guard, True)
 
 
-def test_problem_when_camera_is_covered_or_moved():
+def test_covered_camera_always_locks():
     guard = local_guard(A2="uživo", B2="uživo")
-    guard.tamper_problems = {"B2": "kamera je pomjerena"}
-    assert "B2 (kamera je pomjerena)" in cameras_problem(guard, True)
+    guard.tamper_problems = {"B2": "prekrivena ili bez slike"}
+    assert "B2 (prekrivena ili bez slike)" in cameras_problem(guard, True)
+
+
+def test_moved_camera_locks_only_when_switched_on():
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "cameras"))
+    from camera_check import MOVED
+    from tamper import MOVED as TAMPER_MOVED
+
+    assert MOVED == TAMPER_MOVED
+    guard = local_guard(A2="uživo", B2="uživo")
+    guard.tamper_problems = {"B2": MOVED}
+    assert cameras_problem(guard, True) == ""
+    assert "B2 (kamera je pomjerena)" in cameras_problem(guard, True, lock_on_moved=True)
 
 
 def test_customer_monitor_shows_mirrored_camera():

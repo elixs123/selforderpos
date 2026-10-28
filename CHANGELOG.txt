@@ -1,6 +1,7 @@
 IZMJENE - samouslužna kasa
 
 2026-10-28
+- Pomjerena kamera više ne zaključava kasu (samo se zapiše i snimi). Zaključavanje se uključuje u Postavke > Kamere > 'Zaključaj kasu kad se kamera pomjeri'. Prekrivena, tamna ili mutna kamera i dalje zaključava kasu.
 - Učenje samo na dobrim slikama: slika iz zone B se ne pamti kao slika artikla ako je na njoj ruka (MediaPipe) ili osoba (YOLOX), ili ako liči na artikal manje od praga (Postavke > Kamere > 'Slika se pamti za učenje ako artikal liči bar (%)', zadano 75 %, CAM_REFERENCE_MIN). Novi artikal se poredi sa uzetim iz zone A, poznati sa svojim slikama. Takve slike se spremaju sa verdict 'bad_reference'. Ni 'Nauči artikal' (osoblje) više ne pamti slike sa rukom/osobom, a ni slika uzetog iz zone A se ne pamti ako je na njoj ruka/osoba.
 - Promjena IP adrese bočnih kamera A3/B3 u postavkama sada restartuje kamere.
 - cameras/improve_image.py više ne smanjuje sliku: najveća rezolucija kamere, najmanje 25 FPS (veći FPS ostaje), H.264, VBR do 8 Mbit/s, WDR i BLC isključeni. Izrez artikla na 2560 px je ~200 px, na 1280 px bio bi ~100 px (manje od 224 px koliko gledaju CLIP/DINO).

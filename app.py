@@ -158,7 +158,7 @@ class MainWindow(QMainWindow):
     def check_cameras(self) -> None:
         """Kad kamere ne rade duže od CAMERAS_DOWN_SECONDS, kasa se zaključa dok ih administrator ne dozvoli isključiti."""
         self.scan.allow_without_cameras = self.settings.allow_without_cameras
-        problem = "" if self.settings.allow_without_cameras else cameras_problem(self.guard, self.settings.cameras_enabled)
+        problem = "" if self.settings.allow_without_cameras else cameras_problem(self.guard, self.settings.cameras_enabled, self.settings.lock_on_moved_camera)
         current = self.screens.currentWidget()
         if not problem:
             self.cameras_down_since = None
