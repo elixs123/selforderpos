@@ -23,6 +23,7 @@ Tipke:
 import argparse
 import sys
 import time
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 
@@ -49,6 +50,10 @@ COCO = (
 )
 LOW_CONFIDENCE = 0.15
 WINDOW_WIDTH, WINDOW_HEIGHT = 1400, 820
+PANEL_WIDTH = 460
+# Koliko zadnjih brojanja se pamti da se vidi skače li broj (kasa broji svakih ~0.5 s).
+HISTORY = 20
+GREY = (170, 170, 170)
 GREEN, BLUE, YELLOW, WHITE, BLACK = (60, 200, 60), (230, 150, 40), (0, 220, 255), (255, 255, 255), (0, 0, 0)
 SAVE_FOLDER = Path(__file__).resolve().parent.parent / "data" / "yolo_view"
 
@@ -90,16 +95,21 @@ def draw(image: np.ndarray, found: list, threshold: float, scale: float, show_lo
 
 def fit(image: np.ndarray) -> tuple[np.ndarray, float]:
     height, width = image.shape[:2]
-    scale = min(WINDOW_WIDTH / width, (WINDOW_HEIGHT - 70) / height, 3.0)
+    scale = min((WINDOW_WIDTH - PANEL_WIDTH) / width, WINDOW_HEIGHT / height, 3.0)
     return cv2.resize(image, (max(1, int(width * scale)), max(1, int(height * scale)))), scale
 
 
-def header(image: np.ndarray, lines: list[str]) -> np.ndarray:
-    bar = np.full((70, image.shape[1], 3), 30, np.uint8)
-    for index, text in enumerate(lines):
-        cv2.putText(bar, text, (10, 28 + index * 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7 if index == 0 else 0.55,
-                    WHITE, 2 if index == 0 else 1, cv2.LINE_AA)
-    return np.vstack([bar, image])
+def compose(image: np.ndarray, count: str, lines: list[tuple[str, tuple]]) -> np.ndarray:
+    """Slika lijevo, desno panel sa velikim brojem artikala (zona je često uska, pa tekst iznad slike ne stane)."""
+    height = max(image.shape[0], WINDOW_HEIGHT)
+    canvas = np.full((height, image.shape[1] + PANEL_WIDTH, 3), 30, np.uint8)
+    canvas[:image.shape[0], :image.shape[1]] = image
+    left = image.shape[1] + 20
+    cv2.putText(canvas, "BROJ ARTIKALA", (left, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.9, WHITE, 2, cv2.LINE_AA)
+    cv2.putText(canvas, count, (left, 170), cv2.FONT_HERSHEY_SIMPLEX, 4.0, GREEN, 8, cv2.LINE_AA)
+    for index, (text, color) in enumerate(lines):
+        cv2.putText(canvas, text, (left, 230 + index * 32), cv2.FONT_HERSHEY_SIMPLEX, 0.62, color, 1 if color == GREY else 2, cv2.LINE_AA)
+    return canvas
 
 
 def file_source(path: Path):
@@ -160,6 +170,7 @@ def main() -> None:
     names = list(sources)
     current, threshold, model_view, show_low, paused = 0, MIN_CONFIDENCE, False, True, False
     frame, shown, ms = None, None, 0.0
+    history: dict[str, deque] = {}
     window = "YOLOX - kako broji"
     cv2.namedWindow(window, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(window, WINDOW_WIDTH, WINDOW_HEIGHT)
@@ -172,8 +183,8 @@ def main() -> None:
             frame = source.latest() if isinstance(source, CameraReader) else source()
         if frame is None:
             status = source.status if isinstance(source, CameraReader) else "nema slike"
-            blank = np.zeros((WINDOW_HEIGHT - 70, WINDOW_WIDTH, 3), np.uint8)
-            shown = header(blank, [f"Kamera {name}: {status}", "TAB sljedeća kamera, Q izlaz"])
+            blank = np.zeros((WINDOW_HEIGHT, WINDOW_WIDTH - PANEL_WIDTH, 3), np.uint8)
+            shown = compose(blank, "-", [(f"Kamera {name}: {status}", WHITE), ("TAB sljedeca kamera, Q izlaz", GREY)])
         else:
             zone = zones.get(name)
             region = crop(frame, zone)[0] if zone is not None else frame
@@ -189,15 +200,25 @@ def main() -> None:
                 picture, scale = fit(region)
             picture, counted = draw(picture, found, threshold, scale, show_low)
             low = sum(1 for kind, score, _ in found if kind not in IGNORED_CLASSES and score < threshold)
+            if not paused:
+                history.setdefault(name, deque(maxlen=HISTORY)).append(counted)
+            seen = history.get(name) or [counted]
             height, width = region.shape[:2]
-            where = "cijela slika" if zone is None else "zona"
-            title = f"Kamera {name} ({where} {width}x{height})   BROJ ARTIKALA: {counted}"
-            if low and show_low:
-                title += f"   (+{low} ispod praga)"
-            detail = (f"prag {threshold:.0%} (kasa {MIN_CONFIDENCE:.0%})   YOLOX {ms:.0f} ms   "
-                      f"{'model 640x640' if model_view else 'originalna slika'}   {'PAUZA   ' if paused else ''}"
-                      f"TAB kamera  M model  [ ] prag  Z zuto  S spremi  Q izlaz")
-            shown = header(picture, [title, detail])
+            jumps = min(seen) != max(seen)
+            lines = [
+                (f"Kamera {name}", WHITE),
+                (f"{'cijela slika' if zone is None else 'zona'} {width}x{height} px", GREY),
+                (f"ispod praga (zuto): {low}", YELLOW if low else GREY),
+                (f"zadnjih {len(seen)} brojanja: {min(seen)}-{max(seen)}", YELLOW if jumps else GREEN),
+                ("BROJ SKACE - YOLO gubi artikal" if jumps else "broj stabilan", YELLOW if jumps else GREEN),
+                (f"prag {threshold:.0%} (kasa {MIN_CONFIDENCE:.0%})", WHITE),
+                (f"YOLOX {ms:.0f} ms", GREY),
+                ("model 640x640" if model_view else "originalna slika", GREY),
+                ("PAUZA" if paused else "", YELLOW),
+                ("TAB / 1-8  kamera", GREY), ("M  pogled modela", GREY), ("[ ]  prag", GREY),
+                ("Z  zuti okviri", GREY), ("RAZMAK  pauza   S  spremi", GREY), ("Q  izlaz", GREY),
+            ]
+            shown = compose(picture, str(counted), lines)
         cv2.imshow(window, shown)
         key = cv2.waitKey(1 if not paused else 30) & 0xFF
         if key in (ord("q"), 27):
