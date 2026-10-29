@@ -8,8 +8,11 @@ import cv2
 import numpy as np
 
 MODELS_FOLDER = Path(__file__).resolve().parent / "models"
-MODEL_URL = "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_s.onnx"
+MODEL_URL = "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/{name}.onnx"
 MODEL_FILE = "yolox_s.onnx"
+# YOLOX-m (100 MB) na kameri A2 vidi sve 4 flaše (91-96 %), YOLOX-s samo 2-3; m je sporiji tek ~30 %.
+DEFAULT_MODEL = "yolox_m"
+MODEL_SIZES = {"yolox_s": 36, "yolox_m": 101, "yolox_l": 217}
 INPUT_SIZE = 640
 MIN_CONFIDENCE = 0.5
 MATCH_IOU = 0.3
@@ -31,6 +34,12 @@ def providers(available: list[str]) -> list:
     if "CoreMLExecutionProvider" in available and os.environ.get("CAM_COREML", "1") != "0":
         return [("CoreMLExecutionProvider", {"MLComputeUnits": "ALL"}), "CPUExecutionProvider"]
     return ["CPUExecutionProvider"]
+
+
+def model_name() -> str:
+    """CAM_YOLOX_MODEL u .env: yolox_s (brži), yolox_m (zadano, bolje broji), yolox_l."""
+    name = os.environ.get("CAM_YOLOX_MODEL", DEFAULT_MODEL).strip().lower()
+    return name if name in MODEL_SIZES else DEFAULT_MODEL
 
 
 def counting_cameras() -> set[str]:
@@ -70,12 +79,13 @@ class ObjectCounter:
 
     @staticmethod
     def _download() -> Path:
-        path = MODELS_FOLDER / MODEL_FILE
+        name = model_name()
+        path = MODELS_FOLDER / f"{name}.onnx"
         if not path.exists():
             MODELS_FOLDER.mkdir(parents=True, exist_ok=True)
-            print("Preuzimam model za brojanje artikala (YOLOX-s, 36 MB)...")
+            print(f"Preuzimam model za brojanje artikala ({name}, {MODEL_SIZES.get(name, '?')} MB)...")
             partial = path.with_suffix(".part")
-            urllib.request.urlretrieve(MODEL_URL, partial)
+            urllib.request.urlretrieve(MODEL_URL.format(name=name), partial)
             partial.rename(path)
         return path
 

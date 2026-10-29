@@ -5,6 +5,7 @@ Pokretanje (iz foldera projekta):
     ./.venv/bin/python cameras/yolo_view.py A3 B3 C    # izabrane kamere
     ./.venv/bin/python cameras/yolo_view.py --file slika.jpg   # slika ili video sa diska
     ./.venv/bin/python cameras/yolo_view.py A2 --cijela        # cijela slika kamere, ne samo zona
+    ./.venv/bin/python cameras/yolo_view.py --model yolox_s    # uporedi sa manjim modelom
 
 Boje:
     zeleno  = artikal koji se BROJI (kao na kasi: pouzdanost >= prag, klasa nije zanemarena)
@@ -21,6 +22,7 @@ Tipke:
     Q / ESC     izlaz
 """
 import argparse
+import os
 import sys
 import time
 from collections import deque
@@ -34,7 +36,7 @@ import cv2
 import numpy as np
 
 from config import CameraConfigError, load_cameras
-from counter import IGNORED_CLASSES, INPUT_SIZE, MIN_CONFIDENCE, counting_cameras, get_counter
+from counter import IGNORED_CLASSES, INPUT_SIZE, MIN_CONFIDENCE, counting_cameras, get_counter, model_name
 from reader import CameraReader
 from zones import crop, load_zones
 
@@ -137,13 +139,16 @@ def main() -> None:
     parser.add_argument("cameras", nargs="*", help="imena kamera (A, A2, A3, B, B2, B3, C, C2)")
     parser.add_argument("--file", type=Path, help="slika ili video sa diska umjesto kamere")
     parser.add_argument("--cijela", action="store_true", help="cijela slika kamere umjesto zone")
+    parser.add_argument("--model", help="yolox_s, yolox_m ili yolox_l (zadano: CAM_YOLOX_MODEL iz .env)")
     args = parser.parse_args()
+    if args.model:
+        os.environ["CAM_YOLOX_MODEL"] = args.model
 
     print("Učitavam YOLOX...")
     counter = get_counter()
     if counter is None:
         sys.exit("YOLOX se nije mogao učitati (vidi grešku iznad).")
-    print("Izvršava se na:", ", ".join(counter.session.get_providers()))
+    print(f"Model {model_name()}, izvršava se na:", ", ".join(counter.session.get_providers()))
 
     sources: dict[str, object] = {}
     readers: list[CameraReader] = []
@@ -212,7 +217,7 @@ def main() -> None:
                 (f"zadnjih {len(seen)} brojanja: {min(seen)}-{max(seen)}", YELLOW if jumps else GREEN),
                 ("BROJ SKACE - YOLO gubi artikal" if jumps else "broj stabilan", YELLOW if jumps else GREEN),
                 (f"prag {threshold:.0%} (kasa {MIN_CONFIDENCE:.0%})", WHITE),
-                (f"YOLOX {ms:.0f} ms", GREY),
+                (f"{model_name()} {ms:.0f} ms", GREY),
                 ("model 640x640" if model_view else "originalna slika", GREY),
                 ("PAUZA" if paused else "", YELLOW),
                 ("TAB / 1-8  kamera", GREY), ("M  pogled modela", GREY), ("[ ]  prag", GREY),
