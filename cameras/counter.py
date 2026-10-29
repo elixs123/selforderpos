@@ -181,11 +181,14 @@ class ZoneALedger:
         return before != (self.missing, self.extra_after_accept, self.count)
 
     def accepted(self) -> None:
+        # "Uzeto više" poslije prihvatanja samo ako je i prije prihvatanja falilo bar 2 (ili se to upravo potvrđivalo).
+        # Kad je falio samo skenirani artikal, novi manjak je sljedeći artikal: brz kupac ga uzme prije nego što
+        # kasa prihvati prethodni (prepoznavanje u zoni B traje 1-3 s), a to nije uzimanje više artikala odjednom.
+        self.post_accept = self.missing >= 2 or self._more_since is not None
         if self.expected is not None:
             self.expected -= 1
         self.missing = max(0, self.missing - 1)
         self.pending = None
-        self.post_accept = True
         self._more_since = None
 
 

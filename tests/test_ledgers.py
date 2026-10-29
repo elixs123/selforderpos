@@ -113,3 +113,14 @@ def test_zone_b_count_flicker_is_not_an_unscanned_item():
         assert ledger.extra == 0
     seen(ledger, 3, now=40.0)
     assert ledger.extra == 1
+
+
+def test_zone_a_next_item_taken_before_accept_is_not_taking_several():
+    """Kupac uzme sljedeći artikal dok kasa još prepoznaje prethodni u zoni B: to je jedan neskeniran, ne alarm."""
+    ledger = ZoneALedger()
+    seen(ledger, 3, now=0.0)
+    seen(ledger, 2, now=1.0)
+    assert ledger.missing == 1
+    ledger.accepted()
+    seen(ledger, 1, now=3.0)
+    assert ledger.missing == 1 and not ledger.extra_after_accept
