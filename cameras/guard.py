@@ -1634,6 +1634,12 @@ class CheckoutGuard:
                 if len(kept) != len(arrived):
                     self.log(f"zona-{name}", f"YOLOX: {len(arrived) - len(kept)} 'novih' je bilo i prije odlaganja (nema promjene na slici), ne računam ih")
                 arrived = kept
+                ledger = self.b_ledgers.get(name)
+                if len(arrived) > 1 and ledger is not None and ledger.known is not None and after_count <= ledger.known + 1:
+                    # YOLOX sada vidi i artikal koji je ranije promašio (zaklonjen, u sjeni): ukupno ih nije više od
+                    # dosadašnjih + 1, pa je odložen samo jedan.
+                    self.log(f"zona-{name}", f"YOLOX: u zoni B je {after_count}, a prije odlaganja bilo je {ledger.known}; novi je samo jedan")
+                    arrived = arrived[:1]
                 yolo_new = max(yolo_new or 0, len(arrived))
         blobs = getattr(self, "_placed_blobs", {})
         if yolo_new is not None and yolo_new <= 1 and placed_count > 1:

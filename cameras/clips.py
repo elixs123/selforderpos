@@ -89,7 +89,10 @@ class ClipRecorder:
         folder.mkdir(parents=True, exist_ok=True)
         path = folder / f"{now:%H%M%S}-{safe_name(reason)}.mp4"
         height, width = frames[0].shape[:2]
-        writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), FPS, (width, height))
+        # H.264 (avc1) otvara i QuickTime na Macu; mp4v tamo prikaže zelenu sliku, ostaje samo kao rezerva.
+        writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"avc1"), FPS, (width, height))
+        if not writer.isOpened():
+            writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), FPS, (width, height))
         for frame in frames:
             writer.write(frame)
         writer.release()

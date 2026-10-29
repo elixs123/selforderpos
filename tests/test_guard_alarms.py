@@ -155,3 +155,29 @@ def test_new_sale_restarts_held_item_timer(monkeypatch, tmp_path):
     guard.held_message = HELD_UNSCANNED_MESSAGE
     guard.new_sale()
     assert guard.held_message == "" and guard._held_since is None and guard._held_state == ""
+
+
+
+def test_zone_b_item_yolox_missed_before_is_not_a_second_placed_item(monkeypatch, tmp_path):
+    """YOLOX tek poslije odlaganja vidi i stari (zaklonjen) artikal: 2 'nova', ali ukupno samo prije + 1 = jedan odložen."""
+    guard, readers = make_guard(monkeypatch, tmp_path)
+    guard.b_ledgers["B2"].known = 2
+    frame = readers["B2"].latest()
+    boxes = [np.array([0.0, 0.0, 10.0, 10.0]), np.array([20.0, 20.0, 30.0, 30.0])]
+    monkeypatch.setattr(guard, "_yolo_change", lambda name, after, before: (3, 1, list(boxes)))
+    monkeypatch.setattr(guard, "_arrived_in_change", lambda name, shape, arrived: arrived)
+    counts = []
+
+    def judge(items, change_ratio, taken_items, taken_befores, product_code, placed_count=1, cameras=None):
+        counts.append(placed_count)
+        return "ok", [], None, None
+
+    monkeypatch.setattr(guard, "_judge", judge)
+    guard._b_before = {"B2": frame.copy()}
+    guard._judge_job(guard._job_id, [("B2", frame[:50, :50].copy(), 0.1)], [frame[:50, :50]], 0.1,
+                     {"B2": (frame, None)}, 0.0, ([], [], None), 1)
+    assert counts == [1]
+    guard.b_ledgers["B2"].known = 1
+    guard._judge_job(guard._job_id, [("B2", frame[:50, :50].copy(), 0.1)], [frame[:50, :50]], 0.1,
+                     {"B2": (frame, None)}, 0.0, ([], [], None), 1)
+    assert counts == [1, 2], "ukupno više od prije + 1: stvarno su odložena dva"
