@@ -64,7 +64,7 @@ def test_item_lying_still_next_to_person_stops_counting(monkeypatch):
 
 def test_item_in_hand_is_reported_also_after_another_item_was_accepted(monkeypatch):
     import guard as guard_module
-    from guard import CheckoutGuard, HELD_UNSCANNED_MESSAGE, HOLD_SCAN_SECONDS, HOLD_TAKEN_SECONDS
+    from guard import CheckoutGuard, HELD_TAKEN_MESSAGE, HELD_UNSCANNED_MESSAGE, HOLD_SCAN_SECONDS, HOLD_TAKEN_SECONDS
 
     guard = CheckoutGuard.__new__(CheckoutGuard)
     guard.cameras_c, guard.zones, guard.hold_results = ["C2"], {"C2": object()}, {}
@@ -85,7 +85,7 @@ def test_item_in_hand_is_reported_also_after_another_item_was_accepted(monkeypat
     assert guard.held_message == "", "artikal uzet iz zone A kupac smije duže držati dok traži barkod"
     clock[0] += HOLD_TAKEN_SECONDS
     guard.hold_once()
-    assert guard.held_message == HELD_UNSCANNED_MESSAGE
+    assert guard.held_message == HELD_TAKEN_MESSAGE
     guard.state = "waiting_take"
     guard.hold_once()
     assert guard.held_message == ""

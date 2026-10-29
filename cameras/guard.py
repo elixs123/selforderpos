@@ -42,10 +42,12 @@ IDENTIFY_REFERENCES = 400
 TAMPER_SECONDS = 1.0
 CARRY_STATES = ("waiting_take", "judging", "learning", "offline")
 HELD_UNPLACED_MESSAGE = "Artikal je skeniran. Odložite ga u zonu B."
+# Artikal uzet iz zone A, a kupac ga drži i ne skenira: blaža poruka (kamera je vidjela da je uzet iz korpe).
+HELD_TAKEN_MESSAGE = "Artikal je u ruci. Molimo skenirajte ga."
 ARRIVED_MIN_CHANGE = 0.2
 HOLD_PASS_SECONDS = 0.5
 HOLD_SCAN_SECONDS = 5.0
-HOLD_TAKEN_SECONDS = 20.0
+HOLD_TAKEN_SECONDS = 8.0
 EXTRA_BLOB_SHARE = 0.25
 HOLD_PLACE_SECONDS = 10.0
 HOLD_GRACE_SECONDS = 2.5
@@ -444,7 +446,10 @@ class CheckoutGuard:
             if state == "waiting_place":
                 if held_for >= HOLD_PLACE_SECONDS:
                     message = HELD_UNPLACED_MESSAGE
-            elif state not in CARRY_STATES and held_for >= (HOLD_TAKEN_SECONDS if state == "taken" else HOLD_SCAN_SECONDS):
+            elif state == "taken":
+                if held_for >= HOLD_TAKEN_SECONDS:
+                    message = HELD_TAKEN_MESSAGE
+            elif state not in CARRY_STATES and held_for >= HOLD_SCAN_SECONDS:
                 message = HELD_UNSCANNED_MESSAGE
         if message != self.held_message:
             self.log("ruka", message or "artikal više nije u ruci")
