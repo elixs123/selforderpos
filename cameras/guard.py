@@ -645,6 +645,10 @@ class CheckoutGuard:
             self._a_baseline = {}
             for ledger in list(self.a_ledgers.values()) + list(self.b_ledgers.values()):
                 ledger.reset()
+            # Kupac često drži artikal već dok dodiruje 'Započni': vrijeme za skeniranje počinje tek sada,
+            # ne od trenutka kad je kamera C (dok kasa miruje) prvi put vidjela artikal u ruci.
+            self._held_since, self._held_seen, self._held_state = None, -1000.0, ""
+            self.held_message = ""
             self._set("ready", "Uzmite artikal i skenirajte ga.")
 
     def _leftover_takes(self, takes: list, index: int) -> list:

@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "cameras"))
 
 import tamper
-from guard import UNSCANNED_MESSAGE, CheckoutGuard
+from guard import HELD_UNSCANNED_MESSAGE, UNSCANNED_MESSAGE, CheckoutGuard
 
 
 class StillReader:
@@ -146,3 +146,12 @@ def test_new_sale_forgets_previous_unscanned_items(monkeypatch, tmp_path):
     guard.new_sale()
     assert guard._takes == [] and guard._placed_unscanned == {} and guard._zone_a_ignored == 0
     assert guard.unscanned == 0 and guard.state == "ready"
+
+
+def test_new_sale_restarts_held_item_timer(monkeypatch, tmp_path):
+    """Kupac drži artikal dok kasa miruje: poruka 'artikal u ruci' ne smije iskočiti odmah poslije 'Započni'."""
+    guard, _ = make_guard(monkeypatch, tmp_path)
+    guard._held_since, guard._held_seen, guard._held_state = 1.0, 2.0, "free"
+    guard.held_message = HELD_UNSCANNED_MESSAGE
+    guard.new_sale()
+    assert guard.held_message == "" and guard._held_since is None and guard._held_state == ""

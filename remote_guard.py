@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from urllib.parse import quote
 
 POLL_SECONDS = 0.15
+NEW_SALE_QUIET_SECONDS = 1.0
 POLL_TIMEOUT = 1.5
 ACTION_TIMEOUT = 8.0
 OFFLINE_AFTER = 3
@@ -60,6 +61,7 @@ class RemoteGuard:
         self._barcode = ""
         self._product_code: str | None = None
         self._running = False
+        self._held_quiet_until = 0.0
         self._lock = threading.Lock()
 
     def start(self) -> None:
@@ -95,6 +97,10 @@ class RemoteGuard:
         threading.Thread(target=self._send_quietly, args=("/cancel",), daemon=True).start()
 
     def new_sale(self) -> None:
+        # Odgovor na upit poslan prije /new_sale još nosi staru poruku 'artikal u ruci'; ne prikazuj je kratko vrijeme.
+        with self._lock:
+            self.held_message = ""
+            self._held_quiet_until = time.monotonic() + NEW_SALE_QUIET_SECONDS
         threading.Thread(target=self._send_quietly, args=("/new_sale",), daemon=True).start()
 
     def approve(self, learn: bool = False) -> None:
@@ -204,7 +210,7 @@ class RemoteGuard:
             self.unscanned = int(data.get("unscanned") or 0)
             self.zone_a_left = int(data.get("zone_a_left") or 0)
             self.alert = bool(data.get("alert"))
-            self.held_message = str(data.get("held") or "")
+            self.held_message = "" if time.monotonic() < self._held_quiet_until else str(data.get("held") or "")
             self.checking = bool(data.get("checking"))
             self.unscanned_guess = str(data.get("guess") or "")
             self.counter_problem = str(data.get("counter_problem") or "")
