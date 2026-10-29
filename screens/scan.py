@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QScrollArea,
+    QScroller,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -64,6 +65,7 @@ class ScanScreen(QWidget):
     def __init__(self, cart: Cart) -> None:
         super().__init__()
         self.cart = cart
+        self._scan_order: dict[str, int] = {}
         self.guard = None
         self.allow_without_cameras = False
         self.guide_state = ""
@@ -136,6 +138,7 @@ class ScanScreen(QWidget):
         self.guide_timer.start()
         self._update_guide()
         self.cart.clear()
+        self._scan_order = {}
         self.notice.hide()
         self._refresh()
         self.barcode_input.setFocus()
@@ -273,7 +276,15 @@ class ScanScreen(QWidget):
         scroll.setStyleSheet(
             "QScrollArea { background: transparent; border: none; }"
             "QScrollArea > QWidget > QWidget { background: transparent; }"
+            f"QScrollBar:vertical {{ background: transparent; width: {px(14)}px; margin: {px(4)}px 0 {px(4)}px {px(4)}px; }}"
+            f"QScrollBar::handle:vertical {{ background: {BORDER}; border-radius: {px(5)}px; min-height: {px(60)}px; }}"
+            f"QScrollBar::handle:vertical:pressed {{ background: {MUTED_TEXT}; }}"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+            "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }"
         )
+        # Ekran je na dodir: lista se povlači prstom i klizi dalje (kao na mobitelu).
+        QScroller.grabGesture(scroll.viewport(), QScroller.ScrollerGestureType.LeftMouseButtonGesture)
+        self.cart_scroll = scroll
         content = QWidget()
         self.rows_layout = QVBoxLayout(content)
         self.rows_layout.setContentsMargins(0, 0, 0, 0)
@@ -282,11 +293,12 @@ class ScanScreen(QWidget):
         scroll.setWidget(content)
         return scroll
 
-    def _cart_row(self, item: dict) -> QFrame:
+    def _cart_row(self, item: dict, newest: bool = False) -> QFrame:
         row = QFrame()
         row.setObjectName("row")
         row.setFixedHeight(px(100))
-        row.setStyleSheet(f"#row {{ background: white; border-radius: {px(30)}px; }}")
+        border = f"border: {px(3)}px solid {GREEN};" if newest else f"border: {px(3)}px solid white;"
+        row.setStyleSheet(f"#row {{ background: {LIGHT_GREEN if newest else 'white'}; border-radius: {px(30)}px; {border} }}")
         layout = QHBoxLayout(row)
         layout.setContentsMargins(px(24), 0, px(24), 0)
         layout.setSpacing(px(18))
@@ -406,6 +418,7 @@ class ScanScreen(QWidget):
 
     def add_accepted(self, product) -> None:
         self.cart.add(product)
+        self._scan_order[product.code] = max(self._scan_order.values(), default=0) + 1
         self._show_notice(f"Dodano: {product.name}", success=True)
         self._refresh()
 
@@ -427,8 +440,12 @@ class ScanScreen(QWidget):
             empty.setFixedHeight(px(100))
             empty.setStyleSheet(f"font-size: {px(26)}px; color: {MUTED_TEXT};")
             self.rows_layout.insertWidget(0, empty)
-        for position, item in enumerate(data["items"]):
-            self.rows_layout.insertWidget(position, self._cart_row(item))
+        # Zadnji skenirani artikal je na vrhu (i kad se isti artikal skenira ponovo); označen je zeleno.
+        order = self._scan_order
+        items = sorted(reversed(data["items"]), key=lambda item: -order.get(item["code"], -1))
+        for position, item in enumerate(items):
+            self.rows_layout.insertWidget(position, self._cart_row(item, newest=position == 0 and item["code"] in order))
+        self.cart_scroll.verticalScrollBar().setValue(0)
         self.count_label.setText(item_count_text(data["item_count"]))
         self.total_label.setText(f"{format_amount(data['total'])} KM")
         has_items = data["item_count"] > 0
