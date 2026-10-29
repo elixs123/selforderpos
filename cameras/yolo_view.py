@@ -253,6 +253,10 @@ def main() -> None:
     for reader in readers:
         reader.stop()
     cv2.destroyAllWindows()
+    # Niti kamera (FFMPEG) još čitaju sliku; normalan izlaz iz Pythona ih ruši (segfault, kod 139).
+    for reader in readers:
+        reader.join(timeout=1.0)
+    os._exit(0)
 
 
 if __name__ == "__main__":
