@@ -102,3 +102,17 @@ def test_guard_stops_sale_logic_while_capturing_and_resumes_when_done(monkeypatc
 
     guard.step()
     assert zone_a_steps == [1]
+
+
+def test_preview_marks_zone_and_dims_outside():
+    from capture import preview
+    from zones import Zone
+
+    frame = np.full((300, 400, 3), 200, dtype=np.uint8)
+    image = preview([(frame, Zone((0.25, 0.25, 0.5, 0.5))), (None, None), (frame, None)])
+    assert image is not None and image.shape[0] == 360
+    assert image.shape[1] == 2 * 480 + 8
+    assert image[10, 10].max() < 100
+    assert tuple(image[150, 200]) == (200, 200, 200)
+    assert tuple(image[90, 240]) == (60, 200, 60)
+    assert preview([(None, None)]) is None

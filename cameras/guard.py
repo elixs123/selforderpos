@@ -15,7 +15,7 @@ from hands import load_hand_detector
 from holding import HeldItemDetector, HoldResult
 from reader import CameraReader
 from archive import ImageArchive, enabled as archive_enabled
-from capture import CaptureSession
+from capture import CaptureSession, preview
 from samples import SampleStore
 from similarity import Signature, compare, get_embedder, match_threshold, method_name, signature
 import counter as counter_module
@@ -1269,6 +1269,14 @@ class CheckoutGuard:
         self.capture = None
         self._capture_last = status
         self.store.prune(self._capture_product[1], references_per_camera())
+
+    def capture_preview(self) -> bytes | None:
+        """Kamere zone B uživo sa označenom zonom (Postavke > Snimanje artikla), JPEG."""
+        image = preview([(self.latest(name), self.zones.get(name)) for name in self.cameras_b])
+        if image is None:
+            return None
+        ok, encoded = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        return encoded.tobytes() if ok else None
 
     def _capture_rois(self) -> dict[str, np.ndarray]:
         rois = {}

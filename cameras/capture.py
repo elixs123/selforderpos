@@ -1,7 +1,9 @@
+import cv2
 import numpy as np
 
 from archive import image_problem
 from watcher import ZoneWatcher
+from zones import outline
 
 # Koliko različitih strana artikla osoblje treba uslikati (svaka strana = sve kamere zone B odjednom).
 CAPTURE_VIEWS = 6
@@ -14,6 +16,42 @@ CROP_PADDING = 12
 
 PLACE_MESSAGE = "Ispraznite zonu B, pa stavite artikal na sredinu zone B i sklonite ruku."
 TURN_MESSAGE = "Okrenite artikal na drugu stranu i sklonite ruku."
+PREVIEW_WIDTH = 480
+PREVIEW_GAP = 8
+ZONE_COLOR = (60, 200, 60)
+OUTSIDE_DIM = 0.35
+
+
+def preview(frames: list) -> np.ndarray | None:
+    """Slika uživo za osoblje dok snima: kamere zone B jedna do druge, zona zeleno, van zone zatamnjeno,
+    krstić na sredini zone (tu se stavlja artikal)."""
+    tiles = []
+    for frame, zone in frames:
+        if frame is None or not frame.size:
+            continue
+        height, width = frame.shape[:2]
+        image = cv2.resize(frame, (PREVIEW_WIDTH, max(1, round(height * PREVIEW_WIDTH / width))), interpolation=cv2.INTER_AREA)
+        height, width = image.shape[:2]
+        points = outline(zone, width, height)
+        mask = np.zeros((height, width), np.uint8)
+        cv2.fillPoly(mask, [points], 255)
+        outside = mask == 0
+        image[outside] = (image[outside] * OUTSIDE_DIM).astype(np.uint8)
+        cv2.polylines(image, [points], True, ZONE_COLOR, 3)
+        moments = cv2.moments(points)
+        if moments["m00"]:
+            center = (round(moments["m10"] / moments["m00"]), round(moments["m01"] / moments["m00"]))
+            cv2.drawMarker(image, center, ZONE_COLOR, cv2.MARKER_CROSS, max(24, width // 12), 3)
+        tiles.append(image)
+    if not tiles:
+        return None
+    height = max(tile.shape[0] for tile in tiles)
+    row = []
+    for tile in tiles:
+        if row:
+            row.append(np.full((height, PREVIEW_GAP, 3), 255, np.uint8))
+        row.append(cv2.copyMakeBorder(tile, 0, height - tile.shape[0], 0, 0, cv2.BORDER_CONSTANT, value=(0, 0, 0)))
+    return np.hstack(row)
 
 
 class CaptureSession:

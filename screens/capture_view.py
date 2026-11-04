@@ -1,13 +1,17 @@
 import threading
+import time
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import QLabel, QLineEdit, QProgressBar, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtWidgets import QLabel, QLineEdit, QProgressBar, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
 from catalog import find_by_barcode
 from database import DatabaseError
 from styles import BACKGROUND, BORDER, MUTED_TEXT, TEXT, px
 
 POLL_MS = 500
+PREVIEW_SECONDS = 0.2
+PREVIEW_PAINT_MS = 100
 INSTRUCTIONS = (
     "Artikli koje kamere teško prepoznaju (izvještaj 'Problematični artikli') snimaju se ovdje. "
     "Ispraznite zonu B, skenirajte artikal i radite šta kasa kaže: kasa sama slika kad je artikal miran i nema ruke, "
@@ -29,6 +33,12 @@ class CaptureView(QWidget):
         self.updated.connect(self._show_status)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._poll)
+        self._showing = False
+        self._fetched = False
+        self._preview: bytes | None = None
+        self._painted: bytes | None = None
+        self.preview_timer = QTimer(self)
+        self.preview_timer.timeout.connect(self._paint_preview)
 
         column = QVBoxLayout(self)
         column.setContentsMargins(px(40), px(10), px(40), px(30))
@@ -40,6 +50,15 @@ class CaptureView(QWidget):
         info.setWordWrap(True)
         info.setStyleSheet(f"font-size: {px(22)}px; font-weight: 600; color: {MUTED_TEXT};")
         column.addWidget(info)
+
+        # Kamere zone B uživo: zelena zona i krstić pokazuju gdje staviti artikal.
+        self.video = QLabel()
+        self.video.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.video.setMinimumHeight(px(320))
+        # Ignored: slika se prilagodi prostoru, a ne prostor slici (inače bi ekran rastao sa svakom slikom).
+        self.video.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+        self.video.setStyleSheet(f"background: #111; color: white; border-radius: {px(24)}px; font-size: {px(24)}px;")
+        column.addWidget(self.video, stretch=3)
 
         self.barcode_input = QLineEdit()
         self.barcode_input.setPlaceholderText("Skenirajte ili upišite barkod artikla")
@@ -89,6 +108,46 @@ class CaptureView(QWidget):
     def begin(self) -> None:
         self._idle("Skenirajte artikal koji želite snimiti.")
         self.barcode_input.setFocus()
+        self._start_preview()
+
+    def _start_preview(self) -> None:
+        self._preview = self._painted = None
+        self._fetched = False
+        self.video.setPixmap(QPixmap())
+        self.video.setText("Kamera se spaja…")
+        self.preview_timer.start(PREVIEW_PAINT_MS)
+        if self._showing:
+            return
+        self._showing = True
+        threading.Thread(target=self._fetch_preview, daemon=True).start()
+
+    def _fetch_preview(self) -> None:
+        # Slika se dohvata u posebnoj niti (server kamera može kasniti), ekran samo crta zadnju.
+        while self._showing:
+            guard = self.guard_provider()
+            try:
+                self._preview = guard.capture_preview() if hasattr(guard, "capture_preview") else None
+            except Exception:
+                self._preview = None
+            self._fetched = True
+            time.sleep(PREVIEW_SECONDS)
+
+    def _paint_preview(self) -> None:
+        data = self._preview
+        if data is None:
+            text = "Kamere zone B nemaju sliku." if self._fetched else "Kamera se spaja…"
+            if self._painted is not None or self.video.text() != text:
+                self._painted = None
+                self.video.setPixmap(QPixmap())
+                self.video.setText(text)
+            return
+        if data is self._painted:
+            return
+        self._painted = data
+        pixmap = QPixmap.fromImage(QImage.fromData(data))
+        self.video.setText("")
+        self.video.setPixmap(pixmap.scaled(self.video.size(), Qt.AspectRatioMode.KeepAspectRatio,
+                                           Qt.TransformationMode.SmoothTransformation))
 
     def _idle(self, text: str) -> None:
         self.active = False
@@ -172,6 +231,8 @@ class CaptureView(QWidget):
     def close_view(self) -> None:
         guard = self.guard_provider()
         self.timer.stop()
+        self.preview_timer.stop()
+        self._showing = False
         if guard is not None and hasattr(guard, "stop_capture"):
             threading.Thread(target=guard.stop_capture, daemon=True).start()
         self.active = False

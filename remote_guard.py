@@ -179,6 +179,14 @@ class RemoteGuard:
     def stop_capture(self) -> dict:
         return dict(self._request("POST", "/capture/stop", {}, ACTION_TIMEOUT))
 
+    def capture_preview(self) -> bytes | None:
+        request = urllib.request.Request(self.url + "/capture/preview", headers={"X-Token": self.token})
+        try:
+            with urllib.request.urlopen(request, timeout=POLL_TIMEOUT) as response:
+                return response.read()
+        except (urllib.error.URLError, OSError, ValueError):
+            return None
+
     def problem_report(self, days: int = 7) -> str:
         request = urllib.request.Request(self.url + f"/problem_report/{int(days)}", headers={"X-Token": self.token})
         with urllib.request.urlopen(request, timeout=30) as response:

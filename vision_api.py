@@ -113,6 +113,12 @@ class VisionHandler(BaseHTTPRequestHandler):
                 self._send_jpeg(data)
         elif self.path == "/capture":
             self._send(200, self.server.guard.capture_status())
+        elif self.path == "/capture/preview":
+            data = self.server.guard.capture_preview()
+            if data is None:
+                self._send(404, {"error": "kamere zone B nemaju sliku"})
+            else:
+                self._send_jpeg(data)
         elif self.path.startswith("/problem_report/"):
             try:
                 days = max(1, min(90, int(self.path[len("/problem_report/"):])))
