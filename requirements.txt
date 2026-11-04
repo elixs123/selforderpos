@@ -1,4 +1,4 @@
-PySide6==6.8.3
+PySide6==6.12.0
 pytest
 pyodbc
 python-dotenv
