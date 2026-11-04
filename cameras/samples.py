@@ -159,6 +159,15 @@ class SampleStore:
         with closing(sqlite3.connect(self.database)) as connection, connection:
             connection.execute("UPDATE samples SET verdict = 'ok' WHERE id = ? AND event = 'taken' AND verdict IS NULL", (sample_id,))
 
+    def rows(self, sample_ids: list[int | None]) -> list[dict]:
+        ids = [sample_id for sample_id in sample_ids if sample_id is not None]
+        if not ids:
+            return []
+        with closing(sqlite3.connect(self.database)) as connection:
+            connection.row_factory = sqlite3.Row
+            found = connection.execute(f"SELECT * FROM samples WHERE id IN ({', '.join('?' * len(ids))})", ids).fetchall()
+        return [dict(row) for row in found]
+
     def mark_verified(self, sample_ids: list[int | None]) -> None:
         ids = [sample_id for sample_id in sample_ids if sample_id is not None]
         if not ids:

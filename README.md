@@ -83,6 +83,12 @@ YOLOX (brojanje) i model prepoznavanja (CLIP) tada rade na grafičkoj umjesto na
 4. `.env`: `CAM_GPU=0` vraća sve na procesor. `CAM_TENSORRT=1` uključuje TensorRT (još brže, FP16), ali traži
    instaliran TensorRT, a prvo pokretanje traje par minuta dok se modeli pripreme (spremaju se u `cameras/models/tensorrt`).
 
+### Arhiva izgleda artikla
+
+Server kamera za svaki prodani artikal čuva do 50 najboljih i najrazličitijih slika (sve strane, sve kamere) u
+`data/samples/archive` (`archive.db` + folder po šifri artikla). To su podaci za kasnije dotreniranje modela
+prepoznavanja. `.env`: `CAM_ARCHIVE=ne` gasi, `CAM_ARCHIVE_PER_ARTICLE` (zadano 50), `CAM_ARCHIVE_GB` (zadano 50).
+
 ## Fiskalni printer (Tring)
 
 `python check_fiscal.py` provjerava odgovara li servis (`localhost:8085`) i ispisuje XML koji bi se poslao.

@@ -3,6 +3,7 @@ IZMJENE - samouslužna kasa
 2026-11-04
 - Broj računa: godina-vrsta dokumenta-brojač, npr. 26-3257-000001 (vrsta dokumenta = acDocType u Pantheonu, RECEIPT_DOC_TYPE u .env). Brojač kreće od 1 svake godine.
 - Slanje računa na glavni server (Pantheon): čim se račun fiskalizuje, kasa ga u pozadini upiše u tHE_Move (zaglavlje, BF broj u acFiskPrintNo), tHE_MoveItem (stavke, jedinica mjere i PDV iz Pantheona) i tHE_MoveCash (način plaćanja K/Q), sve u jednoj transakciji. Bez interneta račun ostaje lokalno i šalje se kad server bude dostupan (pokušava svake minute). Stanje slanja se pamti po računu (synced, synced_at, sync_message) i vidi se u Postavkama, u pregledu računa. Račun koji je već na serveru se ne šalje ponovo.
+- Arhiva izgleda artikla (data/samples/archive): dobre slike svakog prihvaćenog artikla (zona B sa svih kamera i izrez iz zone A, bez ruke i osobe, bez slika kad je odloženo više artikala) kopiraju se u arhivu prije nego ih kasa obriše. Za svaki artikal čuva se do 50 slika (CAM_ARCHIVE_PER_ARTICLE): kad ih je više, briše se ona koja najviše liči na neku drugu (isti ugao), i to slabija od te dvije, pa ostaju različite strane artikla. Osoblje potvrđene slike imaju prednost. Najviše 50 GB (CAM_ARCHIVE_GB), CAM_ARCHIVE=ne gasi arhivu. Služi za kasnije dotreniranje modela prepoznavanja; na prepoznavanje u kasi ne utiče.
 - Server kamera sa NVIDIA grafičkom: YOLOX i model prepoznavanja rade na grafičkoj (CUDA, opcionalno TensorRT sa CAM_TENSORRT=1); CAM_GPU=0 vraća na procesor. Uputstvo u README.
 
 2026-10-28

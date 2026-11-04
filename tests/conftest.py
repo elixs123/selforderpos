@@ -15,3 +15,9 @@ def no_hand_model(monkeypatch):
 def no_label_reading(monkeypatch):
     """OCR etikete je spor za učitati; testovi koji ga trebaju sami ga uključe (CAM_OCR=da)."""
     monkeypatch.setenv("CAM_OCR", "ne")
+
+
+@pytest.fixture(autouse=True)
+def no_image_archive(monkeypatch):
+    """Arhiva izgleda artikla bi u testovima učitavala AI model u pozadini; testovi arhive je uključuju sami."""
+    monkeypatch.setenv("CAM_ARCHIVE", "ne")

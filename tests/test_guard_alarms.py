@@ -181,3 +181,30 @@ def test_zone_b_item_yolox_missed_before_is_not_a_second_placed_item(monkeypatch
     guard._judge_job(guard._job_id, [("B2", frame[:50, :50].copy(), 0.1)], [frame[:50, :50]], 0.1,
                      {"B2": (frame, None)}, 0.0, ([], [], None), 1)
     assert counts == [1, 2], "ukupno više od prije + 1: stvarno su odložena dva"
+
+
+def test_staff_approval_archives_only_clean_images(monkeypatch, tmp_path):
+    from archive import ImageArchive
+    from guard import MULTIPLE_PROBLEM
+
+    guard, _ = make_guard(monkeypatch, tmp_path)
+    monkeypatch.setattr("guard.get_counter", lambda: None)
+    guard.archive = ImageArchive(tmp_path / "archive", None, background=False)
+    item = np.full((60, 40, 3), 200, np.uint8)
+    ids = [guard.store.save("placed", "3850102", "079643", "MLIJEKO", camera, crop_image=item) for camera in ("B", "B2")]
+
+    guard._placed_sample_ids = ids
+    guard._placed_problems = ["", "ruka na slici"]
+    guard._waive_taken = True
+    guard.last_problems = [MULTIPLE_PROBLEM]
+    guard._set("mismatch", MULTIPLE_PROBLEM)
+    guard.approve()
+    assert guard.archive.summary()["images"] == 0
+
+    guard.last_problems = ["ne liči na skenirani artikal"]
+    guard._set("mismatch", "Artikal ne odgovara")
+    guard.approve()
+    guard.archive.process_pending()
+    with guard.archive._connect() as connection:
+        rows = [dict(row) for row in connection.execute("SELECT product_code, camera, verdict FROM images")]
+    assert rows == [{"product_code": "079643", "camera": "B", "verdict": "staff"}]

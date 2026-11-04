@@ -14,8 +14,9 @@ import numpy as np
 from hands import load_hand_detector
 from holding import HeldItemDetector, HoldResult
 from reader import CameraReader
+from archive import ImageArchive, enabled as archive_enabled
 from samples import SampleStore
-from similarity import Signature, compare, match_threshold, method_name, signature
+from similarity import Signature, compare, get_embedder, match_threshold, method_name, signature
 import counter as counter_module
 import labels
 from counter import ZoneALedger, ZoneBLedger, counting_cameras, get_counter, unmatched
@@ -119,6 +120,11 @@ class Outcome:
     message: str
 
 
+def _archive_embed(image: np.ndarray) -> np.ndarray | None:
+    embedder = get_embedder()
+    return embedder.embed(image) if embedder is not None else None
+
+
 def zone_of(camera: str) -> str:
     return camera[0]
 
@@ -144,6 +150,7 @@ class CheckoutGuard:
         self._placed_unscanned: dict[str, int] = {}
         self._b_active_at = -1000.0
         self.store = SampleStore()
+        self.archive = ImageArchive(self.store.folder / "archive", _archive_embed, method_name) if archive_enabled() else None
         threading.Thread(target=self._tidy_samples, daemon=True).start()
         self._load_backgrounds()
         self.hands = load_hand_detector()
@@ -944,6 +951,7 @@ class CheckoutGuard:
         with self._lock:
             if not self.busy and self.state != "mismatch":
                 return
+            self._archive_approved("verified" if learn else "staff")
             if learn and self.state == "mismatch":
                 self._learn_verified()
             for watcher in self.watchers.values():
@@ -957,6 +965,28 @@ class CheckoutGuard:
             self._note_accepted()
             self._return_unscanned(self._leftover_takes(self._scan_takes, self.last_taken_index))
             self._scan_takes = []
+
+    def _archive(self, sample_ids: list[int | None], verdict: str) -> None:
+        """Dobre slike prihvaćenog artikla idu u arhivu izgleda artikla (prije nego ih prune obriše)."""
+        if self.archive is None:
+            return
+        try:
+            for row in self.store.rows(sample_ids):
+                if row["crop_path"]:
+                    self.archive.add(self.store.folder / row["crop_path"], row["product_code"], row["barcode"],
+                                     row["product_name"], row["camera"], row["event"], verdict, row["quality"])
+        except Exception as error:
+            print(f"Arhiva izgleda artikla: {error!r}")
+
+    def _archive_approved(self, verdict: str) -> None:
+        if self.archive is None or MULTIPLE_PROBLEM in self.last_problems:
+            return
+        problems = self._placed_problems + [""] * len(self._placed_sample_ids)
+        ids = [sample_id for sample_id, problem in zip(self._placed_sample_ids, problems) if not problem]
+        if not self._waive_taken and self.last_taken_index < len(self._taken_items):
+            if not self._reference_problem(self._taken_items[self.last_taken_index]):
+                ids.append(self._taken_sample_ids.get(self.last_taken_index))
+        self._archive(ids, verdict)
 
     def _learn_verified(self) -> None:
         ids = [] if MULTIPLE_PROBLEM in self.last_problems else [
@@ -1700,10 +1730,13 @@ class CheckoutGuard:
             message = "Artikal prvi put viđen, naučen." if verdict == "learned" else "Artikal odgovara."
             if verdict == "learned" and all(crop_problems):
                 message = "Artikal prihvaćen; slike nisu dovoljno dobre za učenje, naučiće ga sljedeći put."
+            good = [sample_id for sample_id, problem in zip(self._placed_sample_ids, crop_problems) if not problem]
             if not self._waive_taken:
                 index = self._reference_take_index()
                 if index is not None and not self._reference_problem(self._taken_items[index]):
                     self.store.mark_taken_reference(self._taken_sample_ids.get(index))
+                    good.append(self._taken_sample_ids.get(index))
+            self._archive(good, verdict)
             self.store.prune(self.product_code, references_per_camera())
             self._finish("accepted", verdict, message)
             self._note_accepted()
