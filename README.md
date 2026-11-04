@@ -72,16 +72,21 @@ Laptop (ili server) radi kamere i AI, kasa samo pita:
 
 ### Server kamera sa NVIDIA grafičkom (npr. RTX 5060)
 
-YOLOX (brojanje) i model prepoznavanja (CLIP) tada rade na grafičkoj umjesto na procesoru.
+YOLOX (brojanje), model prepoznavanja (CLIP) i čitanje etikete (RapidOCR) tada rade na grafičkoj umjesto na procesoru.
+Ruka (MediaPipe) ostaje na procesoru, mala je i brza.
 
 1. Najnoviji NVIDIA drajver. RTX 50xx traži CUDA 12.8 ili noviju, pa uzeti najnoviji `onnxruntime-gpu`.
 2. `pip install -r requirements.txt`, pa obični onnxruntime zamijeniti GPU verzijom (isti modul, ne smiju oba):
    `pip uninstall -y onnxruntime` i `pip install "onnxruntime-gpu[cuda,cudnn]"`
    (CUDA i cuDNN dođu kao pip paketi, ne treba ih posebno instalirati).
 3. Pri pokretanju u logu mora pisati `YOLOX se izvršava na: CUDAExecutionProvider, ...`. Ako piše samo
-   `CPUExecutionProvider`, CUDA nije učitana.
+   `CPUExecutionProvider`, CUDA nije učitana. Isto za `Model prepoznavanja` i `Čitanje etikete (Det/Cls/Rec)`.
+   Provjera bez pokretanja kase: `python -c "import onnxruntime as o; o.preload_dlls(); print(o.get_available_providers())"`
+   mora ispisati `CUDAExecutionProvider`.
 4. `.env`: `CAM_GPU=0` vraća sve na procesor. `CAM_TENSORRT=1` uključuje TensorRT (još brže, FP16), ali traži
    instaliran TensorRT, a prvo pokretanje traje par minuta dok se modeli pripreme (spremaju se u `cameras/models/tensorrt`).
+   Čitanje etikete ide uvijek bez TensorRT (slike su svaka druge veličine).
+5. `.env` se ne kopira sa Maca: tamo je `CAM_GPU=0`, a na serveru to mora biti izbrisano (ili `CAM_GPU=1`).
 
 ### Arhiva izgleda artikla
 

@@ -22,6 +22,7 @@ def test_tensorrt_only_when_enabled(monkeypatch, tmp_path):
     import accel
 
     monkeypatch.setattr(accel, "MODELS_FOLDER", tmp_path)
+    monkeypatch.delenv("CAM_GPU", raising=False)
     monkeypatch.delenv("CAM_TENSORRT", raising=False)
     assert "TensorrtExecutionProvider" not in names(providers(ALL))
     monkeypatch.setenv("CAM_TENSORRT", "1")
@@ -39,3 +40,9 @@ def test_coreml_only_for_models_that_ask(monkeypatch):
     mac = ["CoreMLExecutionProvider", "CPUExecutionProvider"]
     assert names(providers(mac, coreml=True)) == mac
     assert names(providers(mac)) == ["CPUExecutionProvider"]
+
+
+def test_tensorrt_can_be_skipped_per_model(monkeypatch):
+    monkeypatch.delenv("CAM_GPU", raising=False)
+    monkeypatch.setenv("CAM_TENSORRT", "1")
+    assert names(providers(ALL, tensorrt=False)) == ["CUDAExecutionProvider", "CPUExecutionProvider"]

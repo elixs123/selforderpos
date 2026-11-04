@@ -2,6 +2,7 @@ import os
 import re
 import threading
 from difflib import SequenceMatcher
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -24,6 +25,29 @@ def enabled() -> bool:
     return os.environ.get("CAM_OCR", "da").lower() not in ("", "off", "0", "ne")
 
 
+def _to_gpu(ocr) -> None:
+    """RapidOCR 1.2 ne zna sam uključiti CUDA (parametri use_cuda ne rade), pa mu se sesije zamijene našim.
+
+    Bez TensorRT: slike etiketa su svaka druge veličine, a TensorRT bi za svaku pravio model iznova.
+    """
+    import onnxruntime
+    import rapidocr_onnxruntime
+    from rapidocr_onnxruntime.utils import read_yaml
+
+    from accel import create_session
+
+    if "CUDAExecutionProvider" not in onnxruntime.get_available_providers():
+        return
+    root = Path(rapidocr_onnxruntime.__file__).resolve().parent
+    config = read_yaml(str(root / "config.yaml"))
+    for part, attribute, section in (("text_detector", "infer", "Det"), ("text_cls", "infer", "Cls"),
+                                     ("text_recognizer", "session", "Rec")):
+        holder = getattr(getattr(ocr, part, None), attribute, None)
+        if holder is not None:
+            holder.session = create_session(root / config[section]["model_path"], f"Čitanje etikete ({section})",
+                                            tensorrt=False)
+
+
 def _engine():
     global _ocr, _failed
     if _ocr is None and not _failed:
@@ -31,6 +55,7 @@ def _engine():
             from rapidocr_onnxruntime import RapidOCR
 
             _ocr = RapidOCR()
+            _to_gpu(_ocr)
         except Exception as error:
             print(f"Čitanje etikete (RapidOCR) nije dostupno: {error}")
             _failed = True
