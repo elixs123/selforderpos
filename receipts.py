@@ -1,3 +1,4 @@
+import os
 import sqlite3
 from contextlib import closing
 from datetime import date, datetime
@@ -38,6 +39,8 @@ EXTRA_COLUMNS = {
     "fiscal_number": "TEXT",
     "gate_used_at": "TEXT",
     "gate_blocked": "TEXT",
+    "synced_at": "TEXT",
+    "sync_message": "TEXT",
 }
 
 
@@ -53,8 +56,10 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
 
 
 class ReceiptStore:
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, doc_type: str | None = None) -> None:
         self.path = path
+        # Vrsta dokumenta (acDocType u Pantheonu) je srednji dio broja računa: 26-3257-000001
+        self.doc_type = (doc_type or os.environ.get("RECEIPT_DOC_TYPE", "")).strip() or "0000"
         path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self._connect()) as connection, connection:
             connection.executescript(SCHEMA)
@@ -82,7 +87,7 @@ class ReceiptStore:
                 ),
             )
             receipt_id = cursor.lastrowid
-            number = f"{now:%Y}-{receipt_id:06d}"
+            number = self._next_number(connection, now)
             connection.execute("UPDATE receipts SET number = ? WHERE id = ?", (number, receipt_id))
             connection.executemany(
                 INSERT_ITEM,
@@ -92,6 +97,15 @@ class ReceiptStore:
                 ],
             )
         return number
+
+    def _next_number(self, connection: sqlite3.Connection, now: datetime) -> str:
+        """Godina-vrsta dokumenta-brojač; brojač kreće od 1 svake godine (i za svaku vrstu dokumenta)."""
+        prefix = f"{now:%y}-{self.doc_type}-"
+        row = connection.execute(
+            "SELECT MAX(CAST(substr(number, ?) AS INTEGER)) FROM receipts WHERE number LIKE ?",
+            (len(prefix) + 1, prefix + "%"),
+        ).fetchone()
+        return f"{prefix}{(row[0] or 0) + 1:06d}"
 
     def receipt_id(self, number: str) -> int:
         with closing(self._connect()) as connection:
@@ -171,6 +185,20 @@ class ReceiptStore:
         with closing(self._connect()) as connection:
             rows = connection.execute("SELECT * FROM receipts WHERE synced = 0 ORDER BY id").fetchall()
         return [dict(row) for row in rows]
+
+    def unsent(self, fiscal_required: bool = True) -> list[dict]:
+        """Računi koji još nisu na glavnom serveru; uz fiskalni printer samo oni koji su fiskalizovani."""
+        condition = "synced = 0 AND fiscal_printed = 1" if fiscal_required else "synced = 0"
+        with closing(self._connect()) as connection:
+            rows = connection.execute(f"SELECT * FROM receipts WHERE {condition} ORDER BY id").fetchall()
+        return [dict(row) for row in rows]
+
+    def mark_synced(self, number: str, ok: bool, message: str) -> None:
+        with closing(self._connect()) as connection, connection:
+            connection.execute(
+                "UPDATE receipts SET synced = ?, synced_at = ?, sync_message = ? WHERE number = ?",
+                (1 if ok else 0, datetime.now().isoformat(timespec="seconds"), message, number),
+            )
 
     def items(self, number: str) -> list[dict]:
         with closing(self._connect()) as connection:

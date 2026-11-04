@@ -6,6 +6,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from accel import create_session
+
 MODELS_FOLDER = Path(__file__).resolve().parent / "models"
 INPUT_SIZE = 224
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
@@ -88,9 +90,8 @@ def to_blob(image: np.ndarray, mean: tuple = IMAGENET_MEAN, std: tuple = IMAGENE
 
 class OnnxRuntimeModel:
     def __init__(self, path: Path) -> None:
-        import onnxruntime
-
-        self.session = onnxruntime.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+        # Bez CoreML: na Macu CLIP/DINO nisu brži kroz CoreML (DINO je 4x sporiji); NVIDIA jeste brža.
+        self.session = create_session(path, "Model prepoznavanja")
         self.input_name = self.session.get_inputs()[0].name
         outputs = [output.name for output in self.session.get_outputs()]
         self.output_name = next((name for name in ("image_embeds", "pooler_output") if name in outputs), outputs[0])

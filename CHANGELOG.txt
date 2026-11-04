@@ -1,5 +1,10 @@
 IZMJENE - samouslužna kasa
 
+2026-11-04
+- Broj računa: godina-vrsta dokumenta-brojač, npr. 26-3257-000001 (vrsta dokumenta = acDocType u Pantheonu, RECEIPT_DOC_TYPE u .env). Brojač kreće od 1 svake godine.
+- Slanje računa na glavni server (Pantheon): čim se račun fiskalizuje, kasa ga u pozadini upiše u tHE_Move (zaglavlje, BF broj u acFiskPrintNo), tHE_MoveItem (stavke, jedinica mjere i PDV iz Pantheona) i tHE_MoveCash (način plaćanja K/Q), sve u jednoj transakciji. Bez interneta račun ostaje lokalno i šalje se kad server bude dostupan (pokušava svake minute). Stanje slanja se pamti po računu (synced, synced_at, sync_message) i vidi se u Postavkama, u pregledu računa. Račun koji je već na serveru se ne šalje ponovo.
+- Server kamera sa NVIDIA grafičkom: YOLOX i model prepoznavanja rade na grafičkoj (CUDA, opcionalno TensorRT sa CAM_TENSORRT=1); CAM_GPU=0 vraća na procesor. Uputstvo u README.
+
 2026-10-28
 - Postavke > 'Slike artikala': lista artikala koje kamere prepoznaju i njihove slike (kamera, kako je naučena, sličnost); osoblje briše pogrešnu sliku (dva dodira). Radi i kad su kamere na serveru (GET /references, /sample, POST /references/delete).
 - Postavke > 'Izvještaj za dan': računi i događaji kamera po danu (prihvaćeno, naučeno, odbijeno u zoni B, sken odbijen, osoblje odobrilo/naučilo/poništilo, poziv osoblja, 'Niste sve platili', alarmi) i udio odbijanja sa savjetom kad je previsok (tabela events u samples.db, GET /report, POST /event).

@@ -70,6 +70,19 @@ Laptop (ili server) radi kamere i AI, kasa samo pita:
 3. Zone se crtaju i reference uče na laptopu (tamo su `cameras/zones.json` i `data/samples`).
 4. Laptop ne smije spavati (`caffeinate -i python vision_server.py`), a port 8765 mora biti dozvoljen u firewallu.
 
+### Server kamera sa NVIDIA grafičkom (npr. RTX 5060)
+
+YOLOX (brojanje) i model prepoznavanja (CLIP) tada rade na grafičkoj umjesto na procesoru.
+
+1. Najnoviji NVIDIA drajver. RTX 50xx traži CUDA 12.8 ili noviju, pa uzeti najnoviji `onnxruntime-gpu`.
+2. `pip install -r requirements.txt`, pa obični onnxruntime zamijeniti GPU verzijom (isti modul, ne smiju oba):
+   `pip uninstall -y onnxruntime` i `pip install "onnxruntime-gpu[cuda,cudnn]"`
+   (CUDA i cuDNN dođu kao pip paketi, ne treba ih posebno instalirati).
+3. Pri pokretanju u logu mora pisati `YOLOX se izvršava na: CUDAExecutionProvider, ...`. Ako piše samo
+   `CPUExecutionProvider`, CUDA nije učitana.
+4. `.env`: `CAM_GPU=0` vraća sve na procesor. `CAM_TENSORRT=1` uključuje TensorRT (još brže, FP16), ali traži
+   instaliran TensorRT, a prvo pokretanje traje par minuta dok se modeli pripreme (spremaju se u `cameras/models/tensorrt`).
+
 ## Fiskalni printer (Tring)
 
 `python check_fiscal.py` provjerava odgovara li servis (`localhost:8085`) i ispisuje XML koji bi se poslao.

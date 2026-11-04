@@ -7,6 +7,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from accel import create_session
+
 MODELS_FOLDER = Path(__file__).resolve().parent / "models"
 MODEL_URL = "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/{name}.onnx"
 MODEL_FILE = "yolox_s.onnx"
@@ -27,13 +29,6 @@ A_CONFIRM_SECONDS = 3.0
 def enabled() -> bool:
     """YOLOX broji artikle; uključuje se u Postavke > Kamere (upisuje se u CAM_COUNTER pri pokretanju kamera)."""
     return os.environ.get("CAM_COUNTER", "yolox").lower() not in ("", "off", "0", "ne")
-
-
-def providers(available: list[str]) -> list:
-    """Na Macu YOLOX ide kroz CoreML (izmjereno ~3x brže od procesora); CPU ostaje kao rezerva."""
-    if "CoreMLExecutionProvider" in available and os.environ.get("CAM_COREML", "1") != "0":
-        return [("CoreMLExecutionProvider", {"MLComputeUnits": "ALL"}), "CPUExecutionProvider"]
-    return ["CPUExecutionProvider"]
 
 
 def model_name() -> str:
@@ -60,13 +55,8 @@ def unmatched(boxes: list[np.ndarray], others: list[np.ndarray]) -> list[np.ndar
 
 class ObjectCounter:
     def __init__(self, path: Path | None = None) -> None:
-        import onnxruntime
-
         path = path or self._download()
-        try:
-            self.session = onnxruntime.InferenceSession(str(path), providers=providers(onnxruntime.get_available_providers()))
-        except Exception:
-            self.session = onnxruntime.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+        self.session = create_session(path, "YOLOX", coreml=True)
         self.input_name = self.session.get_inputs()[0].name
         grids, strides = [], []
         for stride in (8, 16, 32):

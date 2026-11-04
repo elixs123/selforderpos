@@ -39,6 +39,7 @@ from cart import Cart
 from fiscal import FiscalOptions, FiscalPrinter, FiscalResult
 from qr_slip import print_gate_slip
 from receipts import ReceiptStore
+from receipt_sync import ReceiptSync
 from screens.cameras_down import CamerasDownScreen
 from screens.customer_monitor import CustomerMonitor
 from screens.drop import DropScreen
@@ -62,6 +63,8 @@ EXIT_WATCH_SECONDS = 120
 # Neplaćen artikal mora trajati ovoliko da se vrata blokiraju (brojač zna trepnuti na sekundu-dvije).
 EXIT_CONFIRM_SECONDS = 3.0
 IDLE_COUNTDOWN_SECONDS = 30
+# Neposlani računi (npr. nije bilo interneta) se ponovo šalju na glavni server ovoliko često.
+RECEIPT_SYNC_SECONDS = 60
 
 
 class MainWindow(QMainWindow):
@@ -74,6 +77,9 @@ class MainWindow(QMainWindow):
             self.setFixedSize(px(820), px(1360))
         self.configure_database()
         self.store = ReceiptStore(database_path())
+        self.receipt_sync = ReceiptSync(self.store)
+        self.receipt_timer = QTimer(self)
+        self.receipt_timer.timeout.connect(self.sync_receipts)
         self.articles = ArticleStore(database_path())
         catalog.use_local_store(self.articles)
         self.article_timer = QTimer(self)
@@ -156,6 +162,8 @@ class MainWindow(QMainWindow):
         self.start_cameras()
         self.start_article_sync()
         QTimer.singleShot(2000, self.sync_articles)
+        self.receipt_timer.start(RECEIPT_SYNC_SECONDS * 1000)
+        QTimer.singleShot(5000, self.sync_receipts)
 
     def check_cameras(self) -> None:
         """Kad kamere ne rade duže od CAMERAS_DOWN_SECONDS, kasa se zaključa dok ih administrator ne dozvoli isključiti."""
@@ -276,6 +284,10 @@ class MainWindow(QMainWindow):
                 self.settings_screen.test_finished.emit(text)
 
         threading.Thread(target=job, daemon=True).start()
+
+    def sync_receipts(self) -> None:
+        fiscal_required = self.settings.fiscal_enabled
+        threading.Thread(target=lambda: self.receipt_sync.send_pending(fiscal_required), daemon=True).start()
 
     def request_quit(self) -> None:
         if self.settings.demo_payments:
@@ -418,7 +430,10 @@ class MainWindow(QMainWindow):
         number = self.store.save(self.cart, payment_method, payment)
         self.exit_watch = {"number": number, "since": time.monotonic(), "blocked": False, "guess": ""}
         self.screens.setCurrentWidget(self.receipt)
-        self.receipt.begin(payment_method, number, self.fiscal_job(number, payment_method), self.settings.receipt_return_seconds)
+        fiscal_job = self.fiscal_job(number, payment_method)
+        self.receipt.begin(payment_method, number, fiscal_job, self.settings.receipt_return_seconds)
+        if fiscal_job is None:
+            self.sync_receipts()
 
     def fiscal_job(self, number: str, payment_method: str, cart_data: dict | None = None):
         if not self.settings.fiscal_enabled:
@@ -429,6 +444,7 @@ class MainWindow(QMainWindow):
         receipt_id = self.store.receipt_id(number)
         cart_data = cart_data or self.cart.to_dict()
         store = self.store
+        receipt_sync = self.receipt_sync
 
         def job():
             try:
@@ -447,6 +463,8 @@ class MainWindow(QMainWindow):
                     print_gate_slip(settings.qr_slip_ibfm, result.fiscal_number, cart_data["total"], settings.qr_slip_printer)
                 except Exception as error:
                     print(f"QR slip za vrata {number}: nije odštampan: {error!r}")
+            if result.ok:
+                threading.Thread(target=receipt_sync.send_pending, daemon=True).start()
             return result
 
         return job

@@ -28,6 +28,12 @@ def fiscal_text(receipt: dict) -> str:
     return "bez fiskalnog"
 
 
+def sync_text(receipt: dict) -> str:
+    if receipt.get("synced"):
+        return "na serveru"
+    return "nije poslan na server" if receipt.get("sync_message") else "čeka slanje na server"
+
+
 class ReceiptsView(QWidget):
     """Pregled prethodnih računa po danima; klik na račun prikazuje stavke."""
 
@@ -171,6 +177,9 @@ class ReceiptsView(QWidget):
         unprinted = sum(1 for receipt in receipts if not receipt.get("fiscal_printed") and receipt.get("fiscal_message"))
         if unprinted:
             parts.append(f"{unprinted} bez fiskalnog računa")
+        unsent = sum(1 for receipt in receipts if not receipt.get("synced"))
+        if unsent:
+            parts.append(f"{unsent} nije na serveru")
         self.summary.setText(" · ".join(parts))
 
     def _receipt_row(self, receipt: dict) -> QPushButton:
@@ -179,7 +188,7 @@ class ReceiptsView(QWidget):
         failed = not receipt.get("fiscal_printed") and receipt.get("fiscal_message")
         row = QPushButton(
             f"{when}   {receipt['number']}   {format_amount(receipt['total'])} KM\n"
-            f"{item_count_text(receipt['item_count'])} · {method} · {fiscal_text(receipt)}"
+            f"{item_count_text(receipt['item_count'])} · {method} · {fiscal_text(receipt)} · {sync_text(receipt)}"
         )
         row.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         row.setFixedHeight(px(110))
@@ -198,6 +207,7 @@ class ReceiptsView(QWidget):
             datetime.fromisoformat(receipt["created_at"]).strftime("%d.%m.%Y. u %H:%M:%S"),
             f"Plaćanje: {PAYMENT_METHOD_NAMES.get(receipt['payment_method'], receipt['payment_method'])}",
             f"Fiskalni račun: {fiscal_text(receipt)}",
+            f"Server: {sync_text(receipt)}" + (f" ({receipt['sync_message']})" if receipt.get("sync_message") else ""),
         ]
         if receipt.get("card_number"):
             info.append(f"Kartica: {receipt['card_number']}")

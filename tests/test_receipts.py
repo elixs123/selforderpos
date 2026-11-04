@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pytest import approx
 
 from cart import Cart
@@ -41,6 +43,37 @@ def test_numbers_increase(tmp_path):
     second = store.save(filled_cart(), "card")
     assert first.endswith("000001")
     assert second.endswith("000002")
+
+
+def test_number_has_year_doc_type_and_counter(tmp_path):
+    store = ReceiptStore(tmp_path / "kasa.db", doc_type="3257")
+    year = datetime.now().strftime("%y")
+    assert store.save(filled_cart(), "card") == f"{year}-3257-000001"
+    assert store.save(filled_cart(), "card") == f"{year}-3257-000002"
+
+
+def test_counter_restarts_in_new_year(tmp_path, monkeypatch):
+    import receipts
+
+    class FakeDateTime(datetime):
+        current = datetime(2026, 12, 31, 23, 59)
+
+        @classmethod
+        def now(cls, tz=None):
+            return cls.current
+
+    monkeypatch.setattr(receipts, "datetime", FakeDateTime)
+    store = ReceiptStore(tmp_path / "kasa.db", doc_type="3257")
+    assert store.save(filled_cart(), "card") == "26-3257-000001"
+    assert store.save(filled_cart(), "card") == "26-3257-000002"
+    FakeDateTime.current = datetime(2027, 1, 1, 0, 1)
+    assert store.save(filled_cart(), "card") == "27-3257-000001"
+
+
+def test_doc_type_comes_from_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("RECEIPT_DOC_TYPE", "3000")
+    number = ReceiptStore(tmp_path / "kasa.db").save(filled_cart(), "card")
+    assert number.split("-")[1:] == ["3000", "000001"]
 
 
 def test_data_survives_new_store(tmp_path):
