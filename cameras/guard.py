@@ -974,7 +974,8 @@ class CheckoutGuard:
             for row in self.store.rows(sample_ids):
                 if row["crop_path"]:
                     self.archive.add(self.store.folder / row["crop_path"], row["product_code"], row["barcode"],
-                                     row["product_name"], row["camera"], row["event"], verdict, row["quality"])
+                                     row["product_name"], row["camera"], row["event"], verdict, row["quality"],
+                                     row["created_at"])
         except Exception as error:
             print(f"Arhiva izgleda artikla: {error!r}")
 
@@ -1210,6 +1211,22 @@ class CheckoutGuard:
         deleted = self.store.delete_sample(sample_id)
         if deleted:
             self.log("osoblje", f"osoblje je obrisalo sliku artikla {sample_id}")
+        return deleted
+
+    def archive_products(self) -> list[dict]:
+        return self.archive.products() if self.archive is not None else []
+
+    def archive_images(self, product_code: str) -> list[dict]:
+        return self.archive.images(product_code) if self.archive is not None else []
+
+    def archive_crop(self, image_id: int) -> bytes | None:
+        return self.archive.crop_bytes(image_id) if self.archive is not None else None
+
+    def delete_archive_image(self, image_id: int) -> bool:
+        """Briše samo kopiju u arhivi; slike za prepoznavanje (reference) ostaju."""
+        deleted = self.archive is not None and self.archive.delete(image_id)
+        if deleted:
+            self.log("osoblje", f"osoblje je obrisalo sliku iz arhive {image_id}")
         return deleted
 
     def _apply_label(

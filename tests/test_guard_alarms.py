@@ -190,7 +190,7 @@ def test_staff_approval_archives_only_clean_images(monkeypatch, tmp_path):
     guard, _ = make_guard(monkeypatch, tmp_path)
     monkeypatch.setattr("guard.get_counter", lambda: None)
     guard.archive = ImageArchive(tmp_path / "archive", None, background=False)
-    item = np.full((60, 40, 3), 200, np.uint8)
+    item = np.random.default_rng(5).integers(0, 255, (200, 150, 3), dtype=np.uint8)
     ids = [guard.store.save("placed", "3850102", "079643", "MLIJEKO", camera, crop_image=item) for camera in ("B", "B2")]
 
     guard._placed_sample_ids = ids

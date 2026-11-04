@@ -17,7 +17,27 @@ from PySide6.QtWidgets import (
 from styles import BACKGROUND, BORDER, DARK_RED, MUTED_TEXT, TEXT, px
 
 COLUMNS = 3
-VERDICT_NAMES = {"verified": "osoblje", "learned": "naučeno", "ok": "prihvaćeno"}
+VERDICT_NAMES = {"verified": "osoblje", "learned": "naučeno", "ok": "prihvaćeno", "staff": "osoblje odobrilo"}
+
+
+class Source:
+    def __init__(self, title: str, products: str, images: str, crop: str, delete: str, hint: str, empty: str, detail: str) -> None:
+        self.title, self.products, self.images, self.crop, self.delete = title, products, images, crop, delete
+        self.hint, self.empty, self.detail = hint, empty, detail
+
+
+# Slike za prepoznavanje i arhiva su odvojene: brisanje u arhivi ne dira slike po kojima kasa prepoznaje.
+SOURCES = {
+    "references": Source(
+        "Slike artikala", "reference_products", "reference_images", "reference_crop", "delete_reference",
+        "Dodirnite artikal da vidite njegove slike i obrišete pogrešne.", "Kasa još nije naučila nijedan artikal.",
+        "Obrišite sliku na kojoj nije ovaj artikal (ruka, glava, drugi artikal); brisanje traži dva dodira."),
+    "archive": Source(
+        "Arhiva izgleda artikla", "archive_products", "archive_images", "archive_crop", "delete_archive_image",
+        "Najbolje slike svakog artikla sa svih strana, za kasniji model prepoznavanja.", "Arhiva je još prazna.",
+        "Obrišite sliku na kojoj nije ovaj artikal ili koja je loša; brisanje traži dva dodira. "
+        "Slike za prepoznavanje ostaju."),
+}
 
 
 def image_count_text(count: int) -> str:
@@ -38,22 +58,37 @@ class ReferencesView(QWidget):
         super().__init__()
         self.guard_provider = guard_provider or (lambda: None)
         self.product: dict | None = None
+        self.source = SOURCES["references"]
         self._armed: int | None = None
         self.loaded.connect(self._show_loaded)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self.pages = QStackedWidget()
-        self.list_page, self.rows, self.info, _ = self._page("Slike artikala", self.closed.emit, "Zatvori")
-        self.detail_page, self.grid_holder, self.detail_info, self.detail_title = self._page("", self.begin, "Nazad na listu")
+        self.list_page, self.rows, self.info, self.list_title = self._page("Slike artikala", self.closed.emit, "Zatvori")
+        self.switch = self._button("")
+        self.switch.clicked.connect(self._switch_source)
+        self.list_page.layout().insertWidget(2, self.switch)
+        self.detail_page, self.grid_holder, self.detail_info, self.detail_title = self._page("", self._show_list, "Nazad na listu")
         self.pages.addWidget(self.list_page)
         self.pages.addWidget(self.detail_page)
         layout.addWidget(self.pages)
 
     def begin(self) -> None:
+        self.source = SOURCES["references"]
+        self._show_list()
+
+    def _switch_source(self) -> None:
+        self.source = SOURCES["archive" if self.source is SOURCES["references"] else "references"]
+        self._show_list()
+
+    def _show_list(self) -> None:
+        source = self.source
+        self.list_title.setText(source.title)
+        self.switch.setText("Prikaži slike za prepoznavanje" if source is SOURCES["archive"] else "Prikaži arhivu (najbolje slike)")
         self.pages.setCurrentWidget(self.list_page)
         self.info.setText("Učitavam…")
         self._clear(self.rows)
-        self._load(lambda guard: ("list", guard.reference_products()))
+        self._load(lambda guard: ("list", getattr(guard, source.products)()))
 
     def _page(self, title_text: str, on_close, close_text: str) -> tuple[QWidget, QVBoxLayout, QLabel, QLabel]:
         page = QWidget()
@@ -107,7 +142,7 @@ class ReferencesView(QWidget):
     def _load(self, job) -> None:
         """Slike su na serveru kamera (ili lokalno); učitavaju se u pozadini da ekran ne zastane."""
         guard = self.guard_provider()
-        if guard is None or not hasattr(guard, "reference_products"):
+        if guard is None or not hasattr(guard, self.source.products):
             self.loaded.emit(("error", "Kamere nisu pokrenute."))
             return
 
@@ -130,8 +165,7 @@ class ReferencesView(QWidget):
 
     def _show_products(self, products: list[dict]) -> None:
         self._clear(self.rows)
-        self.info.setText("Dodirnite artikal da vidite njegove slike i obrišete pogrešne." if products
-                          else "Kasa još nije naučila nijedan artikal.")
+        self.info.setText(self.source.hint if products else self.source.empty)
         for position, product in enumerate(products):
             row = QPushButton(f"{product['name']}\n{product['code']} · {image_count_text(product['count'])}")
             row.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
@@ -153,15 +187,14 @@ class ReferencesView(QWidget):
         self.pages.setCurrentWidget(self.detail_page)
         self._load(lambda guard: self._images(guard, product["code"]))
 
-    @staticmethod
-    def _images(guard, code: str) -> tuple[str, list]:
-        return "images", [(image, guard.reference_crop(image["id"])) for image in guard.reference_images(code)]
+    def _images(self, guard, code: str) -> tuple[str, list]:
+        crop = getattr(guard, self.source.crop)
+        return "images", [(image, crop(image["id"])) for image in getattr(guard, self.source.images)(code)]
 
     def _show_images(self, images: list) -> None:
         self._clear(self.grid_holder)
         self.detail_info.setText(
-            f"{image_count_text(len(images))}. Obrišite sliku na kojoj nije ovaj artikal (ruka, glava, drugi artikal); "
-            "brisanje traži dva dodira." if images else "Nema slika za ovaj artikal.")
+            f"{image_count_text(len(images))}. {self.source.detail}" if images else "Nema slika za ovaj artikal.")
         grid_widget = QWidget()
         grid = QGridLayout(grid_widget)
         grid.setContentsMargins(0, 0, 0, 0)
@@ -189,7 +222,7 @@ class ReferencesView(QWidget):
             picture.setPixmap(pixmap.scaled(px(220), px(220), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
         column.addWidget(picture)
         quality = image.get("quality")
-        details = [image["camera"], VERDICT_NAMES.get(image["verdict"], image["verdict"])]
+        details = [image["camera"], VERDICT_NAMES.get(image["verdict"], image["verdict"] or "")]
         if quality is not None:
             details.append(f"{quality:.0%}")
         text = QLabel(" · ".join(details) + f"\n{image['created_at'][:16].replace('T', ' ')}")
@@ -215,7 +248,7 @@ class ReferencesView(QWidget):
         self.detail_info.setText("Brišem sliku…")
 
         def delete_then_reload(guard) -> tuple[str, list]:
-            guard.delete_reference(sample_id)
+            getattr(guard, self.source.delete)(sample_id)
             return self._images(guard, code)
 
         self._load(delete_then_reload)

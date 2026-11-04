@@ -89,3 +89,31 @@ def test_references_view_lists_products(monkeypatch, tmp_path):
     monkeypatch.setattr(view, "_load", lambda job: view._show_loaded(job(guard)) or shown.append(True))
     view.begin()
     assert shown and view.rows.count() == 2 and "Kiseljak" in view.rows.itemAt(0).widget().text()
+
+
+def test_archive_view_deletes_only_from_archive(monkeypatch, tmp_path):
+    from screens.references_view import ReferencesView
+
+    deleted = {"reference": [], "archive": []}
+    guard = SimpleNamespace(
+        reference_products=lambda: [{"code": "1", "name": "Kiseljak", "count": 3}],
+        archive_products=lambda: [{"code": "2", "name": "Donat", "count": 40}],
+        archive_images=lambda code: [{"id": 7, "created_at": "2026-11-04T12:57:03", "camera": "B", "verdict": "ok", "quality": 0.8}],
+        archive_crop=lambda image_id: None,
+        delete_archive_image=deleted["archive"].append,
+        delete_reference=deleted["reference"].append,
+    )
+    view = ReferencesView(lambda: guard)
+    monkeypatch.setattr(view, "_load", lambda job: view._show_loaded(job(guard)))
+    view.begin()
+    view.switch.click()
+    assert view.list_title.text() == "Arhiva izgleda artikla"
+    assert "Donat" in view.rows.itemAt(0).widget().text()
+
+    view.rows.itemAt(0).widget().click()
+    view._delete(7, view.switch)
+    view._delete(7, view.switch)
+    assert deleted == {"reference": [], "archive": [7]}
+
+    view.begin()
+    assert view.list_title.text() == "Slike artikala"

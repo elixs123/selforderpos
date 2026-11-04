@@ -12,8 +12,9 @@ from archive import ImageArchive
 SIDES = {"front": [1.0, 0.0, 0.0], "back": [0.0, 1.0, 0.0], "side": [0.0, 0.0, 1.0]}
 
 
-def crop_file(folder: Path, name: str, side: str) -> Path:
-    image = np.zeros((40, 30, 3), dtype=np.uint8)
+def crop_file(folder: Path, name: str, side: str, image: np.ndarray | None = None) -> Path:
+    if image is None:
+        image = np.random.default_rng(len(name)).integers(0, 255, (200, 160, 3), dtype=np.uint8)
     image[0, 0] = [list(SIDES).index(side), 0, 0]
     path = folder / f"{name}.png"
     cv2.imwrite(str(path), image)
@@ -92,3 +93,24 @@ def test_articles_are_separate_and_unknown_is_skipped(tmp_path, monkeypatch):
     assert add(archive, crop_file(tmp_path, "c", "front"), code=None) is None
     archive.process_pending()
     assert archive.summary() == {"images": 2, "products": 2, "bytes": archive.total_bytes()}
+
+
+def test_too_small_and_empty_images_are_dropped(tmp_path, monkeypatch):
+    archive = make_archive(tmp_path, monkeypatch)
+    small = np.random.default_rng(1).integers(0, 255, (91, 81, 3), dtype=np.uint8)
+    empty = np.full((200, 300, 3), 150, dtype=np.uint8)
+    add(archive, crop_file(tmp_path, "small", "front", small))
+    add(archive, crop_file(tmp_path, "empty", "front", empty))
+    add(archive, crop_file(tmp_path, "good", "front"))
+    archive.process_pending()
+    assert archive.summary()["images"] == 1
+    assert len(list((tmp_path / "archive" / "079643").glob("*.jpg"))) == 1
+
+
+def test_staff_can_delete_image(tmp_path, monkeypatch):
+    archive = make_archive(tmp_path, monkeypatch)
+    image_id = add(archive, crop_file(tmp_path, "good", "front"))
+    archive.process_pending()
+    assert archive.delete(image_id)
+    assert archive.summary()["images"] == 0
+    assert not archive.delete(image_id)

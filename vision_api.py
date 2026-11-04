@@ -97,6 +97,20 @@ class VisionHandler(BaseHTTPRequestHandler):
         elif self.path.startswith("/references/"):
             code = unquote(self.path[len("/references/"):])
             self._send(200, {"images": self.server.guard.reference_images(code)})
+        elif self.path == "/archive":
+            self._send(200, {"products": self.server.guard.archive_products()})
+        elif self.path.startswith("/archive/"):
+            code = unquote(self.path[len("/archive/"):])
+            self._send(200, {"images": self.server.guard.archive_images(code)})
+        elif self.path.startswith("/archive_image/"):
+            try:
+                data = self.server.guard.archive_crop(int(self.path[len("/archive_image/"):]))
+            except ValueError:
+                data = None
+            if data is None:
+                self._send(404, {"error": "nema slike"})
+            else:
+                self._send_jpeg(data)
         elif self.path.startswith("/sample/"):
             try:
                 data = self.server.guard.reference_crop(int(self.path[len("/sample/"):]))
@@ -147,6 +161,12 @@ class VisionHandler(BaseHTTPRequestHandler):
             elif self.path == "/references/delete":
                 try:
                     deleted = guard.delete_reference(int(self._body().get("id")))
+                except (TypeError, ValueError):
+                    deleted = False
+                self._send(200, {"ok": deleted})
+            elif self.path == "/archive_delete":
+                try:
+                    deleted = guard.delete_archive_image(int(self._body().get("id")))
                 except (TypeError, ValueError):
                     deleted = False
                 self._send(200, {"ok": deleted})

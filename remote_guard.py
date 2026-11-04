@@ -169,6 +169,23 @@ class RemoteGuard:
     def delete_reference(self, sample_id: int) -> bool:
         return bool(self._request("POST", "/references/delete", {"id": int(sample_id)}, ACTION_TIMEOUT).get("ok"))
 
+    def archive_products(self) -> list[dict]:
+        return list(self._request("GET", "/archive", None, ACTION_TIMEOUT).get("products") or [])
+
+    def archive_images(self, product_code: str) -> list[dict]:
+        return list(self._request("GET", f"/archive/{quote(product_code, safe='')}", None, ACTION_TIMEOUT).get("images") or [])
+
+    def archive_crop(self, image_id: int) -> bytes | None:
+        request = urllib.request.Request(self.url + f"/archive_image/{int(image_id)}", headers={"X-Token": self.token})
+        try:
+            with urllib.request.urlopen(request, timeout=ACTION_TIMEOUT) as response:
+                return response.read()
+        except (urllib.error.URLError, OSError, ValueError):
+            return None
+
+    def delete_archive_image(self, image_id: int) -> bool:
+        return bool(self._request("POST", "/archive_delete", {"id": int(image_id)}, ACTION_TIMEOUT).get("ok"))
+
     def _send_quietly(self, path: str) -> None:
         try:
             self._apply(self._request("POST", path, {}, ACTION_TIMEOUT))

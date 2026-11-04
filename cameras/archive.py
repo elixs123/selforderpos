@@ -28,6 +28,39 @@ CREATE TABLE IF NOT EXISTS images (
 )
 """
 
+EXTRA_COLUMNS = {"score": "REAL"}
+
+# Izmjereno na prvim arhiviranim slikama: izrezi kamere izdaleka su ~80 px (premalo detalja), a prazna
+# podloga bez artikla ima oštrinu 4-25; najmekša prava slika (glatka zelena flaša) ima 79.
+MIN_SIDE = 120
+MIN_SHARPNESS = 30.0
+# Slika ove veličine/oštrine i više dobija punu ocjenu; manja i mekša ispada prva kad artikal ima previše slika.
+GOOD_SIDE = 250
+GOOD_SHARPNESS = 150.0
+# Izrez iz zone A nema ocjenu kase (quality); tada se uzima ova.
+DEFAULT_QUALITY = 0.85
+
+
+def sharpness(image: np.ndarray) -> float:
+    return float(cv2.Laplacian(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY), cv2.CV_64F).var())
+
+
+def image_problem(image: np.ndarray | None) -> str:
+    """Zašto slika ne ide u arhivu (prazno = dobra)."""
+    if image is None or not image.size:
+        return "nema slike"
+    if min(image.shape[:2]) < MIN_SIDE:
+        return f"premala ({image.shape[1]}x{image.shape[0]} px)"
+    if sharpness(image) < MIN_SHARPNESS:
+        return "nema detalja (prazna podloga ili mutno)"
+    return ""
+
+
+def image_score(image: np.ndarray, quality: float | None) -> float:
+    size = min(1.0, min(image.shape[:2]) / GOOD_SIDE)
+    sharp = min(1.0, sharpness(image) / GOOD_SHARPNESS)
+    return round((DEFAULT_QUALITY if quality is None else quality) * size * sharp, 4)
+
 
 def enabled() -> bool:
     """Arhiva izgleda artikla (CAM_ARCHIVE, zadano uključena)."""
@@ -63,6 +96,10 @@ class ImageArchive:
         self._full_reported = False
         with closing(sqlite3.connect(self.database)) as connection, connection:
             connection.execute(SCHEMA)
+            existing = {row[1] for row in connection.execute("PRAGMA table_info(images)")}
+            for name, kind in EXTRA_COLUMNS.items():
+                if name not in existing:
+                    connection.execute(f"ALTER TABLE images ADD COLUMN {name} {kind}")
             connection.execute("CREATE INDEX IF NOT EXISTS images_product ON images (product_code)")
             # Slike koje nisu obrađene prije gašenja servera idu ponovo u red.
             for (image_id,) in connection.execute("SELECT id FROM images WHERE model IS NULL ORDER BY id"):
@@ -76,7 +113,7 @@ class ImageArchive:
         return connection
 
     def add(self, source: Path, product_code: str | None, barcode: str | None, product_name: str | None,
-            camera: str, event: str, verdict: str | None, quality: float | None) -> int | None:
+            camera: str, event: str, verdict: str | None, quality: float | None, created_at: str | None = None) -> int | None:
         """Kopira izrez u arhivu (odmah, jer kasa original uskoro briše); otisak i izbor slika idu u pozadini."""
         if not product_code or not source.is_file():
             return None
@@ -93,7 +130,7 @@ class ImageArchive:
             image_id = connection.execute(
                 "INSERT INTO images (created_at, product_code, barcode, product_name, camera, event, verdict, quality, path, size)"
                 " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (datetime.now().isoformat(timespec="seconds"), product_code, barcode, product_name, camera, event,
+                (created_at or datetime.now().isoformat(timespec="seconds"), product_code, barcode, product_name, camera, event,
                  verdict, quality, str(target.relative_to(self.folder)), size),
             ).lastrowid
         self._queue.put(image_id)
@@ -122,21 +159,26 @@ class ImageArchive:
 
     def _process(self, image_id: int) -> None:
         with closing(self._connect()) as connection:
-            row = connection.execute("SELECT product_code, path FROM images WHERE id = ?", (image_id,)).fetchone()
+            row = connection.execute("SELECT product_code, path, quality FROM images WHERE id = ?", (image_id,)).fetchone()
         if row is None:
+            return
+        image = cv2.imread(str(self.folder / row["path"]))
+        problem = image_problem(image)
+        if problem:
+            self.delete(image_id)
             return
         embedding = None
         if self._embed is not None:
-            image = cv2.imread(str(self.folder / row["path"]))
-            vector = self._embed(image) if image is not None else None
+            vector = self._embed(image)
             if vector is not None:
                 vector = np.asarray(vector, dtype=np.float32).reshape(-1)
                 vector /= max(float(np.linalg.norm(vector)), 1e-6)
                 embedding = vector.tobytes()
         # model != NULL znači da je slika obrađena (i kad otisak nije uspio); tek tad smije u izbor za brisanje.
         with closing(self._connect()) as connection, connection:
-            connection.execute("UPDATE images SET model = ?, embedding = ? WHERE id = ?",
-                               (self._model_name() if embedding is not None else "", embedding, image_id))
+            connection.execute("UPDATE images SET model = ?, embedding = ?, score = ? WHERE id = ?",
+                               (self._model_name() if embedding is not None else "", embedding,
+                                image_score(image, row["quality"]), image_id))
         self.trim(row["product_code"])
 
     def trim(self, product_code: str, keep: int | None = None) -> int:
@@ -144,7 +186,7 @@ class ImageArchive:
         removed = 0
         with closing(self._connect()) as connection, connection:
             rows = [dict(row) for row in connection.execute(
-                "SELECT id, verdict, quality, path, model, embedding FROM images WHERE product_code = ? ORDER BY id",
+                "SELECT id, verdict, score, path, model, embedding FROM images WHERE product_code = ? ORDER BY id",
                 (product_code,))]
             # Dok neka slika artikla čeka otisak, ne bira se šta brisati (ne zna se još s koje je strane artikla).
             if any(row["model"] is None for row in rows):
@@ -159,8 +201,8 @@ class ImageArchive:
 
     @staticmethod
     def _rank(row: dict) -> tuple:
-        # Osoblje potvrđene slike su najsigurnije; zatim kvalitet izreza; kod istog, novija slika ostaje.
-        return (row["verdict"] == "verified", row["quality"] if row["quality"] is not None else 0.0, row["id"])
+        # Osoblje potvrđene slike su najsigurnije; zatim ocjena (kasa x veličina x oštrina); kod iste, novija ostaje.
+        return (row["verdict"] == "verified", row["score"] or 0.0, row["id"])
 
     def _victim(self, rows: list[dict]) -> dict:
         model = self._model_name()
@@ -172,6 +214,52 @@ class ImageArchive:
             first, second = np.unravel_index(int(np.argmax(similar)), similar.shape)
             return min(embedded[first], embedded[second], key=self._rank)
         return min(rows, key=self._rank)
+
+    def delete(self, image_id: int) -> bool:
+        with closing(self._connect()) as connection, connection:
+            row = connection.execute("SELECT path FROM images WHERE id = ?", (image_id,)).fetchone()
+            if row is None:
+                return False
+            (self.folder / row["path"]).unlink(missing_ok=True)
+            connection.execute("DELETE FROM images WHERE id = ?", (image_id,))
+        return True
+
+    def recheck(self) -> int:
+        """Ponovo ocijeni sve slike (npr. poslije promjene pravila); loše briše. Vraća broj obrisanih."""
+        with closing(self._connect()) as connection:
+            ids = [row[0] for row in connection.execute("SELECT id FROM images ORDER BY id")]
+        before = self.summary()["images"]
+        for image_id in ids:
+            self._process(image_id)
+        return before - self.summary()["images"]
+
+    def products(self) -> list[dict]:
+        """Artikli u arhivi: šifra, naziv, broj slika (kao reference_products za ekran Slike artikala)."""
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT product_code, MAX(product_name), COUNT(*) FROM images GROUP BY product_code ORDER BY MAX(product_name)"
+            ).fetchall()
+        return [{"code": code, "name": name or code, "count": count} for code, name, count in rows]
+
+    def images(self, product_code: str) -> list[dict]:
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT id, created_at, camera, event, verdict, score FROM images WHERE product_code = ?"
+                " ORDER BY event DESC, camera, id DESC", (product_code,)).fetchall()
+        # Izrez iz zone A nosi redni broj uzimanja (A1, A2...) umjesto kamere, pa se prikazuje samo zona.
+        return [{"id": row["id"], "created_at": row["created_at"],
+                 "camera": row["camera"] if row["event"] == "placed" else "zona A",
+                 "verdict": row["verdict"], "quality": row["score"]} for row in rows]
+
+    def crop_bytes(self, image_id: int) -> bytes | None:
+        with closing(self._connect()) as connection:
+            row = connection.execute("SELECT path FROM images WHERE id = ?", (image_id,)).fetchone()
+        if row is None:
+            return None
+        try:
+            return (self.folder / row["path"]).read_bytes()
+        except OSError:
+            return None
 
     def total_bytes(self) -> int:
         with closing(self._connect()) as connection:
