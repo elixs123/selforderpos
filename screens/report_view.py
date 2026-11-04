@@ -1,7 +1,9 @@
 import threading
 from datetime import date, timedelta
+from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from formatting import format_amount, receipt_count_text
@@ -24,6 +26,7 @@ EVENT_NAMES = [
 ]
 # Udio odbijenih artikala iznad kojeg treba pogledati kamere ili prag sličnosti.
 HIGH_REJECT_SHARE = 0.2
+PROBLEM_REPORT_DAYS = 7
 
 
 def report_lines(events: dict[str, int]) -> list[str]:
@@ -50,6 +53,7 @@ class ReportView(QWidget):
 
     closed = Signal()
     loaded = Signal(object)
+    problems_ready = Signal(str)
 
     def __init__(self, store=None, guard_provider=None) -> None:
         super().__init__()
@@ -57,6 +61,7 @@ class ReportView(QWidget):
         self.guard_provider = guard_provider or (lambda: None)
         self.day = date.today()
         self.loaded.connect(self._show_events)
+        self.problems_ready.connect(self._problems_saved)
         column = QVBoxLayout(self)
         column.setContentsMargins(px(40), px(10), px(40), px(30))
         column.setSpacing(px(14))
@@ -91,6 +96,9 @@ class ReportView(QWidget):
         self.advice.setWordWrap(True)
         self.advice.setStyleSheet(f"font-size: {px(24)}px; font-weight: 600; color: {MUTED_TEXT};")
         column.addWidget(self.advice)
+        self.problems_button = self._button(f"Problematični artikli ({PROBLEM_REPORT_DAYS} dana), za kolege")
+        self.problems_button.clicked.connect(self.save_problem_report)
+        column.addWidget(self.problems_button)
         close = self._button("Zatvori")
         close.clicked.connect(self.closed.emit)
         column.addWidget(close)
@@ -146,3 +154,37 @@ class ReportView(QWidget):
         lines = report_lines(events)
         self.events.setText("\n".join(lines) if lines else "Nema događaja kamera za ovaj dan.")
         self.advice.setText(report_advice(events))
+
+    def report_folder(self) -> Path:
+        base = Path(self.store.path).parent if self.store is not None and hasattr(self.store, "path") else Path.cwd()
+        return base / "izvjestaji"
+
+    def save_problem_report(self) -> None:
+        """Izvještaj sa slikama artikala koje kamere teško prepoznaju; sprema se kao HTML (štampa / PDF iz preglednika)."""
+        guard = self.guard_provider()
+        if guard is None or not hasattr(guard, "problem_report"):
+            self.advice.setText("Kamere nisu pokrenute.")
+            return
+        self.problems_button.setEnabled(False)
+        self.advice.setText("Pravim izvještaj o problematičnim artiklima…")
+        folder = self.report_folder()
+
+        def work() -> None:
+            try:
+                html_text = guard.problem_report(PROBLEM_REPORT_DAYS)
+                folder.mkdir(parents=True, exist_ok=True)
+                path = folder / f"problematicni-artikli-{date.today():%Y-%m-%d}.html"
+                path.write_text(html_text, encoding="utf-8")
+                self.problems_ready.emit(str(path))
+            except Exception as error:
+                self.problems_ready.emit(f"!Izvještaj nije napravljen ({error}).")
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _problems_saved(self, result: str) -> None:
+        self.problems_button.setEnabled(True)
+        if result.startswith("!"):
+            self.advice.setText(result[1:])
+            return
+        self.advice.setText(f"Izvještaj je sačuvan: {result}. Otvara se u pregledniku (odatle štampa ili PDF).")
+        QDesktopServices.openUrl(QUrl.fromLocalFile(result))

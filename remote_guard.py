@@ -169,6 +169,21 @@ class RemoteGuard:
     def delete_reference(self, sample_id: int) -> bool:
         return bool(self._request("POST", "/references/delete", {"id": int(sample_id)}, ACTION_TIMEOUT).get("ok"))
 
+    def start_capture(self, barcode: str, product_code: str | None, product_name: str | None) -> dict:
+        body = {"barcode": barcode, "product_code": product_code, "product_name": product_name}
+        return dict(self._request("POST", "/capture/start", body, ACTION_TIMEOUT))
+
+    def capture_status(self) -> dict:
+        return dict(self._request("GET", "/capture", None, ACTION_TIMEOUT))
+
+    def stop_capture(self) -> dict:
+        return dict(self._request("POST", "/capture/stop", {}, ACTION_TIMEOUT))
+
+    def problem_report(self, days: int = 7) -> str:
+        request = urllib.request.Request(self.url + f"/problem_report/{int(days)}", headers={"X-Token": self.token})
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return response.read().decode("utf-8")
+
     def archive_products(self) -> list[dict]:
         return list(self._request("GET", "/archive", None, ACTION_TIMEOUT).get("products") or [])
 

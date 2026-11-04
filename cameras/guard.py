@@ -15,6 +15,7 @@ from hands import load_hand_detector
 from holding import HeldItemDetector, HoldResult
 from reader import CameraReader
 from archive import ImageArchive, enabled as archive_enabled
+from capture import CaptureSession
 from samples import SampleStore
 from similarity import Signature, compare, get_embedder, match_threshold, method_name, signature
 import counter as counter_module
@@ -77,6 +78,8 @@ PERSON_CLASS = 0
 TAKEN_PROBLEM = "nije isto što je uzeto iz zone A"
 APPEARANCE_PROBLEMS = ("ne liči na skenirani", "više liči na drugi", "liči na drugi")
 BAD_REFERENCE = "bad_reference"
+# Odbijanja zbog stanja kase (kamera uči, nema slike, prazna zona), ne zbog artikla: ne idu u izvještaj po artiklu.
+SYSTEM_REJECTIONS = {"not_ready", "zone_a_empty", "camera_b"}
 
 
 def camera_of(path: str) -> str:
@@ -151,6 +154,9 @@ class CheckoutGuard:
         self._b_active_at = -1000.0
         self.store = SampleStore()
         self.archive = ImageArchive(self.store.folder / "archive", _archive_embed, method_name) if archive_enabled() else None
+        self.capture: CaptureSession | None = None
+        self._capture_last: dict | None = None
+        self._capture_product: tuple[str, str | None, str | None] = ("", None, None)
         threading.Thread(target=self._tidy_samples, daemon=True).start()
         self._load_backgrounds()
         self.hands = load_hand_detector()
@@ -890,6 +896,8 @@ class CheckoutGuard:
         self._outcome_number += 1
         self.outcome = Outcome(self._outcome_number, kind, verdict, self.barcode, self.product_code, message)
         self.count_event(f"{kind}:{verdict}")
+        if verdict not in SYSTEM_REJECTIONS:
+            self._count_product(f"{kind}:{verdict}")
         self._set(kind, message)
         self._dump(f"{kind}-{verdict}")
 
@@ -1185,6 +1193,19 @@ class CheckoutGuard:
             self._catalog_index = labels.CatalogIndex(names)
         return self._catalog_index.other_product(read, self.product_name)
 
+    def _count_product(self, kind: str) -> None:
+        if not self.product_code:
+            return
+        try:
+            self.store.count_product_event(kind, self.product_code, self.product_name, self.barcode)
+        except Exception as error:
+            print(f"Izvještaj po artiklu: {error}")
+
+    def problem_report(self, days: int = 7) -> str:
+        from problem_report import report_html
+
+        return report_html(self.store, self.archive, days)
+
     def count_event(self, kind: str) -> None:
         try:
             self.store.count_event(kind)
@@ -1212,6 +1233,66 @@ class CheckoutGuard:
         if deleted:
             self.log("osoblje", f"osoblje je obrisalo sliku artikla {sample_id}")
         return deleted
+
+    def start_capture(self, barcode: str, product_code: str | None, product_name: str | None) -> dict:
+        """Osoblje snima artikal sa svih strana (Postavke > Snimanje artikla)."""
+        with self._lock:
+            if not product_code:
+                return {"active": False, "message": "Artikal nije pronađen u katalogu."}
+            if self.busy:
+                return {"active": False, "message": "Kasa čeka odlaganje artikla. Završite kupovinu pa snimajte."}
+            self._capture_product = (barcode, product_code, product_name)
+            self.capture = CaptureSession(self._capture_rois, self._capture_hand, _archive_embed, self._save_capture,
+                                          product_name or product_code)
+            self.log("osoblje", f"snimanje artikla {product_name or product_code} ({barcode})")
+            return self.capture.status()
+
+    def capture_status(self) -> dict:
+        with self._lock:
+            if self.capture is not None:
+                return self.capture.status()
+            # Završna poruka ("Gotovo...") se pokaže jednom, poslije toga kasa radi normalno.
+            last, self._capture_last = self._capture_last, None
+            return last or {"active": False, "message": ""}
+
+    def stop_capture(self) -> dict:
+        with self._lock:
+            if self.capture is None:
+                return {"active": False, "views": 0, "message": ""}
+            self._end_capture()
+            last, self._capture_last = self._capture_last, None
+            return last
+
+    def _end_capture(self) -> None:
+        status = {**self.capture.status(), "active": False}
+        self.log("osoblje", f"snimanje završeno: {status['views']} strana")
+        self.capture = None
+        self._capture_last = status
+        self.store.prune(self._capture_product[1], references_per_camera())
+
+    def _capture_rois(self) -> dict[str, np.ndarray]:
+        rois = {}
+        for name in self.cameras_b:
+            frame = self.latest(name)
+            if frame is not None:
+                rois[name] = crop(frame, self.zones.get(name))[0]
+        return rois
+
+    def _capture_hand(self, image: np.ndarray) -> bool:
+        if self.hands is None:
+            return False
+        try:
+            with self._hands_run_lock:
+                return bool(self.hands.find(image))
+        except Exception as error:
+            print(f"Ruke: {error}")
+            return False
+
+    def _save_capture(self, camera: str, image: np.ndarray) -> None:
+        barcode, product_code, product_name = self._capture_product
+        sample_id = self.store.save("placed", barcode, product_code, product_name, camera,
+                                    crop_image=image, verdict="verified")
+        self._archive([sample_id], "verified")
 
     def archive_products(self) -> list[dict]:
         return self.archive.products() if self.archive is not None else []
@@ -1739,6 +1820,7 @@ class CheckoutGuard:
                     watcher.rearm()
                 self._armed_at = time.monotonic()
                 self.count_event("mismatch")
+                self._count_product("mismatch")
                 if MULTIPLE_PROBLEM in problems:
                     self._set("mismatch", MULTIPLE_MESSAGE)
                 else:
@@ -1762,6 +1844,12 @@ class CheckoutGuard:
 
     def step(self) -> None:
         with self._lock:
+            if self.capture is not None:
+                # Osoblje snima artikal: obična prodaja (zona A, alarmi) stoji dok snimanje traje.
+                self.capture.step(time.monotonic())
+                if self.capture.state == "done":
+                    self._end_capture()
+                return
             started = time.monotonic()
             self._watch_zone_a()
             self._check_zone_a(time.monotonic())

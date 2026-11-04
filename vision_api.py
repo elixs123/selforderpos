@@ -111,6 +111,19 @@ class VisionHandler(BaseHTTPRequestHandler):
                 self._send(404, {"error": "nema slike"})
             else:
                 self._send_jpeg(data)
+        elif self.path == "/capture":
+            self._send(200, self.server.guard.capture_status())
+        elif self.path.startswith("/problem_report/"):
+            try:
+                days = max(1, min(90, int(self.path[len("/problem_report/"):])))
+            except ValueError:
+                days = 7
+            data = self.server.guard.problem_report(days).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
         elif self.path.startswith("/sample/"):
             try:
                 data = self.server.guard.reference_crop(int(self.path[len("/sample/"):]))
@@ -164,6 +177,13 @@ class VisionHandler(BaseHTTPRequestHandler):
                 except (TypeError, ValueError):
                     deleted = False
                 self._send(200, {"ok": deleted})
+            elif self.path == "/capture/start":
+                body = self._body()
+                code, name = body.get("product_code"), body.get("product_name")
+                self._send(200, guard.start_capture(str(body.get("barcode") or ""), str(code) if code else None,
+                                                    str(name) if name else None))
+            elif self.path == "/capture/stop":
+                self._send(200, guard.stop_capture())
             elif self.path == "/archive_delete":
                 try:
                     deleted = guard.delete_archive_image(int(self._body().get("id")))

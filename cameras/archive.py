@@ -251,6 +251,13 @@ class ImageArchive:
                  "camera": row["camera"] if row["event"] == "placed" else "zona A",
                  "verdict": row["verdict"], "quality": row["score"]} for row in rows]
 
+    def best_image(self, product_code: str) -> bytes | None:
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT id FROM images WHERE product_code = ? AND model IS NOT NULL"
+                " ORDER BY verdict = 'verified' DESC, score DESC, id DESC LIMIT 1", (product_code,)).fetchone()
+        return self.crop_bytes(row["id"]) if row else None
+
     def crop_bytes(self, image_id: int) -> bytes | None:
         with closing(self._connect()) as connection:
             row = connection.execute("SELECT path FROM images WHERE id = ?", (image_id,)).fetchone()

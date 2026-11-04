@@ -35,6 +35,18 @@ CREATE TABLE IF NOT EXISTS events (
 )
 """
 
+PRODUCT_EVENTS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS product_events (
+    day TEXT NOT NULL,
+    product_code TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0,
+    product_name TEXT,
+    barcode TEXT,
+    PRIMARY KEY (day, product_code, kind)
+)
+"""
+
 EXTRA_COLUMNS = {"verdict": "TEXT", "score_taken": "REAL", "score_product": "REAL", "label_text": "TEXT", "quality": "REAL"}
 
 INSERT = """
@@ -92,6 +104,7 @@ class SampleStore:
         with closing(sqlite3.connect(self.database)) as connection, connection:
             connection.execute(SCHEMA)
             connection.execute(EVENTS_SCHEMA)
+            connection.execute(PRODUCT_EVENTS_SCHEMA)
             existing = {row[1] for row in connection.execute("PRAGMA table_info(samples)")}
             for name, kind in EXTRA_COLUMNS.items():
                 if name not in existing:
@@ -199,6 +212,31 @@ class SampleStore:
             connection.execute(
                 "INSERT INTO events (day, kind, count) VALUES (?, ?, 1) ON CONFLICT(day, kind) DO UPDATE SET count = count + 1",
                 (day, kind))
+
+    def count_product_event(self, kind: str, product_code: str, product_name: str | None, barcode: str | None,
+                            day: str | None = None) -> None:
+        """Ishod za jedan artikal (za izvještaj o artiklima koje kamere teško prepoznaju)."""
+        day = day or datetime.now().date().isoformat()
+        with closing(sqlite3.connect(self.database)) as connection, connection:
+            connection.execute(
+                "INSERT INTO product_events (day, product_code, kind, count, product_name, barcode) VALUES (?, ?, ?, 1, ?, ?)"
+                " ON CONFLICT(day, product_code, kind) DO UPDATE SET count = count + 1,"
+                " product_name = COALESCE(excluded.product_name, product_name), barcode = COALESCE(excluded.barcode, barcode)",
+                (day, product_code, kind, product_name, barcode))
+
+    def product_events_since(self, day: str) -> dict[str, dict]:
+        """Po artiklu: naziv, barkod i broj svakog ishoda od zadanog dana."""
+        result: dict[str, dict] = {}
+        with closing(sqlite3.connect(self.database)) as connection:
+            rows = connection.execute(
+                "SELECT product_code, kind, SUM(count), MAX(product_name), MAX(barcode) FROM product_events"
+                " WHERE day >= ? GROUP BY product_code, kind", (day,)).fetchall()
+        for code, kind, count, name, barcode in rows:
+            entry = result.setdefault(code, {"code": code, "name": name or code, "barcode": barcode or "", "kinds": {}})
+            entry["kinds"][kind] = count
+            entry["name"] = name or entry["name"]
+            entry["barcode"] = barcode or entry["barcode"]
+        return result
 
     def events_on(self, day: str) -> dict[str, int]:
         with closing(sqlite3.connect(self.database)) as connection:
