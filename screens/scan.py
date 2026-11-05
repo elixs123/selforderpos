@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 from cart import Cart
 from catalog import find_by_barcode
 from database import DatabaseError
-from formatting import format_amount, item_count_text
+from formatting import format_amount, format_quantity, item_count_text
 from screens.components import AlertPopup, GuideSteps, StepBar, TopBar
 from styles import (
     BACKGROUND,
@@ -308,7 +308,7 @@ class ScanScreen(QWidget):
         name = QLabel(item["name"])
         name.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         name.setStyleSheet(f"font-size: {px(28)}px; font-weight: 700;")
-        unit = QLabel(f"{format_amount(item['price'])} KM po komadu")
+        unit = QLabel(f"{format_amount(item['price'])} KM po {'kg' if isinstance(item['quantity'], float) else 'komadu'}")
         unit.setStyleSheet(f"font-size: {px(22)}px; color: {MUTED_TEXT};")
         texts.addStretch()
         texts.addWidget(name)
@@ -316,7 +316,7 @@ class ScanScreen(QWidget):
         texts.addStretch()
         layout.addLayout(texts, stretch=1)
 
-        quantity = QLabel(f"{item['quantity']} kom")
+        quantity = QLabel(format_quantity(item["quantity"]))
         quantity.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         quantity.setStyleSheet(f"font-size: {px(28)}px; font-weight: 700; color: {MUTED_TEXT};")
         layout.addWidget(quantity)
@@ -411,7 +411,7 @@ class ScanScreen(QWidget):
             self.add_accepted(product)
             return
         seen = self.guard.outcome.number if self.guard.outcome else 0
-        if not self.guard.scan(barcode, product.code, product.name):
+        if not self.guard.scan(barcode, product.code, product.name, bool(product.weight_grams)):
             self._show_notice(self.guard.message, success=False)
             return
         self.place_requested.emit(product, seen)

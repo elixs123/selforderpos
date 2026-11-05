@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from formatting import format_amount, item_count_text, receipt_count_text
+from formatting import format_amount, format_quantity, item_count_text, receipt_count_text
 from receipts import ReceiptStore
 from styles import BACKGROUND, BORDER, DARK_RED, GREEN, MUTED_TEXT, TEXT, px
 
@@ -229,7 +229,7 @@ class ReceiptsView(QWidget):
         row.setStyleSheet(f"#row {{ background: white; border-radius: {px(26)}px; }}")
         layout = QHBoxLayout(row)
         layout.setContentsMargins(px(24), 0, px(24), 0)
-        name = QLabel(f"{item['name']}\n{item['quantity']} × {format_amount(item['price'])} KM · {item['barcode']}")
+        name = QLabel(f"{item['name']}\n{format_quantity(item['quantity'])} × {format_amount(item['price'])} KM · {item['barcode']}")
         name.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         name.setStyleSheet(f"font-size: {px(22)}px; font-weight: 700;")
         layout.addWidget(name, stretch=1)

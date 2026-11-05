@@ -1,7 +1,9 @@
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
-from formatting import format_amount
+from catalog import find_by_barcode
+from database import DatabaseError
+from formatting import format_amount, format_quantity
 from screens.components import AlertPopup, GuideSteps, StepBar, TopBar
 from styles import (
     BACKGROUND,
@@ -42,6 +44,8 @@ class DropScreen(QWidget):
         super().__init__()
         self.guard = None
         self.product = None
+        self.products = []
+        self.scan_message = ""
         self.seen_outcome = 0
         self.timer = QTimer(self)
         self.timer.setInterval(POLL_MS)
@@ -67,15 +71,50 @@ class DropScreen(QWidget):
 
     def begin(self, product, guard, seen_outcome: int) -> None:
         self.product, self.guard, self.seen_outcome = product, guard, seen_outcome
-        self.name_label.setText(product.name)
-        self.name_label.setStyleSheet(f"font-size: {px(36) if len(product.name) <= 28 else px(26)}px; font-weight: 800;")
-        self.price_label.setText(f"{format_amount(product.price)} KM")
+        self.products = [product]
+        self.scan_message = ""
+        self._show_products()
+        self.barcode_input.setFocus()
         self._poll()
         self.timer.start()
 
     def resume(self) -> None:
         if self.waiting:
+            self.barcode_input.setFocus()
             self.timer.start()
+
+    def _show_products(self) -> None:
+        name = ", ".join(product.name for product in self.products)
+        self.name_label.setText(name)
+        self.name_label.setStyleSheet(f"font-size: {px(36) if len(name) <= 28 else px(26)}px; font-weight: 800;")
+        product = self.product
+        if product.weight_grams:
+            amount = sum(item.amount_minor(item.weight) for item in self.products) / 100
+            weight = sum(item.weight_grams for item in self.products) / 1000
+            self.price_label.setText(f"{format_quantity(weight)} · {format_amount(amount)} KM")
+        else:
+            self.price_label.setText(f"{format_amount(product.price)} KM")
+
+    def _on_barcode_entered(self) -> None:
+        """Skener radi i na ovom ekranu, ali samo za ostale deklaracije iste kutije."""
+        barcode = self.barcode_input.text().strip()
+        self.barcode_input.clear()
+        if not barcode or self.product is None or not self.product.weight_grams:
+            return
+        try:
+            product = find_by_barcode(barcode)
+        except DatabaseError as error:
+            self.scan_message = str(error)
+            return
+        if product is None or not product.weight_grams:
+            self.scan_message = "To nije deklaracija sa ove kutije. Skenirajte deklaraciju."
+            return
+        if not self.guard.scan(barcode, product.code, product.name, True):
+            self.scan_message = self.guard.message
+            return
+        self.scan_message = ""
+        self.products.append(product)
+        self._show_products()
 
     def cancel(self) -> None:
         self._stop()
@@ -84,6 +123,7 @@ class DropScreen(QWidget):
         self.alert.hide()
         self.timer.stop()
         self.product = None
+        self.products = []
 
     def _poll(self) -> None:
         guard = self.guard
@@ -91,10 +131,11 @@ class DropScreen(QWidget):
             return
         outcome = guard.outcome
         if outcome is not None and outcome.number > self.seen_outcome:
-            product = self.product
+            products = self.products
             if outcome.kind == "accepted":
                 self._stop()
-                self.accepted.emit(product)
+                for product in products:
+                    self.accepted.emit(product)
                 return
             if outcome.kind == "rejected":
                 self._stop()
@@ -117,7 +158,10 @@ class DropScreen(QWidget):
             self.alert.show_message(held, "Artikal u ruci")
         else:
             self.alert.hide()
-        if guard.state == "judging":
+        if guard.state == "waiting_labels":
+            self.guide.set_step(0)
+            self._paint("wait", self.scan_message or guard.message)
+        elif guard.state == "judging":
             self.guide.set_step(2)
             self._paint("ok", "Provjeravam artikal…")
         elif guard.state == "waiting_take":
@@ -151,6 +195,12 @@ class DropScreen(QWidget):
         title = QLabel("Odložite artikal")
         title.setStyleSheet(f"font-size: {px(60)}px; font-weight: 800;")
         column.addWidget(title)
+        # Skener šalje znakove polju koje ima fokus; polje je nevidljivo, ali mora postojati da primi ostale deklaracije.
+        self.barcode_input = QLineEdit()
+        self.barcode_input.setFixedSize(1, 1)
+        self.barcode_input.setStyleSheet("background: transparent; border: none; color: transparent;")
+        self.barcode_input.returnPressed.connect(self._on_barcode_entered)
+        column.addWidget(self.barcode_input)
         self.guide = GuideSteps()
         self.guide.set_step(2)
         column.addWidget(self.guide)

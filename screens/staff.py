@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from cart import Cart
-from formatting import format_amount, item_count_text
+from formatting import format_amount, format_quantity, item_count_text
 from screens.components import TopBar
 from staff_auth import PinError, check_pin
 from styles import (
@@ -357,12 +357,14 @@ class StaffScreen(QWidget):
 
         code = item["code"]
         layout.addWidget(self._round_button(ICON_MINUS, TEXT, lambda _checked=False: self._change(code, -1)))
-        quantity = QLabel(str(item["quantity"]))
-        quantity.setFixedWidth(px(44))
+        weighed = isinstance(item["quantity"], float)
+        quantity = QLabel(format_quantity(item["quantity"]) if weighed else str(item["quantity"]))
+        quantity.setMinimumWidth(px(44))
         quantity.setAlignment(Qt.AlignmentFlag.AlignCenter)
         quantity.setStyleSheet(f"font-size: {px(30)}px; font-weight: 800;")
         layout.addWidget(quantity)
-        layout.addWidget(self._round_button(ICON_PLUS, TEXT, lambda _checked=False: self._change(code, 1)))
+        if not weighed:
+            layout.addWidget(self._round_button(ICON_PLUS, TEXT, lambda _checked=False: self._change(code, 1)))
         layout.addWidget(self._round_button(ICON_TRASH, DARK_RED, lambda _checked=False: self._remove(code)))
         return row
 

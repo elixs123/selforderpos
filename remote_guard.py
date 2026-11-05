@@ -71,10 +71,10 @@ class RemoteGuard:
     def stop(self) -> None:
         self._running = False
 
-    def scan(self, barcode: str, product_code: str | None, product_name: str | None) -> bool:
+    def scan(self, barcode: str, product_code: str | None, product_name: str | None, weighed: bool = False) -> bool:
         self._barcode, self._product_code = barcode, product_code
         try:
-            data = self._request("POST", "/scan", {"barcode": barcode, "product_code": product_code, "product_name": product_name}, ACTION_TIMEOUT)
+            data = self._request("POST", "/scan", {"barcode": barcode, "product_code": product_code, "product_name": product_name, "weighed": weighed}, ACTION_TIMEOUT)
         except RemoteError as error:
             self._fail(error, immediately=True)
             return False

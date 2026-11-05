@@ -29,7 +29,7 @@ class FakeGuard:
     def zone_a_waiting_reason(self):
         return "A2: kamera nema sliku"
 
-    def scan(self, barcode, product_code, product_name):
+    def scan(self, barcode, product_code, product_name, weighed=False):
         self.scans.append((barcode, product_code, product_name))
         if self.reject:
             self.state, self.message = "rejected", "Stavite korpu u zonu A."

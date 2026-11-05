@@ -2,6 +2,10 @@ def format_amount(price: float) -> str:
     return f"{price:.2f}".replace(".", ",")
 
 
+def format_quantity(quantity: int | float) -> str:
+    return f"{quantity:.3f} kg".replace(".", ",") if isinstance(quantity, float) else f"{quantity} kom"
+
+
 def count_text(count: int, one: str, few: str, many: str) -> str:
     last_digit = count % 10
     last_two_digits = count % 100

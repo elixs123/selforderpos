@@ -19,6 +19,7 @@ from capture import CaptureSession, preview
 from samples import SampleStore
 from similarity import Signature, compare, get_embedder, match_threshold, method_name, signature
 import counter as counter_module
+from declarations import count_declarations
 import labels
 from counter import ZoneALedger, ZoneBLedger, counting_cameras, get_counter, unmatched
 from watcher import BasketTracker, ZoneWatcher, looks_like_item, main_box, removed_items, separate_items
@@ -184,6 +185,9 @@ class CheckoutGuard:
         self.barcode = ""
         self.product_code: str | None = None
         self.product_name: str | None = None
+        self._weighed = False
+        self._label_barcodes: list[str] = []
+        self.labels_required = 0
         self.outcome: Outcome | None = None
         self.debug: dict | None = None
         self.debug_number = 0
@@ -907,13 +911,65 @@ class CheckoutGuard:
         self._set(kind, message)
         self._dump(f"{kind}-{verdict}")
 
-    def scan(self, barcode: str, product_code: str | None, product_name: str | None) -> bool:
+    @property
+    def labels_missing(self) -> int:
+        return max(0, self.labels_required - len(self._label_barcodes)) if self._weighed else 0
+
+    @property
+    def _mixed_box(self) -> bool:
+        """Kutija sa više deklaracija nije jedan artikal: ne poredi se sa slikama artikala i ne uči se."""
+        return self._weighed and max(self.labels_required, len(self._label_barcodes)) > 1
+
+    def _start_labels(self, barcode: str, weighed: bool) -> None:
+        self._weighed = weighed
+        self._label_barcodes = [barcode] if weighed else []
+        self.labels_required = 0
+
+    def _count_labels(self, images: list) -> None:
+        if not self._weighed:
+            return
+        counted = max((count_declarations(image) for image in images), default=0)
+        if counted > self.labels_required:
+            self.log("deklaracije", f"na kutiji vidim {counted}, skenirano {len(self._label_barcodes)}")
+            self.labels_required = counted
+        if self._mixed_box:
+            self.product_code, self.product_name = None, "kutija sa više deklaracija"
+
+    def _labels_message(self) -> str:
+        return (f"Na kutiji je više deklaracija. Skenirano {len(self._label_barcodes)} od {self.labels_required}. "
+                "Skenirajte i ostale.")
+
+    def _show_labels(self) -> None:
+        if self.labels_missing:
+            self._set("waiting_labels", self._labels_message())
+        elif self.state == "waiting_labels":
+            self._set("waiting_place", "Odložite kutiju u zonu B.")
+
+    def _scan_label(self, barcode: str) -> bool:
+        if barcode in self._label_barcodes:
+            self.log("deklaracije", f"{barcode} je već skenirana")
+            self._set("waiting_labels", "Ova deklaracija je već skenirana. Skenirajte drugu.")
+            return False
+        self._label_barcodes.append(barcode)
+        self.labels_required = max(self.labels_required, len(self._label_barcodes))
+        self.barcode = barcode
+        self.log("deklaracije", f"skenirana {barcode}, ukupno {len(self._label_barcodes)} od {self.labels_required}")
+        self._count_labels([])
+        self._armed_at = time.monotonic()
+        if self.state == "waiting_labels" or self.labels_missing:
+            self._show_labels()
+        return True
+
+    def scan(self, barcode: str, product_code: str | None, product_name: str | None, weighed: bool = False) -> bool:
         with self._lock:
+            if weighed and self._weighed and (self.zone_b_armed or self._pending_until is not None):
+                return self._scan_label(barcode)
             self.barcode, self.product_code, self.product_name = barcode, product_code, product_name
             self.log("scan", f"Skenirano {barcode} ({product_name or 'nepoznat artikal'}), šifra {product_code or '-'}")
             if self.busy:
                 self.message = "Prvo odložite prethodni artikal u zonu B."
                 return False
+            self._start_labels(barcode, weighed)
             now = time.monotonic()
             was_active = self._zone_a_active()
             self._force_takes(now)
@@ -1020,6 +1076,7 @@ class CheckoutGuard:
         self._scan_takes = list(takes)
         self.last_taken_index = 0
         items = [take[0] for take in takes]
+        self._count_labels(items)
         self._taken_items = list(items)
         self._taken_befores = [take[1] for take in takes]
         self._taken_at = takes[-1][2] if takes else time.monotonic()
@@ -1041,6 +1098,7 @@ class CheckoutGuard:
             self._b_before[name] = roi.copy()
         self._armed_at = time.monotonic()
         self._set("waiting_place", f"Odložite artikal u zonu B: {self.product_name or self.barcode}")
+        self._show_labels()
         self._dump("scan-armed-b", {"taken-item": items})
 
     def _warm_references(self, product_code: str | None) -> None:
@@ -1129,7 +1187,7 @@ class CheckoutGuard:
         problems = []
         lookalike = None
         rival = None
-        if placed_count <= 1:
+        if placed_count <= 1 and not self._mixed_box:
             others = self._other_signatures(product_code)
             main = [queries[index] for index in primary] or queries
             if score_product is not None and score_product >= product_threshold and len(main) < len(queries):
@@ -1620,6 +1678,8 @@ class CheckoutGuard:
             self._scan_takes.append(take)
             self._taken_items.append(event.item)
             self._taken_befores.append(before)
+            self._count_labels([event.item])
+            self._show_labels()
             self._warm_taken([event.item])
             self._takes.extend(extras)
             return
@@ -1738,6 +1798,14 @@ class CheckoutGuard:
                     items.append((name, item_from(frame, offset, box), watcher.change_ratio))
             watcher.disarm()
         crops = [item for _, item, _ in items]
+        self._count_labels(crops)
+        if self.labels_missing:
+            # Kutija je odložena prije nego su skenirane sve deklaracije: ne provjerava se dok se ne skeniraju.
+            for watcher in self.watchers.values():
+                watcher.rearm()
+            self._armed_at = time.monotonic()
+            self._set("waiting_labels", self._labels_message())
+            return
         counts = {name: len(self.watchers[name].items) for name, _, _ in items}
         counts = {name: count for name, count in counts.items() if name not in SIDE_CAMERAS} or counts
         self._placed_blobs = {name: list(self.watchers[name].items) for name, _, _ in items}
@@ -1792,7 +1860,8 @@ class CheckoutGuard:
                 self.log("zona-B", f"male promjene uz artikal ne računam kao drugi artikal (YOLOX vidi {yolo_new} novi)")
                 placed_count = large
         placed_count = max(placed_count, yolo_new or 0)
-        reading = self._label_reader.submit(labels.read_crops, [item for _, item, _ in items]) if placed_count <= 1 else None
+        reading = (self._label_reader.submit(labels.read_crops, [item for _, item, _ in items])
+                   if placed_count <= 1 and not self._mixed_box else None)
         try:
             verdict, problems, score_taken, score_product = self._judge(
                 crops, change_ratio, taken_items, taken_befores, product_code, placed_count, [name for name, _, _ in items],
@@ -1804,6 +1873,8 @@ class CheckoutGuard:
         verdict, problems, hits = self._apply_label(verdict, problems, score_product, reads, product_code, taken_items)
         scores = self._label_crop_scores([item for _, item, _ in items], list(self.crop_scores) + [None] * len(items), hits)
         crop_problems = [self._reference_problem(item, scores[index]) for index, (_, item, _) in enumerate(items)]
+        if self._mixed_box:
+            crop_problems = ["kutija sa više deklaracija"] * len(items)
         self.judge_ms = (time.monotonic() - started) * 1000
         with self._lock:
             if job != self._job_id:
@@ -1841,10 +1912,12 @@ class CheckoutGuard:
                     self._set("mismatch", "Artikal ne odgovara: " + ", ".join(problems) + ". Uklonite ga i odložite skenirani artikal.")
                 return
             message = "Artikal prvi put viđen, naučen." if verdict == "learned" else "Artikal odgovara."
-            if verdict == "learned" and all(crop_problems):
+            if self._mixed_box:
+                message = "Kutija odgovara."
+            elif verdict == "learned" and all(crop_problems):
                 message = "Artikal prihvaćen; slike nisu dovoljno dobre za učenje, naučiće ga sljedeći put."
             good = [sample_id for sample_id, problem in zip(self._placed_sample_ids, crop_problems) if not problem]
-            if not self._waive_taken:
+            if not self._waive_taken and not self._mixed_box:
                 index = self._reference_take_index()
                 if index is not None and not self._reference_problem(self._taken_items[index]):
                     self.store.mark_taken_reference(self._taken_sample_ids.get(index))

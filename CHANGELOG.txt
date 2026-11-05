@@ -1,6 +1,8 @@
 IZMJENE - samouslužna kasa
 
 2026-11-05
+- Kutija sa više deklaracija: kamera broji deklaracije na izrezu kutije (zona A i zona B, cameras/declarations.py), samo kad je skeniran barkod sa vage. Dok nisu skenirane sve, kasa traži ostale (ista deklaracija se ne prima dvaput) i kutija se u zoni B ne provjerava. Takva kutija se poredi samo sa slikom iz zone A, bez učenja i bez čitanja etikete. Osoblje može odobriti.
+- Deklaracije sa vage (npr. gastro): barkod od 13 cifara koji počinje sa 2 čita se kao 7 cifara artikla + masa u gramima + kontrolna cifra. Iznos je masa x cijena iz Pantheona, stavka se vodi u kg. Više deklaracija istog artikla sabira masu u jednu stavku. Puni barkod iz baze ima prednost.
 - Snimci alarma (data/samples/clips) čuvaju se 2 dana umjesto 30.
 
 2026-11-04

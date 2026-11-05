@@ -6,11 +6,11 @@ from catalog import Product
 @dataclass
 class CartItem:
     product: Product
-    quantity: int
+    quantity: int | float  # float = masa u kg (deklaracija sa vage)
 
     @property
     def amount_minor(self) -> int:
-        return self.product.price_minor * self.quantity
+        return self.product.amount_minor(self.quantity)
 
     @property
     def amount(self) -> float:
@@ -22,8 +22,11 @@ class Cart:
         self._items: dict[str, CartItem] = {}
 
     def add(self, product: Product, quantity: int = 1) -> None:
+        if product.weight_grams:
+            quantity = product.weight
         if product.code in self._items:
-            self._items[product.code].quantity += quantity
+            item = self._items[product.code]
+            item.quantity = round(item.quantity + quantity, 3)
         else:
             self._items[product.code] = CartItem(product, quantity)
 
@@ -31,6 +34,11 @@ class Cart:
         if code not in self._items:
             return
         item = self._items[code]
+        if isinstance(item.quantity, float):
+            # Masa se ne mijenja po komadu: minus briše stavku, plus ne radi ništa.
+            if delta < 0:
+                del self._items[code]
+            return
         item.quantity += delta
         if item.quantity <= 0:
             del self._items[code]
@@ -49,7 +57,7 @@ class Cart:
 
     @property
     def item_count(self) -> int:
-        return sum(item.quantity for item in self._items.values())
+        return sum(1 if isinstance(item.quantity, float) else item.quantity for item in self._items.values())
 
     def clear(self) -> None:
         self._items.clear()

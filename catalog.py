@@ -1,5 +1,5 @@
 from contextlib import closing
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import ROUND_HALF_UP, Decimal
 
 from database import DatabaseError, connect
@@ -11,11 +11,20 @@ class Product:
     barcode: str
     name: str
     price: float
+    weight_grams: int = 0
 
     @property
     def price_minor(self) -> int:
         """Cijena u feninzima, zaokružena kao na fiskalnom računu (1,785 -> 179)."""
         return int((Decimal(str(self.price)) * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+
+    @property
+    def weight(self) -> float:
+        return self.weight_grams / 1000
+
+    def amount_minor(self, quantity: float) -> int:
+        """Iznos stavke u feninzima; masa se množi sa cijenom po kg i zaokružuje kao na fiskalnom računu."""
+        return int((self.price_minor * Decimal(str(quantity))).quantize(Decimal(1), rounding=ROUND_HALF_UP))
 
 
 QUERY = """
@@ -34,19 +43,39 @@ def use_local_store(store) -> None:
     local_store = store
 
 
+def weighed_parts(barcode: str) -> tuple[str, int] | None:
+    """Deklaracija sa vage: EAN-13 koji počinje sa 2, 7 cifara barkoda artikla + masa u gramima (5 cifara) + kontrolna."""
+    if len(barcode) != 13 or not barcode.isdecimal() or barcode[0] != "2":
+        return None
+    digits = [int(digit) for digit in barcode]
+    if (sum(digits[0::2]) + 3 * sum(digits[1::2])) % 10 != 0:
+        return None
+    grams = int(barcode[7:12])
+    return (barcode[:7], grams) if grams else None
+
+
 def find_by_barcode(barcode: str) -> Product | None:
     """Prvo lokalna kopija artikala; server samo ako artikla nema lokalno (npr. novi od zadnje sinhronizacije)."""
-    if local_store is None:
-        return find_on_server(barcode)
-    product = local_store.find(barcode)
-    if product is not None:
-        return product
+    weighed = weighed_parts(barcode)
+    if local_store is not None:
+        product = _find_with(local_store.find, barcode, weighed)
+        if product is not None:
+            return product
     try:
-        return find_on_server(barcode)
+        return _find_with(find_on_server, barcode, weighed)
     except DatabaseError:
-        if local_store.article_count() == 0:
+        if local_store is None or local_store.article_count() == 0:
             raise
         return None
+
+
+def _find_with(find, barcode: str, weighed: tuple[str, int] | None) -> Product | None:
+    """Cijeli barkod ima prednost; tek ako ga nema, traži se artikal po prvih 7 cifara deklaracije."""
+    product = find(barcode)
+    if product is not None or weighed is None:
+        return product
+    product = find(weighed[0])
+    return None if product is None else replace(product, barcode=barcode, weight_grams=weighed[1])
 
 
 def find_on_server(barcode: str) -> Product | None:

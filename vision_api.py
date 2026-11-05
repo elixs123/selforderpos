@@ -163,7 +163,7 @@ class VisionHandler(BaseHTTPRequestHandler):
                     self._send(400, {"error": "nema barkoda"})
                     return
                 code, name = body.get("product_code"), body.get("product_name")
-                accepted = guard.scan(barcode, str(code) if code else None, str(name) if name else None)
+                accepted = guard.scan(barcode, str(code) if code else None, str(name) if name else None, bool(body.get("weighed")))
                 self._send(200, {**snapshot(guard, self.server.boot), "ok": bool(accepted)})
             elif self.path == "/cancel":
                 guard.cancel()

@@ -86,3 +86,34 @@ def test_price_with_more_decimals_is_rounded_like_fiscal_receipt():
     assert data["items"][0]["price"] == 1.79
     xml = build_request(1, data, "card", FiscalOptions()).decode()
     assert "<Cijena>1.79</Cijena>" in xml and "<Iznos>5.37</Iznos>" in xml
+
+
+MELON = Product("097992", "2890619002483", "DINJA", 5.95, 248)
+
+
+def test_weighed_item_is_mass_times_price():
+    cart = Cart()
+    cart.add(MELON)
+    item = cart.to_dict()["items"][0]
+    assert item["quantity"] == 0.248
+    assert item["price"] == approx(5.95)
+    assert item["amount"] == approx(1.48)  # 0,248 x 5,95 = 1,4756
+    assert cart.item_count == 1
+
+
+def test_two_labels_of_same_article_add_up_mass():
+    cart = Cart()
+    cart.add(MELON)
+    cart.add(Product("097992", "2890619003006", "DINJA", 5.95, 300))
+    assert cart.to_dict()["items"][0]["quantity"] == 0.548
+    assert cart.total == approx(3.26)  # 0,548 x 5,95 = 3,2606
+    assert cart.item_count == 1
+
+
+def test_changing_weighed_item_removes_or_ignores():
+    cart = Cart()
+    cart.add(MELON)
+    cart.change_quantity("097992", 1)
+    assert cart.to_dict()["items"][0]["quantity"] == 0.248
+    cart.change_quantity("097992", -1)
+    assert cart.item_count == 0
