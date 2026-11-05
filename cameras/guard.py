@@ -42,6 +42,8 @@ PLACED_UNSCANNED_MESSAGE = "U zonu B je odložen artikal koji nije skeniran. Ukl
 HELD_UNSCANNED_MESSAGE = "Imate artikal u ruci koji nije skeniran. Stavite ga u zonu A, pa ga skenirajte. Do tada ne možete nastaviti."
 IDENTIFY_REFERENCES = 400
 TAMPER_SECONDS = 1.0
+# Klip za problem sa kamerom najviše jednom u ovoliko po kameri (problem koji se pali i gasi ne puni folder klipova).
+TAMPER_CLIP_SECONDS = 600.0
 CARRY_STATES = ("waiting_take", "judging", "learning", "offline")
 HELD_UNPLACED_MESSAGE = "Artikal je skeniran. Odložite ga u zonu B."
 # Artikal uzet iz zone A, a kupac ga drži i ne skenira: blaža poruka (kamera je vidjela da je uzet iz korpe).
@@ -167,6 +169,7 @@ class CheckoutGuard:
         self.unscanned_guess = ""
         self.tamper = TamperCheck(self.store.folder / "camera_reference", zones_changed_at())
         self.tamper_problems: dict[str, str] = {}
+        self._tamper_clip_at: dict[str, float] = {}
         self.clips = ClipRecorder(self.store.folder / "clips") if clips_enabled() else None
         self._guessed_take = None
         self._guessing = False
@@ -772,6 +775,7 @@ class CheckoutGuard:
 
     def watch_tamper(self, frames: dict, now: float | None = None) -> None:
         """Prekrivena, mutna ili pomjerena kamera (samo kamere koje šalju sliku; bez slike javlja camera_check)."""
+        now = time.monotonic() if now is None else now
         problems = {}
         for name, frame in frames.items():
             if self._is_live(name):
@@ -781,7 +785,9 @@ class CheckoutGuard:
         for name, problem in problems.items():
             if self.tamper_problems.get(name) != problem:
                 self.log(f"kamera-{name}", f"PROBLEM: {problem}")
-                self.record_clip(f"kamera {name} {problem}")
+                if now - self._tamper_clip_at.get(name, -TAMPER_CLIP_SECONDS) >= TAMPER_CLIP_SECONDS:
+                    self._tamper_clip_at[name] = now
+                    self.record_clip(f"kamera {name} {problem}")
         for name in set(self.tamper_problems) - set(problems):
             self.log(f"kamera-{name}", "kamera je ponovo ispravna")
         self.tamper_problems = problems

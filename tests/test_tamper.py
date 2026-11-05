@@ -6,7 +6,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "cameras"))
 
-from tamper import BLURRED, COVERED, DARK, MOVED, PROBLEM_SECONDS, TamperCheck
+from tamper import BLURRED, COVERED, DARK, MOVED, MOVED_SECONDS, PROBLEM_SECONDS, TamperCheck
 
 
 def scene(offset: int = 0) -> np.ndarray:
@@ -20,7 +20,7 @@ def scene(offset: int = 0) -> np.ndarray:
 
 def confirmed(check: TamperCheck, frame, start: float = 0.0) -> str:
     check.check("A", frame, start)
-    return check.check("A", frame, start + PROBLEM_SECONDS)
+    return check.check("A", frame, start + MOVED_SECONDS)
 
 
 def test_healthy_camera_has_no_problem(tmp_path):
@@ -61,3 +61,12 @@ def test_person_in_front_of_camera_is_not_moved_camera(tmp_path):
     person = scene()
     cv2.ellipse(person, (300, 200), (130, 220), 0, 0, 360, (40, 50, 60), -1)
     assert confirmed(check, person, 1.0) == ""
+
+
+def test_moved_camera_needs_longer_than_covered(tmp_path):
+    check = TamperCheck(tmp_path)
+    check.check("A", scene(), 0.0)
+    moved = scene(offset=60)
+    check.check("A", moved, 1.0)
+    assert check.check("A", moved, 1.0 + PROBLEM_SECONDS) == ""
+    assert check.check("A", moved, 1.0 + MOVED_SECONDS) == MOVED

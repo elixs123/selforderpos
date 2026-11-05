@@ -63,6 +63,15 @@ def test_covered_camera_is_reported_and_recorded(monkeypatch, tmp_path):
     assert reasons == [f"kamera B2 {tamper.COVERED}"]
     guard.watch_tamper(frames, 30.0)
     assert guard.tamper_problems == {}
+    # Isti problem ubrzo ponovo: javi se, ali bez novog klipa; klip tek poslije TAMPER_CLIP_SECONDS.
+    guard.watch_tamper(covered, 40.0)
+    guard.watch_tamper(covered, 40.0 + tamper.PROBLEM_SECONDS)
+    assert guard.tamper_problems == {"B2": tamper.COVERED}
+    assert len(reasons) == 1
+    guard.watch_tamper(frames, 100.0)
+    guard.watch_tamper(covered, 700.0)
+    guard.watch_tamper(covered, 700.0 + tamper.PROBLEM_SECONDS)
+    assert len(reasons) == 2
 
 
 def test_side_cameras_join_zones_but_do_not_count_placed_items(monkeypatch, tmp_path):

@@ -10,8 +10,11 @@ COVERED_STD = 6.0
 DARK_MEAN = 12.0
 BLUR_RATIO = 0.2
 MOVED_SHARE = 0.06
-MOVED_MIN_RESPONSE = 0.08
+# Glatka ploča bez detalja (npr. A3) daje slab, lažan pomak kad se promijeni svjetlo ili sjena: ispod ovoga se ne računa.
+MOVED_MIN_RESPONSE = 0.2
 PROBLEM_SECONDS = 10.0
+# Pomjerena kamera se javlja tek poslije duže (prekrivena/mutna ostaje PROBLEM_SECONDS).
+MOVED_SECONDS = 30.0
 
 COVERED = "prekrivena ili bez slike"
 DARK = "slika je tamna (prekrivena?)"
@@ -92,7 +95,7 @@ class TamperCheck:
         return ""
 
     def check(self, name: str, frame: np.ndarray | None, now: float | None = None) -> str:
-        """Problem koji traje bar PROBLEM_SECONDS (prolazak kupca ispred kamere se ne računa)."""
+        """Problem koji traje bar PROBLEM_SECONDS, pomjerena kamera bar MOVED_SECONDS (prolazak kupca se ne računa)."""
         now = time.monotonic() if now is None else now
         problem = self.raw_problem(name, frame) if frame is not None and frame.size else ""
         if not problem:
@@ -102,4 +105,4 @@ class TamperCheck:
         if kind != problem:
             self._since[name] = (problem, now)
             return ""
-        return problem if now - since >= PROBLEM_SECONDS else ""
+        return problem if now - since >= (MOVED_SECONDS if problem == MOVED else PROBLEM_SECONDS) else ""
