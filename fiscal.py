@@ -12,6 +12,9 @@ NAME_LIMIT = 32
 FISCAL_NUMBER = re.compile(r"<Naziv>\s*BrojFiskalnogRacuna\s*</Naziv>.*?<Vrijednost[^>]*>\s*([^<]*?)\s*</Vrijednost>", re.DOTALL)
 
 
+WEIGHED_UNIT = "kg"
+
+
 @dataclass(frozen=True)
 class FiscalOptions:
     unit: str = "ko"
@@ -46,7 +49,7 @@ def build_request(receipt_number: int | None, cart: dict, payment_method: str, o
         article = ElementTree.SubElement(line, "artikal")
         _text(article, "Sifra", item["code"])
         _text(article, "Naziv", item["name"][:NAME_LIMIT])
-        _text(article, "JM", options.unit)
+        _text(article, "JM", WEIGHED_UNIT if isinstance(item["quantity"], float) else options.unit)
         _text(article, "Cijena", _number(item["price"]))
         _text(article, "Stopa", options.tax_label)
         _text(line, "Kolicina", f"{item['quantity']:.3f}")

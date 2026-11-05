@@ -662,6 +662,7 @@ class CheckoutGuard:
     def new_sale(self) -> None:
         """Novi kupac: zaboravi neskenirane artikle i brojanje od prošle kupovine (zone se ponovo prebroje)."""
         with self._lock:
+            self._label_seen.clear()
             if self.busy:
                 return
             self.log("kupovina", "nova kupovina: stanje zona od prošle kupovine je obrisano")
@@ -999,7 +1000,11 @@ class CheckoutGuard:
     def _scan_label(self, barcode: str) -> bool:
         if barcode in self._label_barcodes:
             self.log("deklaracije", f"{barcode} je već skenirana")
-            self._set("waiting_labels", "Ova deklaracija je već skenirana. Skenirajte drugu.")
+            if self.labels_missing:
+                self._set("waiting_labels", "Ova deklaracija je već skenirana. Skenirajte drugu.")
+            else:
+                # Skener zna očitati dvaput: kutija je već gotova, stanje se ne mijenja.
+                self.message = "Ova deklaracija je već skenirana. Odložite kutiju."
             return False
         self._label_barcodes.append(barcode)
         self.labels_required = max(self.labels_required, len(self._label_barcodes))
@@ -1016,11 +1021,11 @@ class CheckoutGuard:
         with self._lock:
             if weighed and self._weighed and (self.zone_b_armed or self._pending_until is not None):
                 return self._scan_label(barcode)
-            self.barcode, self.product_code, self.product_name = barcode, product_code, product_name
             self.log("scan", f"Skenirano {barcode} ({product_name or 'nepoznat artikal'}), šifra {product_code or '-'}")
             if self.busy:
                 self.message = "Prvo odložite prethodni artikal u zonu B."
                 return False
+            self.barcode, self.product_code, self.product_name = barcode, product_code, product_name
             self._start_labels(barcode, weighed)
             now = time.monotonic()
             was_active = self._zone_a_active()
@@ -1061,6 +1066,7 @@ class CheckoutGuard:
 
     def cancel(self) -> None:
         with self._lock:
+            self._label_seen.clear()
             for watcher in self.watchers.values():
                 watcher.disarm()
             self._pending_until = None
@@ -1739,7 +1745,7 @@ class CheckoutGuard:
             if sync:
                 self._force_takes(now, source=camera, reason=f"{camera} je vidjela uzimanje")
             return
-        if self._weighed and self.zone_b_armed:
+        if self.labels_missing and self.zone_b_armed:
             self.log(f"zona-{camera}", "kutija se pomjera dok se skeniraju deklaracije, ne računam kao novi artikal")
             return
         if self.zone_b_armed or self._judging:

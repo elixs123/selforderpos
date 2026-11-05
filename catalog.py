@@ -35,6 +35,9 @@ WHERE b.acCode = ? or i.acIdent = ?
 """
 
 
+# Samo 28 je potvrđeno skenerom; 24 i 27 su obični artikli sa 7 cifara, a format 21 nije provjeren.
+WEIGHED_PREFIX = "28"
+
 local_store = None
 
 
@@ -44,8 +47,8 @@ def use_local_store(store) -> None:
 
 
 def weighed_parts(barcode: str) -> tuple[str, int] | None:
-    """Deklaracija sa vage: EAN-13 koji počinje sa 2, 7 cifara barkoda artikla + masa u gramima (5 cifara) + kontrolna."""
-    if len(barcode) != 13 or not barcode.isdecimal() or barcode[0] != "2":
+    """Deklaracija sa vage: EAN-13 sa prefiksom 28, 7 cifara barkoda artikla + masa u gramima (5 cifara) + kontrolna."""
+    if len(barcode) != 13 or not barcode.isdecimal() or not barcode.startswith(WEIGHED_PREFIX):
         return None
     digits = [int(digit) for digit in barcode]
     if (sum(digits[0::2]) + 3 * sum(digits[1::2])) % 10 != 0:

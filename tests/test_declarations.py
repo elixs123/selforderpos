@@ -201,3 +201,31 @@ def test_drop_screen_collects_all_labels(monkeypatch):
     guard.outcome = SimpleNamespace(number=1, kind="accepted", message="")
     screen._poll()
     assert accepted == [melon, pineapple]
+
+
+def test_double_read_on_finished_box_keeps_state(monkeypatch, tmp_path):
+    guard = armed_guard(monkeypatch, tmp_path, 1)
+    assert guard.scan("2890619002483", "097992", "DINJA", True) is False
+    assert guard.state == "waiting_place"
+    assert "već skenirana" in guard.message
+
+
+def test_scan_while_judging_does_not_change_article(monkeypatch, tmp_path):
+    guard = armed_guard(monkeypatch, tmp_path, 1)
+    for watcher in guard.watchers.values():
+        watcher.disarm()
+    guard._judging = True
+    assert guard.scan("2890626002223", "097999", "ANANAS", True) is False
+    assert guard.product_code == "097992"
+    assert guard.barcode == "2890619002483"
+
+
+def test_item_taken_after_all_labels_scanned_still_counts(monkeypatch, tmp_path):
+    guard = armed_guard(monkeypatch, tmp_path, 1)
+    tracker = next(iter(guard.trackers.values()))
+    tracker.last_before = box_with_labels(0)
+    camera = next(iter(guard.trackers))
+    event = SimpleNamespace(kind="taken", item=box_with_labels(0), extra=())
+    guard._taken_at = 0.0
+    guard._on_zone_a_event(camera, event, time.monotonic(), sync=False)
+    assert len(guard._takes) == 1

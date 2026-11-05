@@ -85,3 +85,10 @@ def test_parse_fiscal_number_from_tring_response():
 def test_print_reports_unreachable_printer():
     result = FiscalPrinter("http://127.0.0.1:1").print_receipt(5, sample_cart(), "card")
     assert not result.ok
+
+
+def test_weighed_item_is_sent_in_kg():
+    cart = {"items": [{"code": "097992", "name": "DINJA", "price": 5.95, "quantity": 0.248, "amount": 1.48}], "total": 1.48}
+    xml = build_request(1, cart, "card", FiscalOptions()).decode()
+    assert "<JM>kg</JM>" in xml
+    assert "<Kolicina>0.248</Kolicina>" in xml

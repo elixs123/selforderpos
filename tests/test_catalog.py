@@ -78,3 +78,10 @@ def test_find_by_barcode_full_barcode_wins_over_weighed(monkeypatch):
     store = FakeStore({"2890619002483": whole, "2890619": Product("097992", "2890619", "DINJA", 5.95)})
     monkeypatch.setattr(catalog, "local_store", store)
     assert catalog.find_by_barcode("2890619002483") == whole
+
+
+def test_weighed_parts_only_confirmed_prefix():
+    for prefix in ("2190619", "2445770", "2701741"):
+        digits = [int(digit) for digit in prefix + "00248"]
+        check = (10 - (sum(digits[0::2]) + 3 * sum(digits[1::2])) % 10) % 10
+        assert catalog.weighed_parts(f"{prefix}00248{check}") is None
