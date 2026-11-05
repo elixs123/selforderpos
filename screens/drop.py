@@ -1,5 +1,5 @@
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget
 
 from catalog import find_by_barcode
 from database import DatabaseError
@@ -13,6 +13,7 @@ from styles import (
     GREEN,
     ICON_BOX,
     ICON_CHECK,
+    ICON_SCANNER,
     LIGHT_GREEN,
     LIGHT_RED,
     MUTED_TEXT,
@@ -61,7 +62,18 @@ class DropScreen(QWidget):
         top_bar.staff_requested.connect(self.staff_requested.emit)
         layout.addWidget(top_bar)
         layout.addWidget(StepBar(active=1))
-        layout.addWidget(self._body(), stretch=1)
+        # Skener šalje znakove polju koje ima fokus; polje je nevidljivo, ali mora postojati da primi ostale deklaracije.
+        self.barcode_input = QLineEdit()
+        self.barcode_input.setFixedSize(1, 1)
+        self.barcode_input.setStyleSheet("background: transparent; border: none; color: transparent;")
+        self.barcode_input.returnPressed.connect(self._on_barcode_entered)
+        layout.addWidget(self.barcode_input)
+        self.pages = QStackedWidget()
+        self.drop_page = self._body()
+        self.labels_page = self._labels_page()
+        self.pages.addWidget(self.drop_page)
+        self.pages.addWidget(self.labels_page)
+        layout.addWidget(self.pages, stretch=1)
         layout.addWidget(self._footer())
         self.alert = AlertPopup(self)
 
@@ -73,6 +85,7 @@ class DropScreen(QWidget):
         self.product, self.guard, self.seen_outcome = product, guard, seen_outcome
         self.products = [product]
         self.scan_message = ""
+        self.pages.setCurrentWidget(self.drop_page)
         self._show_products()
         self.barcode_input.setFocus()
         self._poll()
@@ -146,6 +159,7 @@ class DropScreen(QWidget):
             self.staff_requested.emit()
             return
         if guard.state == "mismatch":
+            self.pages.setCurrentWidget(self.drop_page)
             self._paint("problem", guard.message)
             if "više artikala" in guard.message:
                 title, text = customer_problem(guard.message)
@@ -159,9 +173,10 @@ class DropScreen(QWidget):
         else:
             self.alert.hide()
         if guard.state == "waiting_labels":
-            self.guide.set_step(0)
-            self._paint("wait", self.scan_message or guard.message)
-        elif guard.state == "judging":
+            self._show_labels_page()
+            return
+        self.pages.setCurrentWidget(self.drop_page)
+        if guard.state == "judging":
             self.guide.set_step(2)
             self._paint("ok", "Provjeravam artikal…")
         elif guard.state == "waiting_take":
@@ -169,7 +184,56 @@ class DropScreen(QWidget):
             self._paint("wait", "Uzmite artikal iz korpe i izvucite ruku...")
         else:
             self.guide.set_step(2)
-            self._paint("ok", "Čekam da odložite artikal…")
+            self._paint("ok", self.scan_message or ("Ako kutija ima još deklaracija, skenirajte ih, pa je odložite."
+                                                    if self.product.weight_grams else "Čekam da odložite artikal…"))
+
+    def _show_labels_page(self) -> None:
+        self.alert.hide()
+        self.pages.setCurrentWidget(self.labels_page)
+        self.barcode_input.setFocus()
+        required = max(getattr(self.guard, "labels_required", 0), len(self.products))
+        self.labels_step.setText(f"Skenirajte deklaraciju {min(len(self.products) + 1, required)} od {required}")
+        self.labels_list.setText("\n".join(
+            f"✓ {index}. {product.name} · {format_quantity(product.weight)} · "
+            f"{format_amount(product.amount_minor(product.weight) / 100)} KM"
+            for index, product in enumerate(self.products, start=1)
+        ))
+        self.labels_message.setText(self.scan_message)
+
+    def _labels_page(self) -> QWidget:
+        page = QWidget()
+        column = QVBoxLayout(page)
+        column.setContentsMargins(px(40), px(12), px(40), px(12))
+        column.setSpacing(px(24))
+        title = QLabel("Kutija sa više deklaracija")
+        title.setStyleSheet(f"font-size: {px(60)}px; font-weight: 800;")
+        column.addWidget(title)
+        hint = QLabel("Svaka deklaracija se mora skenirati. Ne odlažite kutiju dok ne skenirate sve.")
+        hint.setWordWrap(True)
+        hint.setStyleSheet(f"font-size: {px(30)}px; font-weight: 600; color: {MUTED_TEXT};")
+        column.addWidget(hint)
+        column.addStretch()
+        scanner = QLabel()
+        scanner.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        scanner.setPixmap(icon(ICON_SCANNER, px(176), DARK_GREEN, 1.2))
+        column.addWidget(scanner)
+        self.labels_step = QLabel()
+        self.labels_step.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.labels_step.setStyleSheet(f"font-size: {px(56)}px; font-weight: 800; color: {DARK_GREEN};")
+        column.addWidget(self.labels_step)
+        self.labels_message = QLabel()
+        self.labels_message.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.labels_message.setWordWrap(True)
+        self.labels_message.setStyleSheet(f"font-size: {px(30)}px; font-weight: 700; color: #B8101F;")
+        column.addWidget(self.labels_message)
+        column.addStretch()
+        self.labels_list = QLabel()
+        self.labels_list.setWordWrap(True)
+        self.labels_list.setStyleSheet(
+            f"background: white; border-radius: {px(40)}px; padding: {px(28)}px; font-size: {px(32)}px; font-weight: 700;"
+        )
+        column.addWidget(self.labels_list)
+        return page
 
     def _paint(self, mode: str, message: str) -> None:
         colors = {
@@ -195,12 +259,6 @@ class DropScreen(QWidget):
         title = QLabel("Odložite artikal")
         title.setStyleSheet(f"font-size: {px(60)}px; font-weight: 800;")
         column.addWidget(title)
-        # Skener šalje znakove polju koje ima fokus; polje je nevidljivo, ali mora postojati da primi ostale deklaracije.
-        self.barcode_input = QLineEdit()
-        self.barcode_input.setFixedSize(1, 1)
-        self.barcode_input.setStyleSheet("background: transparent; border: none; color: transparent;")
-        self.barcode_input.returnPressed.connect(self._on_barcode_entered)
-        column.addWidget(self.barcode_input)
         self.guide = GuideSteps()
         self.guide.set_step(2)
         column.addWidget(self.guide)

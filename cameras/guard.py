@@ -19,7 +19,7 @@ from capture import CaptureSession, preview
 from samples import SampleStore
 from similarity import Signature, compare, get_embedder, match_threshold, method_name, signature
 import counter as counter_module
-from declarations import count_declarations
+from declarations import find_declarations, group_declarations, near
 import labels
 from counter import ZoneALedger, ZoneBLedger, counting_cameras, get_counter, unmatched
 from watcher import BasketTracker, ZoneWatcher, looks_like_item, main_box, removed_items, separate_items
@@ -64,6 +64,8 @@ CHECK_WAIT_SECONDS = 5.0
 LEARNED_MIN = 3
 PRODUCT_MIN_SCORE = float(os.environ.get("CAM_PRODUCT_THRESHOLD", "0.8"))
 RIVAL_MARGIN = float(os.environ.get("CAM_RIVAL_MARGIN", "0.02"))
+LABEL_LOOK_SECONDS = 0.5
+LABEL_MEMORY_SECONDS = 30.0
 PRIMARY_CAMERAS = {name.strip() for name in os.environ.get("CAM_PRIMARY", "A2,B2").split(",") if name.strip()}
 # Bočne kamere daju drugi ugao za prepoznavanje; ne broje artikle (iz ugla se artikli preklapaju).
 SIDE_CAMERAS = {name.strip() for name in os.environ.get("CAM_SIDE_CAMERAS", "A3,B3").split(",") if name.strip()}
@@ -188,6 +190,8 @@ class CheckoutGuard:
         self._weighed = False
         self._label_barcodes: list[str] = []
         self.labels_required = 0
+        self._label_seen: deque = deque()
+        self._label_now: dict[str, list] = {}
         self.outcome: Outcome | None = None
         self.debug: dict | None = None
         self.debug_number = 0
@@ -754,6 +758,7 @@ class CheckoutGuard:
             reader.start()
         self._running = True
         threading.Thread(target=self._loop, daemon=True).start()
+        threading.Thread(target=self._label_loop, daemon=True).start()
         if self.hands is not None:
             threading.Thread(target=self._hand_loop, daemon=True).start()
         if self.a_ledgers or self.b_ledgers:
@@ -904,6 +909,7 @@ class CheckoutGuard:
 
     def _finish(self, kind: str, verdict: str, message: str) -> None:
         self._outcome_number += 1
+        self._label_seen.clear()
         self.outcome = Outcome(self._outcome_number, kind, verdict, self.barcode, self.product_code, message)
         self.count_event(f"{kind}:{verdict}")
         if verdict not in SYSTEM_REJECTIONS:
@@ -920,20 +926,62 @@ class CheckoutGuard:
         """Kutija sa više deklaracija nije jedan artikal: ne poredi se sa slikama artikala i ne uči se."""
         return self._weighed and max(self.labels_required, len(self._label_barcodes)) > 1
 
+    @property
+    def labels_scanned(self) -> int:
+        return len(self._label_barcodes)
+
     def _start_labels(self, barcode: str, weighed: bool) -> None:
         self._weighed = weighed
         self._label_barcodes = [barcode] if weighed else []
         self.labels_required = 0
+        if weighed:
+            self._need_labels(self._labels_taken_from_a(time.monotonic()), "zona A")
 
-    def _count_labels(self, images: list) -> None:
-        if not self._weighed:
-            return
-        counted = max((count_declarations(image) for image in images), default=0)
+    def _need_labels(self, counted: int, source: str) -> None:
         if counted > self.labels_required:
-            self.log("deklaracije", f"na kutiji vidim {counted}, skenirano {len(self._label_barcodes)}")
+            self.log("deklaracije", f"{source}: vidim {counted}, skenirano {len(self._label_barcodes)}")
             self.labels_required = counted
         if self._mixed_box:
             self.product_code, self.product_name = None, "kutija sa više deklaracija"
+
+    def _label_loop(self) -> None:
+        cameras = [name for name in self.cameras_a if name in PRIMARY_CAMERAS] or list(self.cameras_a)
+        while self._running:
+            for name in cameras:
+                frame = self.latest(name)
+                if frame is not None:
+                    roi, _ = crop(frame, self.zones.get(name))
+                    self._note_labels(name, find_declarations(roi), time.monotonic())
+            time.sleep(LABEL_LOOK_SECONDS)
+
+    def _note_labels(self, camera: str, found: list, now: float) -> None:
+        with self._lock:
+            self._label_now[camera] = found
+            if found:
+                self._label_seen.append((now, camera, found))
+            while self._label_seen and now - self._label_seen[0][0] > LABEL_MEMORY_SECONDS:
+                self._label_seen.popleft()
+
+    def _labels_taken_from_a(self, now: float) -> int:
+        """Koliko deklaracija ima kutija: prvo kutija koja je upravo otišla iz zone A, inače najveća koja je još u zoni."""
+        gone, present = 0, 0
+        for moment, camera, found in self._label_seen:
+            if now - moment > LABEL_MEMORY_SECONDS:
+                continue
+            for group in group_declarations(found):
+                present = max(present, len(group))
+                if not any(near(label, self._label_now.get(camera, [])) for label in group):
+                    gone = max(gone, len(group))
+        return gone or present
+
+    def _labels_new_in_b(self, frames: dict) -> int:
+        counted = 0
+        for name, (frame, _) in frames.items():
+            roi, _ = crop(frame, self.zones.get(name))
+            before = find_declarations(self._b_before.get(name))
+            new = [label for label in find_declarations(roi) if not near(label, before)]
+            counted = max([counted] + [len(group) for group in group_declarations(new)])
+        return counted
 
     def _labels_message(self) -> str:
         return (f"Na kutiji je više deklaracija. Skenirano {len(self._label_barcodes)} od {self.labels_required}. "
@@ -943,7 +991,10 @@ class CheckoutGuard:
         if self.labels_missing:
             self._set("waiting_labels", self._labels_message())
         elif self.state == "waiting_labels":
-            self._set("waiting_place", "Odložite kutiju u zonu B.")
+            if self._pending_until is not None:
+                self._set("waiting_take", "Čekam da kamera vidi koji je artikal uzet iz zone A...")
+            else:
+                self._set("waiting_place", "Odložite kutiju u zonu B.")
 
     def _scan_label(self, barcode: str) -> bool:
         if barcode in self._label_barcodes:
@@ -954,10 +1005,11 @@ class CheckoutGuard:
         self.labels_required = max(self.labels_required, len(self._label_barcodes))
         self.barcode = barcode
         self.log("deklaracije", f"skenirana {barcode}, ukupno {len(self._label_barcodes)} od {self.labels_required}")
-        self._count_labels([])
+        self._need_labels(0, "skener")
         self._armed_at = time.monotonic()
-        if self.state == "waiting_labels" or self.labels_missing:
-            self._show_labels()
+        if self._pending_until is not None:
+            self._pending_until = self._armed_at + TAKEN_WAIT
+        self._show_labels()
         return True
 
     def scan(self, barcode: str, product_code: str | None, product_name: str | None, weighed: bool = False) -> bool:
@@ -1003,6 +1055,7 @@ class CheckoutGuard:
                 return True
             self._pending_until = now + TAKEN_WAIT
             self._set("waiting_take", "Čekam da kamera vidi koji je artikal uzet iz zone A...")
+            self._show_labels()
             self._dump("scan-waiting-take")
             return True
 
@@ -1076,7 +1129,6 @@ class CheckoutGuard:
         self._scan_takes = list(takes)
         self.last_taken_index = 0
         items = [take[0] for take in takes]
-        self._count_labels(items)
         self._taken_items = list(items)
         self._taken_befores = [take[1] for take in takes]
         self._taken_at = takes[-1][2] if takes else time.monotonic()
@@ -1678,8 +1730,6 @@ class CheckoutGuard:
             self._scan_takes.append(take)
             self._taken_items.append(event.item)
             self._taken_befores.append(before)
-            self._count_labels([event.item])
-            self._show_labels()
             self._warm_taken([event.item])
             self._takes.extend(extras)
             return
@@ -1688,6 +1738,9 @@ class CheckoutGuard:
             self._takes.extend(extras)
             if sync:
                 self._force_takes(now, source=camera, reason=f"{camera} je vidjela uzimanje")
+            return
+        if self._weighed and self.zone_b_armed:
+            self.log(f"zona-{camera}", "kutija se pomjera dok se skeniraju deklaracije, ne računam kao novi artikal")
             return
         if self.zone_b_armed or self._judging:
             self._takes.extend([take] + extras)
@@ -1798,7 +1851,8 @@ class CheckoutGuard:
                     items.append((name, item_from(frame, offset, box), watcher.change_ratio))
             watcher.disarm()
         crops = [item for _, item, _ in items]
-        self._count_labels(crops)
+        if self._weighed:
+            self._need_labels(self._labels_new_in_b(frames), "zona B")
         if self.labels_missing:
             # Kutija je odložena prije nego su skenirane sve deklaracije: ne provjerava se dok se ne skeniraju.
             for watcher in self.watchers.values():
@@ -1859,6 +1913,9 @@ class CheckoutGuard:
             if large < placed_count:
                 self.log("zona-B", f"male promjene uz artikal ne računam kao drugi artikal (YOLOX vidi {yolo_new} novi)")
                 placed_count = large
+        if self._weighed:
+            # Deklaracije na prozirnoj kutiji izgledaju kao odvojeni predmeti; o više artikala odlučuje samo YOLOX.
+            placed_count = 1
         placed_count = max(placed_count, yolo_new or 0)
         reading = (self._label_reader.submit(labels.read_crops, [item for _, item, _ in items])
                    if placed_count <= 1 and not self._mixed_box else None)
@@ -1941,7 +1998,7 @@ class CheckoutGuard:
             self._watch_zone_a()
             self._check_zone_a(time.monotonic())
             self.zone_a_ms = self.zone_a_ms * 0.9 + (time.monotonic() - started) * 100
-            if self._pending_until is not None and time.monotonic() > self._pending_until:
+            if self._pending_until is not None and time.monotonic() > self._pending_until and not self.labels_missing:
                 self._pending_until = None
                 self._finish("rejected", "not_taken", "Kamera nije vidjela da je artikal uzet iz zone A. Vratite ga i pokušajte ponovo.")
             started = time.monotonic()

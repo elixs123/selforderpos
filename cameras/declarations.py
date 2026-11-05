@@ -9,6 +9,7 @@ FIELD_DISTANCE = (0.35, 1.3)
 FIELD_SIDEWAYS = 0.6
 MAX_PRINT_SATURATION = 70
 MIN_PRINT_CONTRAST = 25
+GROUP_DISTANCE = 2.5
 
 
 def _components(mask: np.ndarray, min_area: float) -> list[tuple[np.ndarray, int]]:
@@ -17,10 +18,10 @@ def _components(mask: np.ndarray, min_area: float) -> list[tuple[np.ndarray, int
             if stats[index, cv2.CC_STAT_AREA] >= min_area]
 
 
-def count_declarations(image: np.ndarray | None) -> int:
-    """Broj deklaracija sa vage na slici: crvena traka uz rub, bijelo polje sa barkodom pa zeleno polje sa znakom."""
+def find_declarations(image: np.ndarray | None) -> list[tuple[float, float, float]]:
+    """Deklaracije sa vage na slici (x, y, dužina): crvena traka uz rub, bijelo polje sa barkodom pa zeleno polje sa znakom."""
     if image is None or not image.size:
-        return 0
+        return []
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     kernel = np.ones((3, 3), np.uint8)
     red = cv2.inRange(hsv, (0, 110, 70), (10, 255, 255)) | cv2.inRange(hsv, (170, 110, 70), (180, 255, 255))
@@ -31,7 +32,7 @@ def count_declarations(image: np.ndarray | None) -> int:
     for field, area in _components(green, MIN_STRIP_AREA * MIN_FIELD_SHARE):
         ys, xs = np.nonzero(field)
         fields.append((np.array([xs.mean(), ys.mean()]), area))
-    found = 0
+    found = []
     for strip, area in _components(red, MIN_STRIP_AREA):
         ys, xs = np.nonzero(strip)
         (center_x, center_y), (first, second), angle = cv2.minAreaRect(np.column_stack((xs, ys)).astype(np.float32))
@@ -53,6 +54,25 @@ def count_declarations(image: np.ndarray | None) -> int:
             window = hsv[max(0, y - half):y + half + 1, max(0, x - half):x + half + 1]
             # Bijelo polje sa barkodom i tekstom: bez boje, a jak kontrast (sto i kutija su jednolični).
             if window.size and window[..., 1].mean() <= MAX_PRINT_SATURATION and window[..., 2].std() >= MIN_PRINT_CONTRAST:
-                found += 1
+                found.append((float(center_x), float(center_y), float(length)))
                 break
     return found
+
+
+def count_declarations(image: np.ndarray | None) -> int:
+    return len(find_declarations(image))
+
+
+def near(label: tuple[float, float, float], others: list[tuple[float, float, float]]) -> bool:
+    return any(np.hypot(label[0] - other[0], label[1] - other[1]) < max(label[2], other[2]) for other in others)
+
+
+def group_declarations(found: list[tuple[float, float, float]]) -> list[list[tuple[float, float, float]]]:
+    """Deklaracije koje su blizu jedna drugoj su na istoj kutiji."""
+    groups: list[list[tuple[float, float, float]]] = []
+    for label in found:
+        joined = [group for group in groups if any(
+            np.hypot(label[0] - other[0], label[1] - other[1]) <= GROUP_DISTANCE * max(label[2], other[2]) for other in group)]
+        groups = [group for group in groups if group not in joined]
+        groups.append([label] + [other for group in joined for other in group])
+    return groups

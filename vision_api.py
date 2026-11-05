@@ -52,6 +52,7 @@ def snapshot(guard, boot: str) -> dict:
         "counter_problem": str(getattr(guard, "counter_problem", "")),
         "tamper": {str(name): str(problem) for name, problem in dict(getattr(guard, "tamper_problems", {})).items()},
         "checking": bool(getattr(guard, "checking", False)),
+        "labels_required": int(getattr(guard, "labels_required", 0)),
         "zone_a_reason": guard.zone_a_waiting_reason() if hasattr(guard, "zone_a_waiting_reason") else "-",
     }
 

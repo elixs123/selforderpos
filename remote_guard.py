@@ -48,6 +48,7 @@ class RemoteGuard:
         self.alert = False
         self.held_message = ""
         self.checking = False
+        self.labels_required = 0
         self.outcome: Outcome | None = None
         self.online = False
         self.camera_statuses: dict[str, str] = {}
@@ -252,6 +253,7 @@ class RemoteGuard:
             self.alert = bool(data.get("alert"))
             self.held_message = "" if time.monotonic() < self._held_quiet_until else str(data.get("held") or "")
             self.checking = bool(data.get("checking"))
+            self.labels_required = int(data.get("labels_required") or 0)
             self.unscanned_guess = str(data.get("guess") or "")
             self.counter_problem = str(data.get("counter_problem") or "")
             self.tamper_problems = {str(name): str(problem) for name, problem in (data.get("tamper") or {}).items()}

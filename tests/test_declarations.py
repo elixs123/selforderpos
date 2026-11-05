@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "cameras"))
 
 from PySide6.QtWidgets import QApplication
 
-from declarations import count_declarations
+from declarations import count_declarations, find_declarations, group_declarations
 from test_guard_ready import FakeReader, make_guard
 
 APP = QApplication.instance() or QApplication([])
@@ -76,22 +76,57 @@ def armed_guard(monkeypatch, tmp_path, labels: int):
     readers = {"A": FakeReader(), "B": FakeReader()}
     guard = make_guard(monkeypatch, tmp_path, readers)
     guard.watchers = {name: ArmedWatcher() for name in guard.watchers} or {"B": ArmedWatcher()}
+    guard.zones = {}
+    now = time.monotonic()
+    guard._note_labels("A", find_declarations(box_with_labels(labels)), now - 2)
+    guard._note_labels("A", [], now - 1)  # kutija je uzeta iz zone
+    guard.barcode, guard.product_code, guard.product_name = "2890619002483", "097992", "DINJA"
     guard._start_labels("2890619002483", True)
-    guard.product_code, guard.product_name = "097992", "DINJA"
-    guard._wait_for_zone_b([(box_with_labels(labels), None, time.monotonic(), "A")])
+    guard._wait_for_zone_b([(box_with_labels(labels), None, now, "A")])
     return guard
 
 
 def test_all_labels_must_be_scanned(monkeypatch, tmp_path):
     guard = armed_guard(monkeypatch, tmp_path, 2)
     assert guard.state == "waiting_labels"
+    assert guard.labels_required == 2
     assert guard.labels_missing == 1
     assert guard.product_code is None  # miješana kutija se ne poredi sa slikama artikla
     assert guard.scan("2890619002483", "097992", "DINJA", True) is False  # ista deklaracija
     assert guard.labels_missing == 1
-    assert guard.scan("2097999002223", "097999", "ANANAS", True) is True
+    assert guard.scan("2890626002223", "097999", "ANANAS", True) is True
     assert guard.labels_missing == 0
     assert guard.state == "waiting_place"
+
+
+def test_box_still_in_zone_a_counts_its_labels(monkeypatch, tmp_path):
+    readers = {"A": FakeReader(), "B": FakeReader()}
+    guard = make_guard(monkeypatch, tmp_path, readers)
+    now = time.monotonic()
+    guard._note_labels("A", find_declarations(box_with_labels(2)), now)
+    assert guard._labels_taken_from_a(now) == 2
+
+
+def test_only_the_box_that_left_zone_a_counts(monkeypatch, tmp_path):
+    readers = {"A": FakeReader(), "B": FakeReader()}
+    guard = make_guard(monkeypatch, tmp_path, readers)
+    now = time.monotonic()
+    left = (100.0, 100.0, 100.0)
+    stays = [(1000.0, 100.0, 100.0), (1000.0, 300.0, 100.0)]
+    guard._note_labels("A", [left] + stays, now - 2)
+    guard._note_labels("A", stays, now - 1)
+    assert guard._labels_taken_from_a(now) == 1
+
+
+def test_labels_of_previous_box_are_forgotten(monkeypatch, tmp_path):
+    guard = armed_guard(monkeypatch, tmp_path, 2)
+    guard._finish("accepted", "ok", "Kutija odgovara.")
+    assert guard._labels_taken_from_a(time.monotonic()) == 0
+
+
+def test_group_declarations_splits_far_boxes():
+    groups = group_declarations([(0.0, 0.0, 100.0), (200.0, 0.0, 100.0), (2000.0, 0.0, 100.0)])
+    assert sorted(len(group) for group in groups) == [1, 2]
 
 
 def test_zone_b_finds_label_that_zone_a_did_not_see(monkeypatch, tmp_path):
@@ -117,6 +152,7 @@ def test_ordinary_scan_does_not_count_labels(monkeypatch, tmp_path):
     readers = {"A": FakeReader(), "B": FakeReader()}
     guard = make_guard(monkeypatch, tmp_path, readers)
     guard.watchers = {name: ArmedWatcher() for name in guard.watchers} or {"B": ArmedWatcher()}
+    guard._note_labels("A", find_declarations(box_with_labels(2)), time.monotonic())
     guard._start_labels("1001", False)
     guard.product_code = "A1"
     guard._wait_for_zone_b([(box_with_labels(2), None, time.monotonic(), "A")])
@@ -129,6 +165,7 @@ class FakeGuard:
     message = "Na kutiji je više deklaracija. Skenirano 1 od 2. Skenirajte i ostale."
     outcome = None
     held_message = ""
+    labels_required = 2
 
     def __init__(self):
         self.scans = []
@@ -153,6 +190,8 @@ def test_drop_screen_collects_all_labels(monkeypatch):
     screen.accepted.connect(accepted.append)
     guard = FakeGuard()
     screen.begin(melon, guard, 0)
+    assert screen.pages.currentWidget() is screen.labels_page
+    assert screen.labels_step.text() == "Skenirajte deklaraciju 2 od 2"
     for barcode in ("1001", pineapple.barcode):
         screen.barcode_input.setText(barcode)
         screen._on_barcode_entered()
