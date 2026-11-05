@@ -1,3 +1,5 @@
+# Server kamera na Linuxu sa NVIDIA grafičkom: ne pokretati pip install -r direktno, nego ./install_server.sh
+# (ovdje je obični onnxruntime za kasu i Mac; skripta ga zamijeni sa onnxruntime-gpu).
 PySide6==6.12.0
 pytest
 pyodbc

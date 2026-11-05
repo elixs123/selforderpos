@@ -76,9 +76,9 @@ YOLOX (brojanje), model prepoznavanja (CLIP) i čitanje etikete (RapidOCR) tada 
 Ruka (MediaPipe) ostaje na procesoru, mala je i brza.
 
 1. Najnoviji NVIDIA drajver. RTX 50xx traži CUDA 12.8 ili noviju, pa uzeti najnoviji `onnxruntime-gpu`.
-2. `pip install -r requirements.txt`, pa obični onnxruntime zamijeniti GPU verzijom (isti modul, ne smiju oba):
-   `pip uninstall -y onnxruntime` i `pip install "onnxruntime-gpu[cuda,cudnn]"`
-   (CUDA i cuDNN dođu kao pip paketi, ne treba ih posebno instalirati).
+2. `./install_server.sh`: napravi `.venv`, instalira `requirements.txt` i obični onnxruntime zamijeni GPU verzijom
+   (isti modul, ne smiju oba; `rapidocr-onnxruntime` uvijek povuče obični, pa ga skripta skloni). CUDA i cuDNN dođu
+   kao pip paketi. Na kraju provjeri da je `CUDAExecutionProvider` dostupan. Pokretati i poslije svake promjene paketa.
 3. Pri pokretanju u logu mora pisati `YOLOX se izvršava na: CUDAExecutionProvider, ...`. Ako piše samo
    `CPUExecutionProvider`, CUDA nije učitana. Isto za `Model prepoznavanja` i `Čitanje etikete (Det/Cls/Rec)`.
    Provjera bez pokretanja kase: `python -c "import onnxruntime as o; o.preload_dlls(); print(o.get_available_providers())"`
