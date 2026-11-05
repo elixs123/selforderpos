@@ -43,10 +43,12 @@ def test_alarm_writes_clip_with_frames_before_and_after(tmp_path):
 
 def test_old_clips_are_deleted(tmp_path):
     (tmp_path / "2026-01-01").mkdir()
-    (tmp_path / "2026-10-20").mkdir()
+    (tmp_path / "2026-10-23").mkdir()
+    (tmp_path / "2026-10-24").mkdir()
     ClipRecorder(tmp_path).cleanup(datetime(2026, 10, 26))
     assert not (tmp_path / "2026-01-01").exists()
-    assert (tmp_path / "2026-10-20").exists()
+    assert not (tmp_path / "2026-10-23").exists()
+    assert (tmp_path / "2026-10-24").exists()
 
 
 def test_safe_name():

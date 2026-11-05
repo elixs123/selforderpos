@@ -70,7 +70,7 @@ LABELS = {
     "yolox_enabled": "Brojanje artikala (YOLOX)",
     "lock_on_moved_camera": "Zaključaj kasu kad se kamera pomjeri",
     "event_log": "Zapisuj događaje kamera u data/logs (za traženje grešaka)",
-    "alarm_clips": "Snimci kod alarma (8 s prije i 5 s poslije, čuvaju se 30 dana)",
+    "alarm_clips": "Snimci kod alarma (8 s prije i 5 s poslije, čuvaju se 2 dana)",
     "customer_monitor": "Ekran 'Snimate se' prema kupcu (drugi monitor)",
     "customer_monitor_camera": "Kamera za ekran prema kupcu",
     "allow_without_cameras": "Dozvoli rad kase kad kamere ne rade (bez provjere kamerama)",

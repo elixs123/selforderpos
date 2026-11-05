@@ -14,7 +14,7 @@ FPS = 2.0
 BEFORE_SECONDS = 8.0
 AFTER_SECONDS = 5.0
 TILE = (480, 270)
-KEEP_DAYS = 30
+KEEP_DAYS = 2
 REPEAT_SECONDS = 60.0
 CONVERT_SECONDS = 60
 # None dok se ne proba; OpenCV sa pip-a na Linuxu nema H.264 enkoder, pa se avc1 proba samo jednom (inače greška u logu uz svaki alarm).

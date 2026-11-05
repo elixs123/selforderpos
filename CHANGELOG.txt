@@ -1,5 +1,8 @@
 IZMJENE - samouslužna kasa
 
+2026-11-05
+- Snimci alarma (data/samples/clips) čuvaju se 2 dana umjesto 30.
+
 2026-11-04
 - Broj računa: godina-vrsta dokumenta-brojač, npr. 26-3257-000001 (vrsta dokumenta = acDocType u Pantheonu, RECEIPT_DOC_TYPE u .env). Brojač kreće od 1 svake godine.
 - Slanje računa na glavni server (Pantheon): čim se račun fiskalizuje, kasa ga u pozadini upiše u tHE_Move (zaglavlje, BF broj u acFiskPrintNo), tHE_MoveItem (stavke, jedinica mjere i PDV iz Pantheona) i tHE_MoveCash (način plaćanja K/Q), sve u jednoj transakciji. Bez interneta račun ostaje lokalno i šalje se kad server bude dostupan (pokušava svake minute). Stanje slanja se pamti po računu (synced, synced_at, sync_message) i vidi se u Postavkama, u pregledu računa. Račun koji je već na serveru se ne šalje ponovo.
