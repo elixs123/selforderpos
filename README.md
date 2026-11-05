@@ -86,7 +86,8 @@ Ruka (MediaPipe) ostaje na procesoru, mala je i brza.
 4. `.env`: `CAM_GPU=0` vraća sve na procesor. `CAM_TENSORRT=1` uključuje TensorRT (još brže, FP16), ali traži
    instaliran TensorRT, a prvo pokretanje traje par minuta dok se modeli pripreme (spremaju se u `cameras/models/tensorrt`).
    Čitanje etikete ide uvijek bez TensorRT (slike su svaka druge veličine).
-5. `.env` se ne kopira sa Maca: tamo je `CAM_GPU=0`, a na serveru to mora biti izbrisano (ili `CAM_GPU=1`).
+5. `sudo apt install ffmpeg`: snimci alarma se pretvaraju u H.264 (OpenCV na Linuxu ga nema), inače se na Macu vide zeleno.
+6. `.env` se ne kopira sa Maca: tamo je `CAM_GPU=0`, a na serveru to mora biti izbrisano (ili `CAM_GPU=1`).
 
 ### Arhiva izgleda artikla
 

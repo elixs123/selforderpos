@@ -62,3 +62,32 @@ def test_same_alarm_is_recorded_once_per_minute(tmp_path):
     recorder.record("Niste sve platili", now=30.0)
     recorder.record("kamera C2 pomjerena", now=REPEAT_SECONDS + 1)
     assert [reason for _, _, reason in recorder._pending] == ["kamera C2 pomjerena", "Niste sve platili", "kamera C2 pomjerena"]
+
+
+def test_avc1_is_tried_once_then_mp4v(tmp_path, monkeypatch):
+    import clips
+
+    tried = []
+
+    class Writer:
+        def __init__(self, path, fourcc, fps, size):
+            tried.append(fourcc)
+
+        def isOpened(self):
+            return tried[-1] != clips.cv2.VideoWriter_fourcc(*"avc1")
+
+    monkeypatch.setattr(clips, "_avc1_works", None)
+    monkeypatch.setattr(clips.cv2, "VideoWriter", Writer)
+    assert clips.open_writer(tmp_path / "a.mp4", (10, 10))[1] is False
+    assert clips.open_writer(tmp_path / "b.mp4", (10, 10))[1] is False
+    assert tried.count(clips.cv2.VideoWriter_fourcc(*"avc1")) == 1
+
+
+def test_without_ffmpeg_clip_stays(tmp_path, monkeypatch):
+    import clips
+
+    path = tmp_path / "a.mp4"
+    path.write_bytes(b"mp4v")
+    monkeypatch.setattr(clips.shutil, "which", lambda name: None)
+    assert clips.to_h264(path) is False
+    assert path.read_bytes() == b"mp4v"

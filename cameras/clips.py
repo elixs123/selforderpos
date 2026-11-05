@@ -1,5 +1,6 @@
 import re
 import shutil
+import subprocess
 import threading
 import time
 from collections import deque
@@ -15,6 +16,40 @@ AFTER_SECONDS = 5.0
 TILE = (480, 270)
 KEEP_DAYS = 30
 REPEAT_SECONDS = 60.0
+CONVERT_SECONDS = 60
+# None dok se ne proba; OpenCV sa pip-a na Linuxu nema H.264 enkoder, pa se avc1 proba samo jednom (inače greška u logu uz svaki alarm).
+_avc1_works: bool | None = None
+
+
+def open_writer(path: Path, size: tuple[int, int]) -> tuple[cv2.VideoWriter, bool]:
+    """Video za snimak alarma; drugo je True ako je već H.264."""
+    global _avc1_works
+    if _avc1_works is not False:
+        # H.264 (avc1) otvara i QuickTime na Macu; mp4v tamo prikaže zelenu sliku, ostaje samo kao rezerva.
+        writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"avc1"), FPS, size)
+        _avc1_works = writer.isOpened()
+        if _avc1_works:
+            return writer, True
+    return cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), FPS, size), False
+
+
+def to_h264(path: Path) -> bool:
+    """mp4v snimak pretvori u H.264 sistemskim ffmpeg-om (na Ubuntu: sudo apt install ffmpeg); bez ffmpeg-a ostaje mp4v."""
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        return False
+    converted = path.with_name(path.stem + "-h264.mp4")
+    try:
+        result = subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-i", str(path), "-c:v", "libx264",
+                                 "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(converted)],
+                                capture_output=True, timeout=CONVERT_SECONDS)
+    except (OSError, subprocess.TimeoutExpired):
+        result = None
+    if result is None or result.returncode != 0 or not converted.exists():
+        converted.unlink(missing_ok=True)
+        return False
+    converted.replace(path)
+    return True
 
 
 def mosaic(frames: dict[str, np.ndarray | None], when: datetime | None = None) -> np.ndarray:
@@ -89,13 +124,12 @@ class ClipRecorder:
         folder.mkdir(parents=True, exist_ok=True)
         path = folder / f"{now:%H%M%S}-{safe_name(reason)}.mp4"
         height, width = frames[0].shape[:2]
-        # H.264 (avc1) otvara i QuickTime na Macu; mp4v tamo prikaže zelenu sliku, ostaje samo kao rezerva.
-        writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"avc1"), FPS, (width, height))
-        if not writer.isOpened():
-            writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), FPS, (width, height))
+        writer, h264 = open_writer(path, (width, height))
         for frame in frames:
             writer.write(frame)
         writer.release()
+        if not h264:
+            to_h264(path)
         self.saved.append(path)
         print(f"Snimak alarma: {path}")
         self.cleanup(now)
