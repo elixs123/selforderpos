@@ -11,7 +11,8 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS articles (
     code TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    price REAL NOT NULL
+    price REAL NOT NULL,
+    category TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS barcodes (
     barcode TEXT PRIMARY KEY,
@@ -27,7 +28,7 @@ CREATE TABLE IF NOT EXISTS article_sync (
 """
 
 SERVER_QUERY = """
-SELECT i.acIdent, b.acCode, i.acName, i.anSalePrice
+SELECT i.acIdent, b.acCode, i.acName, i.anSalePrice, i.acClassif2
 FROM tHE_SetItem i
 LEFT JOIN tHE_SetItemExtItemSubj b ON b.acIdent = i.acIdent
 """
@@ -50,6 +51,9 @@ class ArticleStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self._connect()) as connection, connection:
             connection.executescript(SCHEMA)
+            columns = [row["name"] for row in connection.execute("PRAGMA table_info(articles)")]
+            if "category" not in columns:
+                connection.execute("ALTER TABLE articles ADD COLUMN category TEXT NOT NULL DEFAULT ''")
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=10)
@@ -61,16 +65,16 @@ class ArticleStore:
 
         with closing(self._connect()) as connection:
             row = connection.execute(
-                "SELECT a.code, b.barcode, a.name, a.price FROM barcodes b JOIN articles a ON a.code = b.code WHERE b.barcode = ?",
+                "SELECT a.code, b.barcode, a.name, a.price, a.category FROM barcodes b JOIN articles a ON a.code = b.code WHERE b.barcode = ?",
                 (barcode,),
             ).fetchone()
             if row is None:
                 row = connection.execute(
-                    "SELECT code, code AS barcode, name, price FROM articles WHERE code = ?", (barcode,)
+                    "SELECT code, code AS barcode, name, price, category FROM articles WHERE code = ?", (barcode,)
                 ).fetchone()
         if row is None:
             return None
-        return Product(row["code"], row["barcode"], row["name"], row["price"])
+        return Product(row["code"], row["barcode"], row["name"], row["price"], category=row["category"])
 
     def names(self) -> list[tuple[str, str]]:
         """(šifra, naziv) svih artikala; kamere njima provjeravaju šta piše na etiketi."""
@@ -87,14 +91,16 @@ class ArticleStore:
         return dict(row) if row else None
 
     def replace_all(self, rows) -> tuple[int, int]:
-        """rows: (code, barcode ili None, name, price). Zamijeni sve artikle u jednoj transakciji."""
-        articles: dict[str, tuple[str, float]] = {}
+        from catalog import clean_category
+
+        """rows: (code, barcode ili None, name, price, category). Zamijeni sve artikle u jednoj transakciji."""
+        articles: dict[str, tuple[str, float, str]] = {}
         barcodes: dict[str, str] = {}
-        for code, barcode, name, price in rows:
+        for code, barcode, name, price, category in rows:
             if code is None or price is None:
                 continue
             code = str(code).strip()
-            articles[code] = ((name or "").strip(), float(price))
+            articles[code] = ((name or "").strip(), float(price), clean_category(category))
             if barcode is not None and str(barcode).strip():
                 barcodes[str(barcode).strip()] = code
         if not articles:
@@ -103,8 +109,8 @@ class ArticleStore:
             connection.execute("DELETE FROM barcodes")
             connection.execute("DELETE FROM articles")
             connection.executemany(
-                "INSERT INTO articles (code, name, price) VALUES (?, ?, ?)",
-                [(code, name, price) for code, (name, price) in articles.items()],
+                "INSERT INTO articles (code, name, price, category) VALUES (?, ?, ?, ?)",
+                [(code, name, price, category) for code, (name, price, category) in articles.items()],
             )
             connection.executemany("INSERT INTO barcodes (barcode, code) VALUES (?, ?)", list(barcodes.items()))
         return len(articles), len(barcodes)

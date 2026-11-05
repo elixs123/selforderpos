@@ -5,6 +5,15 @@ from decimal import ROUND_HALF_UP, Decimal
 from database import DatabaseError, connect
 
 
+# Podgrupe (acClassif2) za koje kasa prikazuje upozorenje 18+: vina crna, vina bijela, žestoka pića, pivo.
+AGE_RESTRICTED_CATEGORIES = frozenset({"PEN.25.121.", "PEN.25.47.", "PEN.25.46.", "PEN.25.34."})
+
+
+def clean_category(value) -> str:
+    """U bazi ima kodova pisanih i kao 'Pen.25.11.'."""
+    return str(value or "").strip().upper()
+
+
 @dataclass(frozen=True)
 class Product:
     code: str
@@ -12,6 +21,11 @@ class Product:
     name: str
     price: float
     weight_grams: int = 0
+    category: str = ""
+
+    @property
+    def age_restricted(self) -> bool:
+        return self.category in AGE_RESTRICTED_CATEGORIES
 
     @property
     def price_minor(self) -> int:
@@ -28,7 +42,7 @@ class Product:
 
 
 QUERY = """
-SELECT i.acIdent, b.acCode, i.acName, i.anSalePrice
+SELECT i.acIdent, b.acCode, i.acName, i.anSalePrice, i.acClassif2
 FROM tHE_SetItem i
 JOIN tHE_SetItemExtItemSubj b ON b.acIdent = i.acIdent
 WHERE b.acCode = ? or i.acIdent = ?
@@ -86,7 +100,7 @@ def find_on_server(barcode: str) -> Product | None:
         row = connection.execute(QUERY, (barcode, barcode)).fetchone()
     if row is None:
         return None
-    code, barcode, name, price = row
+    code, barcode, name, price, category = row
     if price is None:
         return None
-    return Product(code, barcode, name, float(price))
+    return Product(code, barcode, name, float(price), category=clean_category(category))

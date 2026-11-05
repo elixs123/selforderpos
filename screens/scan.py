@@ -61,6 +61,7 @@ class ScanScreen(QWidget):
     staff_requested = Signal()
     place_requested = Signal(object, int)
     quit_requested = Signal()
+    cart_changed = Signal()
 
     def __init__(self, cart: Cart) -> None:
         super().__init__()
@@ -451,3 +452,4 @@ class ScanScreen(QWidget):
         has_items = data["item_count"] > 0
         self.pay_button.setEnabled(has_items and self._pay_allowed())
         self.clear_button.setEnabled(has_items)
+        self.cart_changed.emit()

@@ -33,6 +33,7 @@ from PySide6.QtWidgets import QApplication, QInputDialog, QLineEdit, QMainWindow
 import catalog
 import database
 import gate_api
+import printec
 from articles import ArticleStore
 from camera_check import cameras_problem
 from cart import Cart
@@ -42,6 +43,7 @@ from receipts import ReceiptStore
 from receipt_sync import ReceiptSync
 from screens.cameras_down import CamerasDownScreen
 from screens.customer_monitor import CustomerMonitor
+from screens.age_warning import AgeWarning
 from screens.drop import DropScreen
 from screens.idle import ActivityFilter, IdleOverlay
 from screens.payment import PaymentScreen
@@ -72,6 +74,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Penny samouslužna kasa")
         self.settings_path = data_folder() / "settings.json"
+        printec.use_log_folder(data_folder() / "logs")
         self.settings = load_settings(self.settings_path)
         if not self.settings.fullscreen:
             self.setFixedSize(px(820), px(1360))
@@ -146,6 +149,10 @@ class MainWindow(QMainWindow):
         self.last_activity = time.monotonic()
         self.activity_filter = ActivityFilter(self.mark_activity)
         QApplication.instance().installEventFilter(self.activity_filter)
+        self.age_warning = AgeWarning(self)
+        self.scanned_age_restricted = False
+        self.screens.currentChanged.connect(self.update_age_warning)
+        self.scan.cart_changed.connect(self.update_age_warning)
         self.idle_overlay = IdleOverlay(self)
         self.idle_overlay.stay.connect(self.mark_activity)
         self.unpaid.pay_requested.connect(self.pay_for_unpaid)
@@ -369,7 +376,14 @@ class MainWindow(QMainWindow):
         self.diagnostics.show()
         self.diagnostics.raise_()
 
+    def update_age_warning(self) -> None:
+        """Upozorenje 18+ ne blokira ništa; stoji od skeniranja alkohola dok je alkohol u korpi."""
+        # Na izboru plaćanja dugme 'Natrag u korpu' zauzima to mjesto u gornjoj traci.
+        shopping = self.screens.currentWidget() in (self.scan, self.drop, self.card, self.qr)
+        self.age_warning.set_visible_on_top(shopping and (self.scanned_age_restricted or self.cart.has_age_restricted))
+
     def start_shopping(self) -> None:
+        self.scanned_age_restricted = False
         if self.exit_watch is not None and not self.exit_watch["blocked"]:
             self.exit_watch = None
         if self.exit_watch is None and self.guard is not None and hasattr(self.guard, "new_sale"):
@@ -380,15 +394,18 @@ class MainWindow(QMainWindow):
         self.scan.begin()
 
     def show_drop(self, product, seen_outcome: int) -> None:
+        self.scanned_age_restricted = product.age_restricted
         self.screens.setCurrentWidget(self.drop)
         self.drop.begin(product, self.guard, seen_outcome)
 
     def item_accepted(self, product) -> None:
+        self.scanned_age_restricted = False
         self.screens.setCurrentWidget(self.scan)
         self.scan.add_accepted(product)
         self.scan.resume()
 
     def item_rejected(self, message: str) -> None:
+        self.scanned_age_restricted = False
         self.screens.setCurrentWidget(self.scan)
         self.scan.resume()
         self.scan.show_rejected(message)
@@ -428,6 +445,8 @@ class MainWindow(QMainWindow):
 
     def show_receipt(self, payment_method: str, payment: dict) -> None:
         number = self.store.save(self.cart, payment_method, payment)
+        printec.log_event(f"RACUN broj={number} nacin={payment_method} invoice={payment.get('invoice_id', 'bez terminala')} "
+                          f"iznos={self.cart.total_minor} odobrenje={payment.get('approval_code', '-')}")
         self.exit_watch = {"number": number, "since": time.monotonic(), "blocked": False, "guess": ""}
         self.screens.setCurrentWidget(self.receipt)
         fiscal_job = self.fiscal_job(number, payment_method)

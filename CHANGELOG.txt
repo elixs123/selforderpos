@@ -1,6 +1,9 @@
 IZMJENE - samouslužna kasa
 
 2026-11-05
+- Upozorenje 18+: kad se skenira artikal iz podgrupa PEN.25.121. (vina crna), PEN.25.47. (vina bijela), PEN.25.46. (žestoka pića) ili PEN.25.34. (pivo), u gornjoj traci ekrana, pored dugmeta 'Pozovi osoblje', stoji 'Alkoholni artikli, morate imati 18+ godina' dok je takav artikal u korpi (osim na izboru plaćanja). Ništa ne blokira. Artikli sada pamte podgrupu (acClassif2), pa je za nju potrebna nova sinhronizacija artikala.
+- Log terminala: odvojena datoteka logs/terminal-GGGGMMDD.log u folderu podataka kase. Bilježi svaki zahtjev terminalu, cijeli odgovor (odobreno, odbijeno, greška; broj kartice samo sa zadnje 4 cifre) i svaki napravljen račun, pa se vidi da li je račun imao odobrenje terminala.
+- Kartica: HTTP 200 više nije dovoljan za račun; odgovor mora imati status 'ok'. Nejasan odgovor ide na provjeru osoblja, bez računa i bez ponovne naplate.
 - Kamera A: odsjaj staklenih vrata na stolu isključen je iz zone A (cameras/zones.json); promjena slike na vratima javljala je lažno 'Artikal uzet iz zone A'.
 - Kutija sa više deklaracija: kamera broji deklaracije na cijeloj slici zone A (dok kutija stoji u zoni) i na novim deklaracijama u zoni B (cameras/declarations.py), a računa se samo kad je skeniran barkod sa vage. Poseban ekran traži 'Skenirajte deklaraciju 2 od 2' (ista se ne prima dvaput), kutija se u zoni B ne provjerava dok nisu skenirane sve, a svaka deklaracija je stavka na računu. Takva kutija se poredi samo sa slikom iz zone A, bez učenja i bez čitanja etikete. Osoblje može odobriti.
 - Deklaracije sa vage (npr. gastro): barkod od 13 cifara koji počinje sa 28 čita se kao 7 cifara artikla + masa u gramima + kontrolna cifra. Iznos je masa x cijena iz Pantheona, stavka se vodi u kg i tako ide na fiskalni račun (JM kg). Više deklaracija istog artikla sabira masu u jednu stavku. Puni barkod iz baze ima prednost.

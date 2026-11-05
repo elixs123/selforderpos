@@ -1,3 +1,5 @@
+import sqlite3
+
 import pytest
 
 import catalog
@@ -6,10 +8,10 @@ from catalog import Product
 from database import DatabaseError
 
 SERVER_ROWS = [
-    ("A1", "1001", "Mlijeko 1 l", 1.79),
-    ("A1", "1002", "Mlijeko 1 l", 1.79),
-    ("A2", None, "Keks petit beurre 200 g", 2.49),
-    ("A3", "1003", "Bez cijene", None),
+    ("A1", "1001", "Mlijeko 1 l", 1.79, ""),
+    ("A1", "1002", "Mlijeko 1 l", 1.79, ""),
+    ("A2", None, "Keks petit beurre 200 g", 2.49, ""),
+    ("A3", "1003", "Bez cijene", None, ""),
 ]
 
 
@@ -30,7 +32,7 @@ def test_sync_stores_articles_and_barcodes(store):
 
 def test_sync_replaces_old_articles(store):
     store.sync(lambda: SERVER_ROWS)
-    store.sync(lambda: [("A9", "9009", "Sok 1 l", 2.10)])
+    store.sync(lambda: [("A9", "9009", "Sok 1 l", 2.10, "")])
     assert store.find("1001") is None
     assert store.find("9009").price == 2.10
 
@@ -74,3 +76,25 @@ def test_catalog_reports_server_error_when_nothing_synced(store, monkeypatch):
     monkeypatch.setattr(catalog, "find_on_server", server)
     with pytest.raises(DatabaseError):
         catalog.find_by_barcode("1001")
+
+
+def test_category_is_stored_and_marks_alcohol(store):
+    store.sync(lambda: [("B1", "2001", "Pivo 0,5 l", 2.0, "pen.25.34. "), ("B2", "2002", "Sok 1 l", 2.0, None)])
+    beer = store.find("2001")
+    assert beer.category == "PEN.25.34." and beer.age_restricted
+    assert store.find("B1").age_restricted
+    assert not store.find("2002").age_restricted
+
+
+def test_old_database_gets_category_column(tmp_path):
+    path = tmp_path / "kasa.db"
+    connection = sqlite3.connect(path)
+    connection.executescript("""
+        CREATE TABLE articles (code TEXT PRIMARY KEY, name TEXT NOT NULL, price REAL NOT NULL);
+        CREATE TABLE barcodes (barcode TEXT PRIMARY KEY, code TEXT NOT NULL);
+        INSERT INTO articles VALUES ('A1', 'Mlijeko 1 l', 1.79);
+        INSERT INTO barcodes VALUES ('1001', 'A1');
+    """)
+    connection.commit()
+    connection.close()
+    assert ArticleStore(path).find("1001") == Product("A1", "1001", "Mlijeko 1 l", 1.79)

@@ -56,6 +56,10 @@ class Cart:
         return self.total_minor / 100
 
     @property
+    def has_age_restricted(self) -> bool:
+        return any(item.product.age_restricted for item in self._items.values())
+
+    @property
     def item_count(self) -> int:
         return sum(1 if isinstance(item.quantity, float) else item.quantity for item in self._items.values())
 
