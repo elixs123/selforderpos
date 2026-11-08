@@ -1,3 +1,4 @@
+import http.client
 import json
 import re
 import urllib.error
@@ -56,6 +57,10 @@ class TerminalUnreachable(Exception):
     pass
 
 
+class TerminalLost(TerminalUnreachable):
+    """Zahtjev je poslan, a odgovor nije stigao: terminal je možda naplatio."""
+
+
 class TerminalTimeout(Exception):
     pass
 
@@ -86,8 +91,8 @@ class PrintecClient:
             if isinstance(error.reason, TimeoutError):
                 raise TerminalTimeout(str(error.reason)) from error
             raise TerminalUnreachable(str(error.reason)) from error
-        except ConnectionError as error:
-            raise TerminalUnreachable(str(error)) from error
+        except (ConnectionError, http.client.HTTPException) as error:
+            raise TerminalLost(str(error) or type(error).__name__) from error
 
     def _parse(self, raw: bytes) -> dict:
         try:
@@ -111,6 +116,9 @@ class PrintecClient:
     def _purchase(self, body: dict) -> PaymentResult:
         try:
             status, data = self._request("POST", "/api/transaction", body, PAYMENT_TIMEOUT)
+        except TerminalLost as error:
+            # Kupac je možda naplaćen: nema "ništa nije naplaćeno" ni ponovne naplate dok osoblje ne provjeri terminal.
+            return PaymentResult(PENDING, 0, f"Veza sa terminalom je prekinuta poslije slanja: {error}")
         except TerminalUnreachable as error:
             return PaymentResult(UNREACHABLE, 0, f"Servis terminala nije dostupan: {error}")
         except TerminalTimeout:

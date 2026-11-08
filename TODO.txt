@@ -1,5 +1,23 @@
 TODO - samouslužna kasa
 
+PROVJERITI KAD SE SERVER I KAMERE DIGNU (zapisano 2026-11-08)
+
+P1. Priprema: povući main na server i na kasu. Na serveru u .env staviti CAM_EVENT_LOG=da
+    i restartovati vision_server (restart gasi kamere za kasu).
+
+P2. Veličina artikla (skenirana 0,5 l, a odložena 1 l). Sada kasa samo mjeri (CAM_SIZE_CHECK=ne).
+    a) Flašu 0,5 l skenirati i normalno odložiti bar 10 puta, stojeći i ležeći.
+    b) Skenirati 0,5 l, a odložiti 1 l istog artikla, desetak puta.
+    c) U data/logs/events-*.log pogledati linije 'velicina': razdvajaju li se te dvije flaše?
+    d) Prema tome namjestiti CAM_SIZE_FACTOR (1.4 je procjena), pa tek onda CAM_SIZE_CHECK=da.
+    e) Probati i poštenog kupca: flaša naučena stojeći, a položena. Ne smije biti odbijena.
+
+P3. Kartica, veza pukne poslije prislanjanja (na kasi, s pravim terminalom):
+    a) Mora pisati 'Plaćanje mora provjeriti osoblje', ne 'Ništa nije naplaćeno'.
+    b) Provjeriti da li terminal prihvata isti invoice_id poslije prekida (dupla naplata?).
+
+P4. Vraćanje artikla na gomilu u korpi (zona A): vidjeti da li kasa to lažno javi kao uzimanje.
+
 0. Veza sa bazom
    Instaliraj ODBC Driver 18 za SQL Server, pip install -r requirements.txt,
    kopiraj .env.example u .env i upiši postavke, pa pokreni: python check_db.py

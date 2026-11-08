@@ -16,6 +16,10 @@ class Handler(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         SEEN.append((self.path, body, self.headers.get("X-Api-Key")))
         status, answer = ANSWERS[body["invoice_id"]]
+        if isinstance(answer, bytes):
+            self.wfile.write(answer)
+            self.close_connection = True
+            return
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
@@ -77,6 +81,15 @@ def test_status(server):
 def test_unreachable():
     result = PrintecClient("http://127.0.0.1:1").purchase("K1-x", 100)
     assert result.outcome == UNREACHABLE
+
+
+@pytest.mark.parametrize("raw", [b"", b"garbage\r\n\r\n", b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n{"])
+def test_connection_lost_after_request_goes_to_staff(server, raw):
+    invoice = f"K1-lost-{len(raw)}"
+    ANSWERS[invoice] = (200, raw)
+    result = PrintecClient(server).purchase(invoice, 1250)
+    assert result.outcome == PENDING
+    assert SEEN[-1][1]["invoice_id"] == invoice
 
 
 @pytest.fixture

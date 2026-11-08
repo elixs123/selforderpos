@@ -1,6 +1,7 @@
 IZMJENE - samouslužna kasa
 
 2026-11-08
+- Kartica: kad veza sa terminalom pukne poslije poslanog zahtjeva ili stigne neispravan odgovor, kupac je možda naplaćen, pa ekran više ne piše 'Ništa nije naplaćeno' (a neispravan odgovor više ne ostavlja ekran zauvijek na 'Čekam karticu…'). Ide na 'Plaćanje mora provjeriti osoblje', bez ponovne naplate i bez odustajanja. 'Terminal nije dostupan' ostaje samo kad veza nije ni uspostavljena.
 - Provjera veličine artikla u zoni B (npr. skenirana flaša 0,5 l, a odložena 1 l): kasa za svaki artikal i kameru uči površinu artikla (zadnjih 15 mjerenja, data/samples/zone_a_sizes.json). Artikal je prevelik kad je na svim kamerama koje ga znaju veći od granice (90. percentil x CAM_SIZE_FACTOR, zadano 1.4; treba bar 5 mjerenja). Prevelik artikal se ne uči, osim kad ga osoblje potvrdi; etiketa ne poništava ovu provjeru. Artikli sa vage se ne mjere. CAM_SIZE_CHECK=ne (zadano): samo se mjeri i zapisuje u log ('velicina'); CAM_SIZE_CHECK=da: prevelik artikal se odbija.
 
 2026-11-05
