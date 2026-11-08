@@ -1,5 +1,8 @@
 IZMJENE - samouslužna kasa
 
+2026-11-08
+- Provjera veličine artikla u zoni B (npr. skenirana flaša 0,5 l, a odložena 1 l): kasa za svaki artikal i kameru uči površinu artikla (zadnjih 15 mjerenja, data/samples/zone_a_sizes.json). Artikal je prevelik kad je na svim kamerama koje ga znaju veći od granice (90. percentil x CAM_SIZE_FACTOR, zadano 1.4; treba bar 5 mjerenja). Prevelik artikal se ne uči, osim kad ga osoblje potvrdi; etiketa ne poništava ovu provjeru. Artikli sa vage se ne mjere. CAM_SIZE_CHECK=ne (zadano): samo se mjeri i zapisuje u log ('velicina'); CAM_SIZE_CHECK=da: prevelik artikal se odbija.
+
 2026-11-05
 - Upozorenje 18+: kad se skenira artikal iz podgrupa PEN.25.121. (vina crna), PEN.25.47. (vina bijela), PEN.25.46. (žestoka pića) ili PEN.25.34. (pivo), u gornjoj traci ekrana, pored dugmeta 'Pozovi osoblje', stoji 'Alkoholni artikli, morate imati 18+ godina' dok je takav artikal u korpi (osim na izboru plaćanja). Ništa ne blokira. Artikli sada pamte podgrupu (acClassif2), pa je za nju potrebna nova sinhronizacija artikala.
 - Log terminala: odvojena datoteka logs/terminal-GGGGMMDD.log u folderu podataka kase. Bilježi svaki zahtjev terminalu, cijeli odgovor (odobreno, odbijeno, greška; broj kartice samo sa zadnje 4 cifre) i svaki napravljen račun, pa se vidi da li je račun imao odobrenje terminala.

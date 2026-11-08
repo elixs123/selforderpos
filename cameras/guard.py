@@ -64,6 +64,11 @@ CHECK_WAIT_SECONDS = 5.0
 LEARNED_MIN = 3
 PRODUCT_MIN_SCORE = float(os.environ.get("CAM_PRODUCT_THRESHOLD", "0.8"))
 RIVAL_MARGIN = float(os.environ.get("CAM_RIVAL_MARGIN", "0.02"))
+# Odložen artikal veći od naučenog (npr. skenirana flaša 0,5 l, a odložena 1 l); etiketa ovo ne poništava, ista je na obje flaše.
+SIZE_PROBLEM = "veći je od skeniranog artikla"
+SIZE_FACTOR = float(os.environ.get("CAM_SIZE_FACTOR", "1.4"))
+SIZE_MIN_SAMPLES = 5
+SIZE_PERCENTILE = 90
 LABEL_LOOK_SECONDS = 0.5
 LABEL_MEMORY_SECONDS = 30.0
 PRIMARY_CAMERAS = {name.strip() for name in os.environ.get("CAM_PRIMARY", "A2,B2").split(",") if name.strip()}
@@ -117,6 +122,11 @@ def event_log_enabled() -> bool:
 def clips_enabled() -> bool:
     """Snimci alarma; uključuju se u Postavke > Kamere (upisuje se u CAM_CLIPS pri pokretanju kamera)."""
     return os.environ.get("CAM_CLIPS", "da").lower() not in ("", "off", "0", "ne")
+
+
+def size_check_blocks() -> bool:
+    """Prevelik artikal se odbija tek kad je CAM_SIZE_CHECK uključen; inače se veličina samo mjeri i zapisuje u log."""
+    return os.environ.get("CAM_SIZE_CHECK", "ne").lower() not in ("", "off", "0", "ne")
 
 @dataclass(frozen=True)
 class Outcome:
@@ -249,6 +259,8 @@ class CheckoutGuard:
         self._label_reader = ThreadPoolExecutor(max_workers=1)
         self.crop_scores: list[float | None] = []
         self._placed_problems: list[str] = []
+        self._placed_sizes: dict[str, float | None] = {}
+        self._measured_sizes: dict[str, float | None] = {}
         # Katalog artikala (Pantheon, objekat sa names() -> [(šifra, naziv)]); kasa ili server kamera ga postave.
         self.catalog = None
         self._catalog_index: labels.CatalogIndex | None = None
@@ -387,6 +399,32 @@ class CheckoutGuard:
     def _learned_size(self, product_code: str | None, camera: str) -> float | None:
         values = self._sizes.get(product_code or "", {}).get(camera, [])
         return float(np.median(values)) if len(values) >= LEARNED_MIN else None
+
+    def _placed_size(self, name: str) -> float | None:
+        """Površina odloženog artikla kao dio cijele slike kamere (ostaje tačna i kad se zona ponovo nacrta)."""
+        watcher = self.watchers[name]
+        if not watcher.items or watcher.last_mask is None:
+            return None
+        zone = self.zones.get(name)
+        return watcher.items[0][0] / watcher.last_mask.size * (zone[2] * zone[3] if zone is not None else 1.0)
+
+    def _size_limit(self, product_code: str | None, camera: str) -> float | None:
+        values = self._sizes.get(product_code or "", {}).get(camera, [])
+        return float(np.percentile(values, SIZE_PERCENTILE)) * SIZE_FACTOR if len(values) >= SIZE_MIN_SAMPLES else None
+
+    def _too_big(self, product_code: str | None, sizes: dict[str, float | None]) -> bool:
+        """Prevelik je tek ako je veći na svim kamerama koje znaju artikal: sjena ili ruka zavara samo jednu kameru."""
+        known = [(name, size, limit) for name, size, limit in
+                 ((name, size, self._size_limit(product_code, name)) for name, size in sizes.items())
+                 if size is not None and limit is not None]
+        self.log("velicina", "izmjereno " + (", ".join(f"{name} {size:.3%}" for name, size in sizes.items() if size is not None) or "-")
+                 + "   granica " + (", ".join(f"{name} {limit:.3%}" for name, _, limit in known) or "još nema dovoljno mjerenja"))
+        return bool(known) and all(size > limit for _, size, limit in known)
+
+    def _remember_sizes(self, product_code: str | None, sizes: dict[str, float | None]) -> None:
+        for name, size in sizes.items():
+            if size is not None:
+                self._learn_size(product_code, name, size)
 
     def _quiet(self, name: str) -> bool:
         tracker = self.trackers[name]
@@ -1127,6 +1165,7 @@ class CheckoutGuard:
             if not self._reference_problem(taken):
                 ids.append(self._taken_sample_ids.get(self.last_taken_index))
         self.store.mark_verified(ids)
+        self._remember_sizes(self.product_code, self._measured_sizes)
         self.store.prune(self.product_code, references_per_camera())
         self.log("poredjenje", f"osoblje potvrdilo artikal {self.product_name or self.barcode}: {len([i for i in ids if i is not None])} slika zapamćeno kao tačno")
 
@@ -1869,6 +1908,7 @@ class CheckoutGuard:
         counts = {name: len(self.watchers[name].items) for name, _, _ in items}
         counts = {name: count for name, count in counts.items() if name not in SIDE_CAMERAS} or counts
         self._placed_blobs = {name: list(self.watchers[name].items) for name, _, _ in items}
+        self._placed_sizes = {name: self._placed_size(name) for name, _, _ in items}
         placed_count = max(counts.values(), default=1)
         for name, count in counts.items():
             watcher = self.watchers[name]
@@ -1890,6 +1930,7 @@ class CheckoutGuard:
         placed_count: int = 1,
     ) -> None:
         taken_items, taken_befores, product_code = snapshot
+        sizes = dict(self._placed_sizes)
         started = time.monotonic()
         self._b_after_counts = {}
         yolo_new = None
@@ -1934,6 +1975,14 @@ class CheckoutGuard:
             verdict, problems, score_taken, score_product = "mismatch", [f"greška u poređenju ({error})"], None, None
         reads = reading.result() if reading is not None else [set() for _ in items]
         verdict, problems, hits = self._apply_label(verdict, problems, score_product, reads, product_code, taken_items)
+        # Artikli sa vage imaju svaki put drugu težinu, a kutija više deklaracija i više artikala nemaju stalnu veličinu.
+        measured = placed_count <= 1 and not self._weighed and not self._mixed_box
+        too_big = measured and self._too_big(product_code, sizes)
+        if too_big:
+            self.log("velicina", "artikal je veći od naučenog" + (", odbijam" if size_check_blocks() else " (samo mjerim, CAM_SIZE_CHECK je isključen)"))
+            if size_check_blocks():
+                verdict, problems = "mismatch", problems + [SIZE_PROBLEM]
+                self.last_problems = problems
         scores = self._label_crop_scores([item for _, item, _ in items], list(self.crop_scores) + [None] * len(items), hits)
         crop_problems = [self._reference_problem(item, scores[index]) for index, (_, item, _) in enumerate(items)]
         if self._mixed_box:
@@ -1945,6 +1994,7 @@ class CheckoutGuard:
             self._judging = False
             self._placed_sample_ids = []
             self._placed_problems = crop_problems
+            self._measured_sizes = sizes if measured else {}
             for index, ((name, item, ratio), problem, read) in enumerate(zip(items, crop_problems, reads)):
                 saved_verdict = verdict
                 if problem and verdict != "mismatch":
@@ -1987,6 +2037,9 @@ class CheckoutGuard:
                     good.append(self._taken_sample_ids.get(index))
             self._archive(good, verdict)
             self.store.prune(self.product_code, references_per_camera())
+            if not too_big:
+                # Prevelik artikal se ne uči: inače bi granica rasla sa svakom podmetnutom većom flašom.
+                self._remember_sizes(product_code, self._measured_sizes)
             self._finish("accepted", verdict, message)
             self._note_accepted()
             self._return_unscanned(self._leftover_takes(self._scan_takes, self.last_taken_index))
