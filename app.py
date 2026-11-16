@@ -44,7 +44,7 @@ from receipt_sync import ReceiptSync
 from screens.cameras_down import CamerasDownScreen
 from screens.customer_monitor import CustomerMonitor
 from screens.recording import feed as camera_feed
-from screens.age_warning import AgeWarning
+from screens.age_warning import age_state
 from screens.drop import DropScreen
 from screens.idle import ActivityFilter, IdleOverlay
 from screens.payment import PaymentScreen
@@ -150,7 +150,6 @@ class MainWindow(QMainWindow):
         self.last_activity = time.monotonic()
         self.activity_filter = ActivityFilter(self.mark_activity)
         QApplication.instance().installEventFilter(self.activity_filter)
-        self.age_warning = AgeWarning(self)
         self.scanned_age_restricted = False
         self.screens.currentChanged.connect(self.update_age_warning)
         self.scan.cart_changed.connect(self.update_age_warning)
@@ -386,7 +385,7 @@ class MainWindow(QMainWindow):
         """Upozorenje 18+ ne blokira ništa; stoji od skeniranja alkohola dok je alkohol u korpi."""
         # Na izboru plaćanja dugme 'Natrag u korpu' zauzima to mjesto u gornjoj traci.
         shopping = self.screens.currentWidget() in (self.scan, self.drop, self.card, self.qr)
-        self.age_warning.set_visible_on_top(shopping and (self.scanned_age_restricted or self.cart.has_age_restricted))
+        age_state().set(shopping and (self.scanned_age_restricted or self.cart.has_age_restricted))
 
     def start_shopping(self) -> None:
         self.scanned_age_restricted = False

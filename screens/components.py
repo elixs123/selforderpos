@@ -102,16 +102,25 @@ class TopBar(QWidget):
             title.setStyleSheet(f"font-size: {px(30)}px; font-weight: 800; color: {TEXT};")
             title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
             layout.addWidget(title, stretch=1)
+            self.title = title
         else:
+            self.title = None
             back = self._pill_button(back_text, ICON_BACK, 2.2)
             back.clicked.connect(self.back_requested.emit)
             layout.addWidget(back)
             layout.addStretch()
 
+        layout.addStretch(0)
         if show_staff:
+            from screens.age_warning import AgeWarning, age_state
             from screens.recording import RecordingBadge
 
-            layout.addWidget(RecordingBadge())
+            layout.addWidget(AgeWarning(self))
+            if self.title is not None:
+                # Na uskom ekranu 18+ i Snimate se ne stanu pored natpisa; logo ostaje.
+                self.title.setHidden(age_state().visible)
+                age_state().changed.connect(self.title.setHidden)
+            layout.addWidget(RecordingBadge(self))
             staff = self._pill_button("Pozovi osoblje", ICON_HEADSET, 1.9)
             staff.clicked.connect(self.staff_requested.emit)
             layout.addWidget(staff)

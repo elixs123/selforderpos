@@ -4,7 +4,7 @@ import time
 import cv2
 from PySide6.QtCore import QRectF, Qt, QTimer
 from PySide6.QtGui import QImage, QPainter, QPainterPath, QPixmap
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from styles import LINE, MUTED_TEXT, RED, px
 
@@ -70,8 +70,9 @@ def rounded(frame, width: int, height: int, radius: int) -> QPixmap:
 class RecordingBadge(QFrame):
     """Mala živa slika kamere u gornjoj traci: kupac vidi da ga kasa snima."""
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, parent: QWidget) -> None:
+        # Sa roditeljem odmah: setVisible bez roditelja bi na tren otvorio poseban prozor.
+        super().__init__(parent)
         self.setObjectName("recording")
         self.setFixedHeight(px(96))
         self.setStyleSheet(

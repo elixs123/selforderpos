@@ -4,12 +4,13 @@ from types import SimpleNamespace
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QLineEdit, QPushButton, QWidget
+from PySide6.QtWidgets import QApplication, QPushButton, QWidget
 
 import app as app_module
 from cart import Cart
 from catalog import AGE_RESTRICTED_CATEGORIES, Product
-from screens.age_warning import TOP_BAR, AgeWarning
+from screens.age_warning import AgeWarning, age_state
+from screens.components import TopBar
 from styles import px
 
 APP = QApplication.instance() or QApplication([])
@@ -19,22 +20,18 @@ MILK = Product("A1", "1001", "Mlijeko 1 l", 1.79, category="PEN.25.09.")
 
 
 def window():
-    parent = QWidget()
-    parent.resize(820, 1360)
     screens = SimpleNamespace(widget=None)
     screens.currentWidget = lambda: screens.widget
-    fake = SimpleNamespace(
+    return SimpleNamespace(
         screens=screens, scan=object(), drop=object(), payment=object(), card=object(), qr=object(), receipt=object(),
-        welcome=object(), cart=Cart(), scanned_age_restricted=False, age_warning=AgeWarning(parent), parent=parent,
+        welcome=object(), cart=Cart(), scanned_age_restricted=False,
     )
-    parent.show()
-    return fake
 
 
 def update(fake, screen):
     fake.screens.widget = screen
     app_module.MainWindow.update_age_warning(fake)
-    return fake.age_warning.isVisible()
+    return age_state().visible
 
 
 def test_categories_match_request():
@@ -73,30 +70,25 @@ def test_hidden_after_payment_and_on_welcome():
     assert not update(fake, fake.welcome)
 
 
-def test_sits_in_top_bar_inside_window():
-    fake = window()
-    fake.cart.add(BEER)
-    update(fake, fake.scan)
-    box = fake.age_warning.geometry()
-    assert 0 < box.left() and box.right() < fake.parent.width()
-    assert box.top() >= 0 and box.bottom() <= px(TOP_BAR)
+def test_sits_in_top_bar_next_to_recording_without_overlap():
+    bar = TopBar()
+    bar.resize(820, px(112))
+    bar.show()
+    age_state().set(True)
+    APP.processEvents()
+    warning = bar.findChild(AgeWarning)
+    staff = [button for button in bar.findChildren(QPushButton) if button.text() == "Pozovi osoblje"][0]
+    assert warning.isVisible() and not bar.title.isVisible()
+    box = warning.geometry()
+    assert 0 < box.left() and box.right() < staff.geometry().left()
+    assert box.top() >= 0 and box.bottom() <= bar.height()
+    age_state().set(False)
+    APP.processEvents()
+    assert not warning.isVisible() and bar.title.isVisible()
 
 
 def test_does_not_block_clicks_or_scanner():
     parent = QWidget()
-    parent.resize(820, 1360)
-    button = QPushButton("Dugme", parent)
-    scanner = QLineEdit(parent)
-    scanner.move(0, 0)
     warning = AgeWarning(parent)
-    parent.show()
-    scanner.setFocus()
-    warning.set_visible_on_top(True)
-    button.setGeometry(warning.geometry())
-    warning.raise_()
-    clicks = []
-    button.clicked.connect(lambda: clicks.append(True))
     assert warning.testAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
     assert warning.focusPolicy() == Qt.FocusPolicy.NoFocus
-    target = parent.childAt(warning.geometry().center())
-    assert target is button
