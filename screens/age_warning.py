@@ -54,13 +54,20 @@ class AgeWarning(QFrame):
         row.addWidget(badge)
         column = QVBoxLayout()
         column.setSpacing(0)
-        title = QLabel("Alkoholni artikli")
-        title.setStyleSheet(f"font-size: {px(26)}px; font-weight: 800; color: #5C4300;")
-        column.addWidget(title)
-        detail = QLabel("Morate imati 18+ godina")
-        detail.setStyleSheet(f"font-size: {px(20)}px; color: #5C4300;")
-        column.addWidget(detail)
+        self.title = QLabel("Alkoholni artikli")
+        self.title.setStyleSheet(f"font-size: {px(26)}px; font-weight: 800; color: #5C4300;")
+        column.addWidget(self.title)
+        self.detail = QLabel("Morate imati 18+ godina")
+        self.detail.setStyleSheet(f"font-size: {px(20)}px; color: #5C4300;")
+        column.addWidget(self.detail)
         row.addLayout(column)
+        self.row = row
         state = age_state()
         self.setVisible(state.visible)
         state.changed.connect(self.setVisible)
+
+    def set_compact(self, level: int) -> None:
+        """0 = sve, 1 = bez 'Morate imati 18+ godina', 2 = samo krug 18+ (uski ekran)."""
+        self.detail.setHidden(level >= 1)
+        self.title.setHidden(level >= 2)
+        self.row.setContentsMargins(px(10), px(8), px(10) if level >= 2 else px(24), px(8))

@@ -1,4 +1,4 @@
-from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import QFrame, QGraphicsDropShadowEffect, QGridLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
@@ -90,6 +90,9 @@ class TopBar(QWidget):
     def __init__(self, back_text: str | None = None, show_staff: bool = True) -> None:
         super().__init__()
         self.setFixedHeight(px(112))
+        # Traka nikad ne smije gurati ekran u širinu (sa 18+ i 'Snimate se' je šira od uskog ekrana): kartice se sažmu.
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.age_warning = self.recording = None
         layout = QHBoxLayout(self)
         layout.setContentsMargins(px(40), 0, px(40), 0)
         layout.setSpacing(px(18))
@@ -115,15 +118,39 @@ class TopBar(QWidget):
             from screens.age_warning import AgeWarning, age_state
             from screens.recording import RecordingBadge
 
-            layout.addWidget(AgeWarning(self))
+            self.age_warning = AgeWarning(self)
+            layout.addWidget(self.age_warning)
             if self.title is not None:
-                # Na uskom ekranu 18+ i Snimate se ne stanu pored natpisa; logo ostaje.
+                # Na uskom ekranu 18+ i 'Snimate se' ne stanu pored natpisa; logo ostaje.
                 self.title.setHidden(age_state().visible)
                 age_state().changed.connect(self.title.setHidden)
-            layout.addWidget(RecordingBadge(self))
+            age_state().changed.connect(self._refit)
+            self.recording = RecordingBadge(self)
+            layout.addWidget(self.recording)
             staff = self._pill_button("Pozovi osoblje", ICON_HEADSET, 1.9)
             staff.clicked.connect(self.staff_requested.emit)
             layout.addWidget(staff)
+            self.staff = staff
+
+    def fit(self) -> None:
+        """Najmanje sažimanje kartica 18+ i 'Snimate se' pri kojem sve stane u širinu trake."""
+        if self.age_warning is None:
+            return
+        layout = self.layout()
+        for level in range(4):
+            self.age_warning.set_compact(min(level, 2))
+            self.recording.set_compact(min(level, 2))
+            self.staff.setText("Osoblje" if level >= 3 else "Pozovi osoblje")
+            layout.invalidate()
+            if layout.minimumSize().width() <= self.width():
+                return
+
+    def _refit(self) -> None:
+        QTimer.singleShot(0, self.fit)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self.fit()
 
     def _pill_button(self, text: str, shape: str, stroke_width: float) -> QPushButton:
         button = QPushButton(text)

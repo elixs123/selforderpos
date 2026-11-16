@@ -88,11 +88,12 @@ class RecordingBadge(QFrame):
         texts.setSpacing(0)
         self.title = QLabel()
         texts.addWidget(self.title)
-        note = QLabel("Radi vaše sigurnosti")
-        note.setStyleSheet(f"color: {MUTED_TEXT}; font-size: {px(20)}px; border: none;")
-        texts.addWidget(note)
+        self.note = QLabel("Radi vaše sigurnosti")
+        self.note.setStyleSheet(f"color: {MUTED_TEXT}; font-size: {px(20)}px; border: none;")
+        texts.addWidget(self.note)
         row.addLayout(texts)
         self._blink = 0
+        self.compact = 0
         self._show_title()
         self.setVisible(feed.enabled)
         self.timer = QTimer(self)
@@ -103,12 +104,22 @@ class RecordingBadge(QFrame):
     def _show_title(self) -> None:
         # Crvena tačka trepće kao na kameri koja snima.
         dot = RED if self._blink < 4 else "white"
-        self.title.setText(f"<span style='color:{dot}'>●</span>&nbsp;Snimate se")
+        words = "" if self.compact >= 2 else "&nbsp;Snimate se"
+        self.title.setText(f"<span style='color:{dot}'>●</span>{words}")
         self.title.setStyleSheet(f"color: {RED}; font-size: {px(26)}px; font-weight: 800; border: none;")
+
+    def set_compact(self, level: int) -> None:
+        """0 = sve, 1 = bez 'Radi vaše sigurnosti', 2 = samo slika i crvena tačka (uski ekran)."""
+        self.compact = level
+        self.note.setHidden(level >= 1)
+        self._show_title()
 
     def _paint(self) -> None:
         if self.isHidden() == feed.enabled:
             self.setVisible(feed.enabled)
+            fit = getattr(self.parentWidget(), "fit", None)
+            if fit is not None:
+                fit()
         # isVisible je False i kad je ekran kase sa ovom trakom sakriven (drugi ekran je prikazan).
         if not feed.enabled or not self.isVisible():
             return
