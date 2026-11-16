@@ -76,7 +76,7 @@ class StaffScreen(QWidget):
         self.approve_button.setVisible(can_approve)
         self.learn_button.setVisible(can_learn)
         self.forgive_button.setVisible(unscanned > 0)
-        self.forgive_button.setText(f"Poništi neskenirana uzimanja ({unscanned})")
+        self.forgive_button.setText(f"Propusti: neskenirano / artikli u zoni A ({unscanned})")
         self.entered = ""
         self.pin_error.setText("")
         self._update_pin_display()

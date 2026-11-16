@@ -56,6 +56,29 @@ def payment_allowed(guard, allow_without_cameras: bool = False) -> bool:
             and not getattr(guard, "checking", False) and not getattr(guard, "held_message", ""))
 
 
+def payment_block_reason(guard) -> str:
+    """Zašto kupac još ne može platiti (prazno = može); prikaže se kad dodirne Plati."""
+    if guard is None or getattr(guard, "state", "") == "offline":
+        return ""
+    if getattr(guard, "held_message", ""):
+        return guard.held_message
+    if getattr(guard, "unscanned", 0) > 0:
+        return "Imate neskeniran artikal. Skenirajte ga prije plaćanja."
+    if getattr(guard, "zone_a_left", 0) > 0:
+        return "U zoni A su ostali artikli. Skenirajte ih ili ih izvadite iz korpe, pa platite."
+    if getattr(guard, "checking", False):
+        return "Kasa još provjerava zadnji artikal. Sačekajte trenutak."
+    return ""
+
+
+def pay_enabled(guard, has_items: bool, allow_without_cameras: bool = False) -> bool:
+    """Plati je aktivno čim ima artikala; zabranjeno plaćanje objasni poruka (payment_block_reason), a ne sivo dugme.
+    Sivo ostaje samo kad server kamera ne radi, a rad bez kamera nije dozvoljen."""
+    if not has_items:
+        return False
+    return allow_without_cameras or guard is None or getattr(guard, "state", "") != "offline"
+
+
 class ScanScreen(QWidget):
     pay_requested = Signal()
     staff_requested = Signal()
@@ -102,7 +125,7 @@ class ScanScreen(QWidget):
         self.guide.setVisible(guard is not None)
         if guard is None:
             return
-        self.pay_button.setEnabled(self.cart.item_count > 0 and self._pay_allowed())
+        self.pay_button.setEnabled(pay_enabled(guard, self.cart.item_count > 0, self.allow_without_cameras))
         if getattr(guard, "alert", False) and guard.state == "taken":
             self.alert.show_message(guard.message, "Imate neskeniran artikal")
         elif getattr(guard, "held_message", ""):
@@ -376,7 +399,7 @@ class ScanScreen(QWidget):
             f"QPushButton:pressed {{ background: #2C5C14; }}"
             f"QPushButton:disabled {{ background: {BORDER}; }}"
         )
-        self.pay_button.clicked.connect(self.pay_requested.emit)
+        self.pay_button.clicked.connect(self._on_pay)
         buttons.addWidget(self.pay_button, stretch=1)
         column.addLayout(buttons)
 
@@ -429,6 +452,15 @@ class ScanScreen(QWidget):
     def _pay_allowed(self) -> bool:
         return payment_allowed(self.guard, self.allow_without_cameras)
 
+    def _on_pay(self) -> None:
+        if self._pay_allowed():
+            self.pay_requested.emit()
+            return
+        reason = payment_block_reason(self.guard) or "Plaćanje još nije moguće. Pozovite osoblje."
+        self._alert_until = time.monotonic() + ALERT_SECONDS
+        self.alert.show_message(reason + " Ako niste sigurni, pritisnite Pozovi osoblje.", "Prije plaćanja")
+        self.barcode_input.setFocus()
+
     def _refresh(self) -> None:
         data = self.cart.to_dict()
         while self.rows_layout.count() > 1:
@@ -450,6 +482,6 @@ class ScanScreen(QWidget):
         self.count_label.setText(item_count_text(data["item_count"]))
         self.total_label.setText(f"{format_amount(data['total'])} KM")
         has_items = data["item_count"] > 0
-        self.pay_button.setEnabled(has_items and self._pay_allowed())
+        self.pay_button.setEnabled(pay_enabled(self.guard, has_items, self.allow_without_cameras))
         self.clear_button.setEnabled(has_items)
         self.cart_changed.emit()
