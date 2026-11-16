@@ -38,7 +38,7 @@ SECTIONS = [
     ("Kartični terminal (PrintecECR)", ["terminal_url", "terminal_api_key", "terminal_print_slip", "terminal_slip_copies"]),
     ("Fiskalni printer (Tring)", ["fiscal_enabled", "fiscal_url", "fiscal_unit", "fiscal_tax_label", "fiscal_card_payment", "fiscal_qr_payment"]),
     ("QR slip za vrata (test)", ["qr_slip_enabled", "qr_slip_printer", "qr_slip_ibfm"]),
-    ("Kamere", ["cameras_enabled", "allow_without_cameras", "lock_on_moved_camera", "yolox_enabled", "alarm_clips", "event_log", "customer_monitor", "customer_monitor_camera", "vision_server_url", "camera_a_host", "camera_a2_host", "camera_a3_host", "camera_b_host", "camera_b2_host", "camera_b3_host", "camera_c_host", "camera_c2_host", "camera_channel", "camera_model", "match_threshold", "reference_min_percent", "references_per_camera", "label_reading"]),
+    ("Kamere", ["cameras_enabled", "allow_without_cameras", "lock_on_moved_camera", "yolox_enabled", "alarm_clips", "event_log", "customer_monitor", "camera_badge", "customer_monitor_camera", "vision_server_url", "camera_a_host", "camera_a2_host", "camera_a3_host", "camera_b_host", "camera_b2_host", "camera_b3_host", "camera_c_host", "camera_c2_host", "camera_channel", "camera_model", "match_threshold", "reference_min_percent", "references_per_camera", "label_reading"]),
 ]
 
 LABELS = {
@@ -72,7 +72,8 @@ LABELS = {
     "event_log": "Zapisuj događaje kamera u data/logs (za traženje grešaka)",
     "alarm_clips": "Snimci kod alarma (8 s prije i 5 s poslije, čuvaju se 2 dana)",
     "customer_monitor": "Ekran 'Snimate se' prema kupcu (drugi monitor)",
-    "customer_monitor_camera": "Kamera za ekran prema kupcu",
+    "camera_badge": "Slika kamere 'Snimate se' gore u ćošku ekrana kase",
+    "customer_monitor_camera": "Kamera za 'Snimate se' (drugi monitor i ćošak ekrana)",
     "allow_without_cameras": "Dozvoli rad kase kad kamere ne rade (bez provjere kamerama)",
     "vision_server_url": "Adresa servera kamera (prazno = kamere na ovom računaru)",
     "camera_a_host": "IP kamere A (korpa)",

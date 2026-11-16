@@ -52,6 +52,7 @@ class Settings:
     alarm_clips: bool = True
     event_log: bool = field(default_factory=lambda: os.environ.get("CAM_EVENT_LOG", "ne").lower() not in ("", "off", "0", "ne"))
     customer_monitor: bool = True
+    camera_badge: bool = True
     customer_monitor_camera: str = "C"
     vision_server_url: str = field(default_factory=lambda: os.environ.get("CAM_SERVER_URL", ""))
     camera_a_host: str = field(default_factory=lambda: os.environ.get("CAM_A_HOST", ""))

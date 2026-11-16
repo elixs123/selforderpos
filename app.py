@@ -43,6 +43,7 @@ from receipts import ReceiptStore
 from receipt_sync import ReceiptSync
 from screens.cameras_down import CamerasDownScreen
 from screens.customer_monitor import CustomerMonitor
+from screens.recording import feed as camera_feed
 from screens.age_warning import AgeWarning
 from screens.drop import DropScreen
 from screens.idle import ActivityFilter, IdleOverlay
@@ -345,7 +346,10 @@ class MainWindow(QMainWindow):
             self.customer_monitor.stop()
             self.customer_monitor.deleteLater()
             self.customer_monitor = None
-        if self.guard is None or not self.settings.customer_monitor or not hasattr(self.guard, "latest"):
+        has_frames = self.guard is not None and hasattr(self.guard, "latest")
+        camera_feed.configure(self.guard.latest if has_frames and self.settings.camera_badge else None,
+                              self.settings.customer_monitor_camera)
+        if not has_frames or not self.settings.customer_monitor:
             return
         monitor = CustomerMonitor(self.guard.latest, self.settings.customer_monitor_camera)
         if monitor.start(allow_main_screen=not self.settings.fullscreen):
@@ -518,8 +522,8 @@ class MainWindow(QMainWindow):
             for name in ("cameras_enabled", "yolox_enabled", "alarm_clips", "event_log", "camera_a_host", "camera_a2_host", "camera_a3_host", "camera_b_host", "camera_b2_host", "camera_b3_host", "camera_c_host", "camera_c2_host", "camera_channel", "camera_model", "match_threshold", "reference_min_percent", "references_per_camera", "label_reading")
         )
         sync_changed = settings.article_sync_minutes != self.settings.article_sync_minutes
-        monitor_changed = (settings.customer_monitor, settings.customer_monitor_camera) != (
-            self.settings.customer_monitor, self.settings.customer_monitor_camera)
+        monitor_changed = (settings.customer_monitor, settings.camera_badge, settings.customer_monitor_camera) != (
+            self.settings.customer_monitor, self.settings.camera_badge, self.settings.customer_monitor_camera)
         self.settings = settings
         save_settings(settings, self.settings_path)
         self.configure_database()

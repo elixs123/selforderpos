@@ -109,6 +109,9 @@ class TopBar(QWidget):
             layout.addStretch()
 
         if show_staff:
+            from screens.recording import RecordingBadge
+
+            layout.addWidget(RecordingBadge())
             staff = self._pill_button("Pozovi osoblje", ICON_HEADSET, 1.9)
             staff.clicked.connect(self.staff_requested.emit)
             layout.addWidget(staff)
