@@ -805,7 +805,7 @@ class CheckoutGuard:
         threading.Thread(target=self._loop, daemon=True).start()
         threading.Thread(target=self._label_loop, daemon=True).start()
         # OCR model se inače učita tek kod prvog odloženog artikla (+1-2 s na kasi).
-        self._label_reader.submit(labels.read_crops, [np.full((64, 64, 3), 127, np.uint8)])
+        self._label_reader.submit(labels.read_words, np.full((labels.MIN_SIDE * 2, labels.MIN_SIDE * 2, 3), 127, np.uint8))
         if self.hands is not None:
             threading.Thread(target=self._hand_loop, daemon=True).start()
         if self.a_ledgers or self.b_ledgers:
