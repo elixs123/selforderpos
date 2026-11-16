@@ -369,6 +369,18 @@ class CheckoutGuard:
             return 0
         return max((ledger.count or 0 for ledger in self.a_ledgers.values()), default=0)
 
+    def count_status(self) -> dict:
+        """Zašto brojač zone A (ne) broji; za /state kad je Plati zaključano."""
+        result = {}
+        for name, ledger in self.a_ledgers.items():
+            tracker = self.trackers[name]
+            result[name] = {
+                "count": ledger.count, "pending": ledger.pending, "expected": ledger.expected,
+                "live": self._is_live(name), "ready": tracker.ready, "moved": tracker.moved,
+                "motion": round(tracker.motion_ratio, 4), "hand": bool(self.hand_shapes.get(name)),
+            }
+        return {"counting": self.counting_a, "ignored": self._zone_a_ignored, "cameras": result}
+
     @property
     def zone_a_left(self) -> int:
         return max(0, self.zone_a_count - self._zone_a_ignored)

@@ -54,6 +54,7 @@ def snapshot(guard, boot: str) -> dict:
         "checking": bool(getattr(guard, "checking", False)),
         "labels_required": int(getattr(guard, "labels_required", 0)),
         "zone_a_reason": guard.zone_a_waiting_reason() if hasattr(guard, "zone_a_waiting_reason") else "-",
+        "count_status": guard.count_status() if hasattr(guard, "count_status") else {},
     }
 
 

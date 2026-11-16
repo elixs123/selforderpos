@@ -18,7 +18,8 @@ MODEL_SIZES = {"yolox_s": 36, "yolox_m": 101, "yolox_l": 217}
 INPUT_SIZE = 640
 MIN_CONFIDENCE = 0.5
 MATCH_IOU = 0.3
-IGNORED_CLASSES = {0, 56, 57, 58, 59, 60, 61, 62, 63, 66, 68, 69, 70, 71, 72}
+# 4 (avion): YOLOX zna cijeli inox sto na kameri sa plafona vidjeti kao avion, pa zona A ostane "puna".
+IGNORED_CLASSES = {0, 4, 56, 57, 58, 59, 60, 61, 62, 63, 66, 68, 69, 70, 71, 72}
 DEFAULT_CAMERAS = "A2,B2"
 # YOLOX zna "izgubiti" artikal koji se preklapa sa drugim; manji broj u zoni B vrijedi tek kad je toliko stabilan.
 B_DROP_SECONDS = 8.0
