@@ -83,9 +83,9 @@ class VisionHandler(BaseHTTPRequestHandler):
             return {}
         return data if isinstance(data, dict) else {}
 
-    def _send_jpeg(self, data: bytes) -> None:
+    def _send_jpeg(self, data: bytes, content_type: str = "image/jpeg") -> None:
         self.send_response(200)
-        self.send_header("Content-Type", "image/jpeg")
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
@@ -114,6 +114,15 @@ class VisionHandler(BaseHTTPRequestHandler):
                 self._send(404, {"error": "nema slike"})
             else:
                 self._send_jpeg(data)
+        elif self.path == "/clips":
+            self._send(200, {"clips": self.server.guard.clip_list() if hasattr(self.server.guard, "clip_list") else []})
+        elif self.path.startswith("/clip_file/"):
+            data = (self.server.guard.clip_file(unquote(self.path[len("/clip_file/"):]))
+                    if hasattr(self.server.guard, "clip_file") else None)
+            if data is None:
+                self._send(404, {"error": "nema snimka"})
+            else:
+                self._send_jpeg(data, "video/mp4")
         elif self.path == "/capture":
             self._send(200, self.server.guard.capture_status())
         elif self.path == "/capture/preview":

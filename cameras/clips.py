@@ -14,9 +14,11 @@ FPS = 2.0
 BEFORE_SECONDS = 8.0
 AFTER_SECONDS = 5.0
 TILE = (480, 270)
-KEEP_DAYS = 2
+KEEP_DAYS = 7
 REPEAT_SECONDS = 60.0
 CONVERT_SECONDS = 60
+# Ime snimka kako ga kasa traži: dan/vrijeme-razlog.mp4 (ništa izvan foldera snimaka).
+CLIP_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}/[0-9A-Za-z-]+\.mp4$")
 # None dok se ne proba; OpenCV sa pip-a na Linuxu nema H.264 enkoder, pa se avc1 proba samo jednom (inače greška u logu uz svaki alarm).
 _avc1_works: bool | None = None
 
@@ -85,6 +87,7 @@ class ClipRecorder:
         self._last_add = 0.0
         self._recorded: dict[str, float] = {}
         self.saved: list[Path] = []
+        self.cleanup()
 
     def add(self, frames: dict[str, np.ndarray | None], now: float | None = None) -> None:
         now = time.monotonic() if now is None else now
@@ -133,6 +136,26 @@ class ClipRecorder:
         self.saved.append(path)
         print(f"Snimak alarma: {path}")
         self.cleanup(now)
+
+    def clips(self) -> list[dict]:
+        """Snimci od najnovijeg, za pregled na kasi: ime (dan/fajl), dan, vrijeme, razlog i veličina."""
+        result = []
+        for path in self.folder.glob("????-??-??/*.mp4"):
+            if path.stem.endswith("-h264"):
+                continue
+            moment, _, reason = path.stem.partition("-")
+            result.append({
+                "name": f"{path.parent.name}/{path.name}", "day": path.parent.name,
+                "time": f"{moment[:2]}:{moment[2:4]}:{moment[4:6]}", "reason": reason.replace("-", " "),
+                "size": path.stat().st_size,
+            })
+        return sorted(result, key=lambda clip: clip["name"], reverse=True)
+
+    def clip_path(self, name: str) -> Path | None:
+        if not CLIP_NAME.match(name):
+            return None
+        path = self.folder / name
+        return path if path.is_file() else None
 
     def cleanup(self, now: datetime | None = None) -> None:
         limit = ((now or datetime.now()) - timedelta(days=KEEP_DAYS)).strftime("%Y-%m-%d")

@@ -860,6 +860,13 @@ class CheckoutGuard:
             self.log(f"kamera-{name}", "kamera je ponovo ispravna")
         self.tamper_problems = problems
 
+    def clip_list(self) -> list[dict]:
+        return self.clips.clips() if self.clips is not None else []
+
+    def clip_file(self, name: str) -> bytes | None:
+        path = self.clips.clip_path(name) if self.clips is not None else None
+        return path.read_bytes() if path is not None else None
+
     def record_clip(self, reason: str) -> None:
         if not reason.startswith("osoblje"):
             self.count_event("alarm")

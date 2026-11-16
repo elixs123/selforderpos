@@ -10,6 +10,7 @@ POLL_SECONDS = 0.15
 NEW_SALE_QUIET_SECONDS = 1.0
 POLL_TIMEOUT = 1.5
 ACTION_TIMEOUT = 8.0
+CLIP_TIMEOUT = 20.0
 OFFLINE_AFTER = 3
 
 
@@ -204,6 +205,17 @@ class RemoteGuard:
         request = urllib.request.Request(self.url + f"/archive_image/{int(image_id)}", headers={"X-Token": self.token})
         try:
             with urllib.request.urlopen(request, timeout=ACTION_TIMEOUT) as response:
+                return response.read()
+        except (urllib.error.URLError, OSError, ValueError):
+            return None
+
+    def clip_list(self) -> list[dict]:
+        return list(self._request("GET", "/clips", None, ACTION_TIMEOUT).get("clips") or [])
+
+    def clip_file(self, name: str) -> bytes | None:
+        request = urllib.request.Request(self.url + f"/clip_file/{quote(name)}", headers={"X-Token": self.token})
+        try:
+            with urllib.request.urlopen(request, timeout=CLIP_TIMEOUT) as response:
                 return response.read()
         except (urllib.error.URLError, OSError, ValueError):
             return None

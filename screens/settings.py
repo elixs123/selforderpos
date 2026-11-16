@@ -26,6 +26,7 @@ from qr_slip import print_gate_slip
 from screens.components import PinPad, TopBar
 from screens.receipts_view import ReceiptsView
 from screens.capture_view import CaptureView
+from screens.clips_view import ClipsView
 from screens.references_view import ReferencesView
 from screens.report_view import ReportView
 from settings import Settings
@@ -129,12 +130,15 @@ class SettingsScreen(QWidget):
         self.report_page.closed.connect(lambda: self.pages.setCurrentWidget(self.form_page))
         self.capture_page = CaptureView(guard_provider)
         self.capture_page.closed.connect(lambda: self.pages.setCurrentWidget(self.form_page))
+        self.clips_page = ClipsView(guard_provider)
+        self.clips_page.closed.connect(lambda: self.pages.setCurrentWidget(self.form_page))
         self.pages.addWidget(self.pin)
         self.pages.addWidget(self.form_page)
         self.pages.addWidget(self.receipts_page)
         self.pages.addWidget(self.references_page)
         self.pages.addWidget(self.report_page)
         self.pages.addWidget(self.capture_page)
+        self.pages.addWidget(self.clips_page)
         layout.addWidget(self.pages, stretch=1)
 
     def begin(self, settings: Settings) -> None:
@@ -194,6 +198,9 @@ class SettingsScreen(QWidget):
         capture.clicked.connect(lambda: self._show_page(self.capture_page))
         views.addWidget(capture)
         column.addLayout(views)
+        clips = self._button("Snimci alarma (zadnjih 7 dana)", primary=False)
+        clips.clicked.connect(lambda: self._show_page(self.clips_page))
+        column.addWidget(clips)
 
         tests = QHBoxLayout()
         tests.setSpacing(px(14))

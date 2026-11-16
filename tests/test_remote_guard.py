@@ -216,6 +216,8 @@ def test_register_reads_report_and_manages_item_images():
     guard.reference_images = lambda code: [{"id": 7, "camera": "B3", "verdict": "ok", "quality": 0.9, "created_at": "x", "label": ""}] if code == "090822" else []
     guard.reference_crop = lambda sample_id: b"JPEGDATA" if sample_id == 7 else None
     guard.delete_reference = lambda sample_id: guard.deleted.append(sample_id) or True
+    guard.clip_list = lambda: [{"name": "2026-10-28/101500-Niste-sve-platili.mp4", "time": "10:15:00", "reason": "Niste sve platili"}]
+    guard.clip_file = lambda name: b"MP4DATA" if name == "2026-10-28/101500-Niste-sve-platili.mp4" else None
     server = start_server(guard)
     client = connect(server)
     try:
@@ -224,6 +226,9 @@ def test_register_reads_report_and_manages_item_images():
         assert client.reference_images("090822")[0]["id"] == 7
         assert client.reference_crop(7) == b"JPEGDATA" and client.reference_crop(8) is None
         assert client.delete_reference(7) and guard.deleted == [7]
+        assert client.clip_list()[0]["reason"] == "Niste sve platili"
+        assert client.clip_file("2026-10-28/101500-Niste-sve-platili.mp4") == b"MP4DATA"
+        assert client.clip_file("2026-10-28/nema.mp4") is None
         client.record_event("staff_call")
         assert wait_for(lambda: guard.events == ["staff_call"])
     finally:
