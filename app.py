@@ -168,7 +168,9 @@ class MainWindow(QMainWindow):
         self.customer_monitor = None
         self.start_cameras()
         self.start_article_sync()
-        QTimer.singleShot(2000, self.sync_articles)
+        minutes = self.settings.article_sync_minutes
+        if self.articles.sync_due(minutes * 60 if minutes > 0 else float("inf")):
+            QTimer.singleShot(2000, self.sync_articles)
         self.receipt_timer.start(RECEIPT_SYNC_SECONDS * 1000)
         QTimer.singleShot(5000, self.sync_receipts)
 

@@ -51,6 +51,15 @@ def test_failed_sync_keeps_local_articles(store):
     assert store.find("1001") is not None
 
 
+def test_sync_due_only_when_empty_or_old(store):
+    assert store.sync_due(1800)
+    store.sync(lambda: SERVER_ROWS)
+    assert not store.sync_due(1800)
+    assert store.sync_due(0)
+    store.sync(lambda: (_ for _ in ()).throw(DatabaseError("nema veze")))
+    assert not store.sync_due(1800)
+
+
 def test_catalog_uses_local_store_then_server(store, monkeypatch):
     store.sync(lambda: SERVER_ROWS)
     monkeypatch.setattr(catalog, "local_store", store)

@@ -90,6 +90,17 @@ class ArticleStore:
             row = connection.execute("SELECT * FROM article_sync WHERE id = 1").fetchone()
         return dict(row) if row else None
 
+    def sync_due(self, max_age_seconds: float) -> bool:
+        """Pri pokretanju se sinhronizuje samo kad lokalnih artikala nema ili je zadnja uspješna sinhronizacija starija od max_age_seconds."""
+        synced_at = (self.last_sync() or {}).get("synced_at")
+        if not synced_at or self.article_count() == 0:
+            return True
+        try:
+            age = (datetime.now() - datetime.fromisoformat(synced_at)).total_seconds()
+        except ValueError:
+            return True
+        return age >= max_age_seconds
+
     def replace_all(self, rows) -> tuple[int, int]:
         from catalog import clean_category
 

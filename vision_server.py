@@ -17,6 +17,7 @@ from settings import load_settings
 from vision_api import DEFAULT_PORT, make_server
 
 ARTICLE_SYNC_SECONDS = 30 * 60
+ARTICLE_CHECK_SECONDS = 60
 
 
 def settings_path() -> Path:
@@ -42,8 +43,11 @@ def report_cameras(guard) -> None:
 def sync_articles(articles: ArticleStore) -> None:
     """Server kamera čuva svoju kopiju artikala (nazivi za provjeru etikete); osvježava je kao i kasa."""
     while True:
-        articles.sync()
-        time.sleep(ARTICLE_SYNC_SECONDS)
+        if articles.sync_due(ARTICLE_SYNC_SECONDS):
+            articles.sync()
+            time.sleep(ARTICLE_SYNC_SECONDS)
+        else:
+            time.sleep(ARTICLE_CHECK_SECONDS)
 
 
 def main() -> None:
