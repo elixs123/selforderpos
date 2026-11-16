@@ -1918,6 +1918,9 @@ class CheckoutGuard:
             self._armed_at = time.monotonic()
             self._set("waiting_labels", self._labels_message())
             return
+        first_change = min((watcher.changed_at for watcher in self.watchers.values() if watcher.changed_at is not None), default=None)
+        self.log("trajanje", f"odlaganje: {now - self._armed_at:.1f} s od skeniranja"
+                             + (f", artikal se smirivao {now - first_change:.1f} s" if first_change is not None else ""))
         counts = {name: len(self.watchers[name].items) for name, _, _ in items}
         counts = {name: count for name, count in counts.items() if name not in SIDE_CAMERAS} or counts
         self._placed_blobs = {name: list(self.watchers[name].items) for name, _, _ in items}
@@ -1986,7 +1989,9 @@ class CheckoutGuard:
         except Exception as error:
             print(f"Poređenje: {error}")
             verdict, problems, score_taken, score_product = "mismatch", [f"greška u poređenju ({error})"], None, None
+        compared = time.monotonic()
         reads = reading.result() if reading is not None else [set() for _ in items]
+        read_at = time.monotonic()
         verdict, problems, hits = self._apply_label(verdict, problems, score_product, reads, product_code, taken_items)
         # Artikli sa vage imaju svaki put drugu težinu, a kutija više deklaracija i više artikala nemaju stalnu veličinu.
         measured = placed_count <= 1 and not self._weighed and not self._mixed_box
@@ -2000,7 +2005,10 @@ class CheckoutGuard:
         crop_problems = [self._reference_problem(item, scores[index]) for index, (_, item, _) in enumerate(items)]
         if self._mixed_box:
             crop_problems = ["kutija sa više deklaracija"] * len(items)
-        self.judge_ms = (time.monotonic() - started) * 1000
+        checked = time.monotonic()
+        self.judge_ms = (checked - started) * 1000
+        self.log("trajanje", f"YOLOX+poređenje {(compared - started) * 1000:.0f} ms, etiketa još {(read_at - compared) * 1000:.0f} ms, "
+                             f"provjera slika za učenje {(checked - read_at) * 1000:.0f} ms")
         with self._lock:
             if job != self._job_id:
                 return

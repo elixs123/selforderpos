@@ -28,12 +28,23 @@ def _gray(image: np.ndarray, work_width: int) -> tuple[np.ndarray, float]:
     return cv2.GaussianBlur(small, (5, 5), 0), scale
 
 
+def _channel_max(image: np.ndarray) -> np.ndarray:
+    # cv2 umjesto image.max(axis=2): numpy je po kanalima boje ~10x sporiji i drži GIL.
+    channels = cv2.split(image)
+    return cv2.max(cv2.max(channels[0], channels[1]), channels[2])
+
+
+def _channel_min(image: np.ndarray) -> np.ndarray:
+    channels = cv2.split(image)
+    return cv2.min(cv2.min(channels[0], channels[1]), channels[2])
+
+
 def _sun_only(first: np.ndarray, second: np.ndarray, distance: np.ndarray) -> np.ndarray:
     """Sunčeve pruge i promjena ekspozicije: svijetla podloga bez boje promijeni samo jačinu svjetla.
     Isti takav dio usred artikla (bijela etiketa između obojenih dijelova) se ne briše."""
-    both = np.stack((first, second))
-    brightest = both.max(axis=3)
-    light = (brightest.min(axis=0) >= SUN_LEVEL) & ((brightest - both.min(axis=3)).max(axis=0) <= SUN_SPREAD)
+    bright_first, bright_second = _channel_max(first), _channel_max(second)
+    spread = cv2.max(cv2.subtract(bright_first, _channel_min(first)), cv2.subtract(bright_second, _channel_min(second)))
+    light = (cv2.min(bright_first, bright_second) >= SUN_LEVEL) & (spread <= SUN_SPREAD)
     real = ((distance >= PIXEL_THRESHOLD) & ~light).astype(np.uint8) * 255
     size = max(5, round(SUN_FILL * distance.shape[1])) | 1
     item = cv2.morphologyEx(real, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size)))
@@ -43,7 +54,7 @@ def _sun_only(first: np.ndarray, second: np.ndarray, distance: np.ndarray) -> np
 
 
 def _distance(first: np.ndarray, second: np.ndarray) -> np.ndarray:
-    distance = cv2.absdiff(first, second).max(axis=2)
+    distance = _channel_max(cv2.absdiff(first, second))
     if IGNORE_SUN:
         distance[_sun_only(first, second, distance)] = 0
     return distance
@@ -368,6 +379,8 @@ class ZoneWatcher:
         self._stable_since: float | None = None
         self._scale = 1.0
         self._waiting_for_motion = False
+        # Kad je promjena u zoni prvi put viđena (za mjerenje koliko se čeka da se artikal smiri).
+        self.changed_at: float | None = None
 
     def arm(self, image: np.ndarray) -> None:
         self._baseline, self._scale = _gray(image, self.work_width)
@@ -376,9 +389,11 @@ class ZoneWatcher:
         self._stable_since = None
         self._waiting_for_motion = False
         self.armed = True
+        self.changed_at = None
 
     def rearm(self) -> None:
         self._stable_since = None
+        self.changed_at = None
         self._waiting_for_motion = True
         self.armed = True
 
@@ -414,6 +429,8 @@ class ZoneWatcher:
             if self.motion_ratio > self.motion_max:
                 self._waiting_for_motion = False
             return None
+        if self.changed_at is None and self.change_ratio >= self.change_min:
+            self.changed_at = now
         if self.change_ratio < self.change_min or self.motion_ratio > self.motion_max:
             self._stable_since = None
             return None
