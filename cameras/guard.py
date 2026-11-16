@@ -71,6 +71,8 @@ SIZE_MIN_SAMPLES = 5
 SIZE_PERCENTILE = 90
 # Artikal bez naučenih slika: slične boce (zeleno staklo odozgo) lako pređu 0.8, pa se "liči na drugi" javlja tek iznad ovoga.
 LOOKALIKE_MIN_SCORE = float(os.environ.get("CAM_LOOKALIKE_THRESHOLD", "0.85"))
+# Koliko artikal u zoni B mora mirovati prije provjere (zadano u ZoneWatcher je 0.8 s, kupcu je to predugo).
+B_STABLE_SECONDS = float(os.environ.get("CAM_B_STABLE_SECONDS", "0.4"))
 LABEL_LOOK_SECONDS = 0.5
 LABEL_MEMORY_SECONDS = 30.0
 PRIMARY_CAMERAS = {name.strip() for name in os.environ.get("CAM_PRIMARY", "A2,B2").split(",") if name.strip()}
@@ -165,7 +167,7 @@ class CheckoutGuard:
         self.zones = load_zones()
         self.references_since = zones_changed_at()
         self.trackers = {name: BasketTracker() for name in self.cameras_a}
-        self.watchers = {name: ZoneWatcher() for name in self.cameras_b}
+        self.watchers = {name: ZoneWatcher(stable_seconds=B_STABLE_SECONDS) for name in self.cameras_b}
         self.idle_b = {name: BasketTracker() for name in self.cameras_b}
         self._placed_unscanned: dict[str, int] = {}
         self._b_active_at = -1000.0
@@ -802,6 +804,8 @@ class CheckoutGuard:
         self._running = True
         threading.Thread(target=self._loop, daemon=True).start()
         threading.Thread(target=self._label_loop, daemon=True).start()
+        # OCR model se inače učita tek kod prvog odloženog artikla (+1-2 s na kasi).
+        self._label_reader.submit(labels.read_crops, [np.full((64, 64, 3), 127, np.uint8)])
         if self.hands is not None:
             threading.Thread(target=self._hand_loop, daemon=True).start()
         if self.a_ledgers or self.b_ledgers:
