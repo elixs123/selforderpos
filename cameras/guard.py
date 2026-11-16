@@ -69,6 +69,8 @@ SIZE_PROBLEM = "veći je od skeniranog artikla"
 SIZE_FACTOR = float(os.environ.get("CAM_SIZE_FACTOR", "1.4"))
 SIZE_MIN_SAMPLES = 5
 SIZE_PERCENTILE = 90
+# Artikal bez naučenih slika: slične boce (zeleno staklo odozgo) lako pređu 0.8, pa se "liči na drugi" javlja tek iznad ovoga.
+LOOKALIKE_MIN_SCORE = float(os.environ.get("CAM_LOOKALIKE_THRESHOLD", "0.85"))
 LABEL_LOOK_SECONDS = 0.5
 LABEL_MEMORY_SECONDS = 30.0
 PRIMARY_CAMERAS = {name.strip() for name in os.environ.get("CAM_PRIMARY", "A2,B2").split(",") if name.strip()}
@@ -215,6 +217,8 @@ class CheckoutGuard:
         self._forgot_at = -1000.0
         self._item_like_cache: dict[int, tuple] = {}
         self._b_before: dict[str, np.ndarray] = {}
+        # Zona B u trenutku skeniranja; iz nje se mjeri odlaganje, jer kupac često odloži artikal prije nego kamera A potvrdi uzimanje.
+        self._b_scan_before: dict[str, np.ndarray] = {}
         self._b_after_counts: dict[str, int] = {}
         self._waive_taken = False
         self._taken_sample_ids: dict[int, int] = {}
@@ -1092,6 +1096,7 @@ class CheckoutGuard:
                 return False
             self.scores = "-"
             self._warm_references(product_code)
+            self._b_scan_before = self._zone_b_rois()
             if recent_take:
                 takes, self._takes = self._takes, []
                 self._wait_for_zone_b(takes)
@@ -1185,18 +1190,26 @@ class CheckoutGuard:
         for index, item in enumerate(items):
             self._taken_sample_ids[index] = self.store.save(
                 "taken", self.barcode, self.product_code, self.product_name, f"A{index + 1}", crop_image=item)
+        before, self._b_scan_before = self._b_scan_before or self._zone_b_rois(), {}
         self._b_before = {}
         for name, watcher in self.watchers.items():
-            frame = self.latest(name)
-            if frame is None:
+            roi = before.get(name)
+            if roi is None:
                 continue
-            roi, _ = crop(frame, self.zones.get(name))
             watcher.arm(roi)
-            self._b_before[name] = roi.copy()
+            self._b_before[name] = roi
         self._armed_at = time.monotonic()
         self._set("waiting_place", f"Odložite artikal u zonu B: {self.product_name or self.barcode}")
         self._show_labels()
         self._dump("scan-armed-b", {"taken-item": items})
+
+    def _zone_b_rois(self) -> dict[str, np.ndarray]:
+        rois = {}
+        for name in self.watchers:
+            frame = self.latest(name)
+            if frame is not None:
+                rois[name] = crop(frame, self.zones.get(name))[0].copy()
+        return rois
 
     def _warm_references(self, product_code: str | None) -> None:
         threading.Thread(target=self._reference_signatures, args=(product_code,), daemon=True).start()
@@ -1300,7 +1313,7 @@ class CheckoutGuard:
                 scanned_same, closest = same_view
                 score_product = max(score_product or 0.0, scanned_same) if score_product is not None else None
             if score_product is None:
-                lookalike = closest if closest is not None and closest[0] >= product_threshold else None
+                lookalike = closest if closest is not None and closest[0] >= max(product_threshold, LOOKALIKE_MIN_SCORE) else None
             elif closest is not None:
                 self.scores += f"   najbliži drugi: {closest[1]} {closest[0]:.2f}"
                 if RIVAL_MARGIN > 0 and closest[0] >= score_product + RIVAL_MARGIN:
