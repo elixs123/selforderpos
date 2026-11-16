@@ -348,6 +348,9 @@ def changed_box(before: np.ndarray, after: np.ndarray, padding: int = 10) -> tup
     return left, top, min(width, x + w + padding) - left, min(height, y + h + padding) - top
 
 
+HAND_NEAR_KERNEL = np.ones((15, 15), np.uint8)
+
+
 @dataclass(frozen=True)
 class Placement:
     box: tuple[int, int, int, int]
@@ -431,6 +434,11 @@ class ZoneWatcher:
             return None
         if self.changed_at is None and self.change_ratio >= self.change_min:
             self.changed_at = now
+        if hand is not None and hand.any() and (hand & (cv2.dilate(change_mask, HAND_NEAR_KERNEL) > 0)).any():
+            # Ruka se ne računa u pokret, pa bi zona izgledala mirno dok kupac još drži artikal; ruka dalje od
+            # artikla (naslonjena na rub zone) ne smeta.
+            self._stable_since = None
+            return None
         if self.change_ratio < self.change_min or self.motion_ratio > self.motion_max:
             self._stable_since = None
             return None

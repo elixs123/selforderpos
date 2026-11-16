@@ -72,7 +72,7 @@ SIZE_PERCENTILE = 90
 # Artikal bez naučenih slika: slične boce (zeleno staklo odozgo) lako pređu 0.8, pa se "liči na drugi" javlja tek iznad ovoga.
 LOOKALIKE_MIN_SCORE = float(os.environ.get("CAM_LOOKALIKE_THRESHOLD", "0.85"))
 # Koliko artikal u zoni B mora mirovati prije provjere (zadano u ZoneWatcher je 0.8 s, kupcu je to predugo).
-B_STABLE_SECONDS = float(os.environ.get("CAM_B_STABLE_SECONDS", "0.4"))
+B_STABLE_SECONDS = float(os.environ.get("CAM_B_STABLE_SECONDS", "0.6"))
 LABEL_LOOK_SECONDS = 0.5
 LABEL_MEMORY_SECONDS = 30.0
 PRIMARY_CAMERAS = {name.strip() for name in os.environ.get("CAM_PRIMARY", "A2,B2").split(",") if name.strip()}
