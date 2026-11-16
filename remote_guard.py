@@ -128,12 +128,13 @@ class RemoteGuard:
 
         threading.Thread(target=send, daemon=True).start()
 
-    def latest(self, name: str):
-        """Trenutna slika kamere sa servera (za ekran prema kupcu); None ako je nema."""
+    def latest(self, name: str, width: int | None = None):
+        """Trenutna slika kamere sa servera (za ekran prema kupcu); None ako je nema. width: manja slika, brži prenos."""
         import cv2
         import numpy as np
 
-        request = urllib.request.Request(self.url + f"/frame/{name}", headers={"X-Token": self.token})
+        query = f"?w={width}" if width else ""
+        request = urllib.request.Request(self.url + f"/frame/{name}{query}", headers={"X-Token": self.token})
         try:
             with urllib.request.urlopen(request, timeout=POLL_TIMEOUT) as response:
                 data = response.read()

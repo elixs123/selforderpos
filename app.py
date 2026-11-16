@@ -3,6 +3,7 @@ import sys
 import threading
 import time
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 
 if getattr(sys, "frozen", False):
@@ -43,6 +44,7 @@ from receipts import ReceiptStore
 from receipt_sync import ReceiptSync
 from screens.cameras_down import CamerasDownScreen
 from screens.customer_monitor import CustomerMonitor
+from screens.recording import FRAME_WIDTH as camera_feed_width
 from screens.recording import feed as camera_feed
 from screens.age_warning import age_state
 from screens.drop import DropScreen
@@ -346,8 +348,12 @@ class MainWindow(QMainWindow):
             self.customer_monitor.deleteLater()
             self.customer_monitor = None
         has_frames = self.guard is not None and hasattr(self.guard, "latest")
-        camera_feed.configure(self.guard.latest if has_frames and self.settings.camera_badge else None,
-                              self.settings.customer_monitor_camera)
+        source = None
+        if has_frames and self.settings.camera_badge:
+            # Server kamera šalje sliku već smanjenu za karticu 'Snimate se'.
+            source = (partial(self.guard.latest, width=camera_feed_width)
+                      if type(self.guard).__name__ == "RemoteGuard" else self.guard.latest)
+        camera_feed.configure(source, self.settings.customer_monitor_camera)
         if not has_frames or not self.settings.customer_monitor:
             return
         monitor = CustomerMonitor(self.guard.latest, self.settings.customer_monitor_camera)

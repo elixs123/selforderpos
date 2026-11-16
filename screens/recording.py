@@ -8,7 +8,10 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from styles import LINE, MUTED_TEXT, RED, px
 
-FRAME_SECONDS = 0.25
+# 10 slika u sekundi, male (kartica je široka ~150 px): slika ide glatko, a prenos je mali.
+FRAME_SECONDS = 0.1
+FRAME_WIDTH = 320
+BLINK_SECONDS = 1.5
 # Slika se dohvata samo dok je neka oznaka na ekranu (inače kasa ne opterećuje server kamera).
 WANTED_SECONDS = 2.0
 
@@ -37,15 +40,24 @@ class CameraFeed:
     def _loop(self) -> None:
         while True:
             source = self.source
-            if source is not None and time.monotonic() - self.wanted_at < WANTED_SECONDS:
+            started = time.monotonic()
+            if source is not None and started - self.wanted_at < WANTED_SECONDS:
                 try:
-                    self.frame = source(self.camera)
+                    self.frame = small(source(self.camera))
                 except Exception:
                     self.frame = None
-            time.sleep(FRAME_SECONDS)
+            time.sleep(max(0.02, FRAME_SECONDS - (time.monotonic() - started)))
 
 
 feed = CameraFeed()
+
+
+def small(frame):
+    """Kamere na samoj kasi daju punu sliku (2560 px); smanji je ovdje, ne na ekranu."""
+    if frame is None or not frame.size or frame.shape[1] <= FRAME_WIDTH:
+        return frame
+    height, width = frame.shape[:2]
+    return cv2.resize(frame, (FRAME_WIDTH, round(height * FRAME_WIDTH / width)), interpolation=cv2.INTER_AREA)
 
 
 def rounded(frame, width: int, height: int, radius: int) -> QPixmap:
@@ -92,7 +104,6 @@ class RecordingBadge(QFrame):
         self.note.setStyleSheet(f"color: {MUTED_TEXT}; font-size: {px(20)}px; border: none;")
         texts.addWidget(self.note)
         row.addLayout(texts)
-        self._blink = 0
         self.compact = 0
         self._show_title()
         self.setVisible(feed.enabled)
@@ -103,7 +114,7 @@ class RecordingBadge(QFrame):
 
     def _show_title(self) -> None:
         # Crvena tačka trepće kao na kameri koja snima.
-        dot = RED if self._blink < 4 else "white"
+        dot = RED if time.monotonic() % BLINK_SECONDS < BLINK_SECONDS * 0.66 else "white"
         words = "" if self.compact >= 2 else "&nbsp;Snimate se"
         self.title.setText(f"<span style='color:{dot}'>●</span>{words}")
         self.title.setStyleSheet(f"color: {RED}; font-size: {px(26)}px; font-weight: 800; border: none;")
@@ -124,7 +135,6 @@ class RecordingBadge(QFrame):
         if not feed.enabled or not self.isVisible():
             return
         feed.wanted_at = time.monotonic()
-        self._blink = (self._blink + 1) % 6
         self._show_title()
         frame = feed.frame
         if frame is not None and frame.size:

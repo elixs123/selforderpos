@@ -20,16 +20,17 @@ def outcome_data(outcome) -> dict | None:
 FRAME_WIDTH = 640
 
 
-def frame_jpeg(guard, name: str) -> bytes | None:
-    """Trenutna slika kamere (smanjena) za ekran prema kupcu na kasi."""
+def frame_jpeg(guard, name: str, target: int = FRAME_WIDTH) -> bytes | None:
+    """Trenutna slika kamere (smanjena) za ekran prema kupcu na kasi; oznaka 'Snimate se' traži manju (?w=320)."""
     import cv2
 
     frame = guard.latest(name) if hasattr(guard, "latest") else None
     if frame is None or not frame.size:
         return None
     height, width = frame.shape[:2]
-    if width > FRAME_WIDTH:
-        frame = cv2.resize(frame, (FRAME_WIDTH, round(height * FRAME_WIDTH / width)), interpolation=cv2.INTER_AREA)
+    target = max(80, min(FRAME_WIDTH, target))
+    if width > target:
+        frame = cv2.resize(frame, (target, round(height * target / width)), interpolation=cv2.INTER_AREA)
     ok, encoded = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
     return encoded.tobytes() if ok else None
 
@@ -144,7 +145,9 @@ class VisionHandler(BaseHTTPRequestHandler):
         elif self.path.startswith("/report/"):
             self._send(200, {"events": self.server.guard.report(self.path[len("/report/"):])})
         elif self.path.startswith("/frame/"):
-            data = frame_jpeg(self.server.guard, self.path[len("/frame/"):])
+            name, _, query = self.path[len("/frame/"):].partition("?")
+            width = query[len("w="):] if query.startswith("w=") else ""
+            data = frame_jpeg(self.server.guard, name, int(width) if width.isdigit() else FRAME_WIDTH)
             if data is None:
                 self._send(404, {"error": "kamera nema sliku"})
             else:
